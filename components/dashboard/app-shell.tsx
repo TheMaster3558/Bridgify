@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useDashboard } from "@/components/dashboard/dashboard-context";
+import { DashboardProvider, useDashboard } from "@/components/dashboard/dashboard-context";
 import {
   Select,
   SelectContent,
@@ -27,6 +27,14 @@ function isActive(pathname: string, href: string) {
 }
 
 export function AppShell({ children }: { children: React.ReactNode }) {
+  return (
+    <DashboardProvider>
+      <AppShellFrame>{children}</AppShellFrame>
+    </DashboardProvider>
+  );
+}
+
+function AppShellFrame({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { projects, project, setProjectId } = useDashboard();
   const connected = project.imessage === "connected";
