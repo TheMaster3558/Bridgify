@@ -19,6 +19,9 @@ the database. It is separate from the durable dashboard intake pipeline.
    It first calls Photon's remote `message.read()` to send an iMessage read
    receipt. This marks the chat read; whether Messages displays “Read” depends on
    the provider/account's read-receipt behavior. Receipt failure does not block replies.
+   It starts Photon's typing indicator before Gemini generates an answer and
+   clears it after the send attempt, including when generation or sending fails.
+   Indicator failures are reported in the terminal without blocking replies.
    Press Ctrl+C to stop.
 
 Missing project or Gemini credentials stop the runner. User and line configuration stays

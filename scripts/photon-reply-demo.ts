@@ -26,6 +26,7 @@ async function main() {
   });
   const handle = createReplyDemo({ startedAt, respond: gemini.respond,
     onReadFailure: () => console.log("Could not send the iMessage read receipt; continuing with the reply."),
+    onTypingFailure: () => console.log("Could not update the iMessage typing indicator; continuing with the reply."),
   });
   const stop = () => { void app.stop(); };
   process.once("SIGINT", stop);

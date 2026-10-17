@@ -74,3 +74,44 @@ test("a read receipt failure does not prevent the answer", async () => {
   assert.equal(failed, true);
   assert.equal(sent, true);
 });
+
+test("typing is active during Gemini generation and clears after the reply, without duplicate indicators", async () => {
+  const now = Date.now();
+  const order: string[] = [];
+  const handle = createReplyDemo({ startedAt: now, async respond() { order.push("generate"); return "Hi"; } });
+  const space = { id: "dm", type: "dm", async send() { order.push("send"); },
+    async startTyping() { order.push("typing-start"); }, async stopTyping() { order.push("typing-stop"); } };
+  const message = { id: "m", direction: "inbound", sender: { id: "sender" }, timestamp: new Date(now),
+    content: { type: "text", text: "Hi" }, async read() { order.push("read"); } };
+  assert.equal(await handle(space, message), "reply_sent");
+  assert.equal(await handle(space, message), "duplicate");
+  assert.equal(await handle(space, { ...message, id: "echo", direction: "outbound" }), "ignored");
+  assert.deepEqual(order, ["read", "typing-start", "generate", "send", "typing-stop"]);
+});
+
+test("typing clears after Gemini failure and an uncertain send", async () => {
+  const now = Date.now();
+  for (const sendFails of [false, true]) {
+    let cleared = false;
+    const handle = createReplyDemo({ startedAt: now, async respond() { throw new Error("model unavailable"); } });
+    const result = await handle({ id: "dm", type: "dm", async startTyping() {}, async stopTyping() { cleared = true; },
+      async send(text) { assert.match(text, /trouble responding/); if (sendFails) throw new Error("timeout"); } }, {
+      id: "m", direction: "inbound", sender: { id: "sender" }, timestamp: new Date(now), content: { type: "text", text: "Hi" },
+    });
+    assert.equal(result, sendFails ? "send_uncertain" : "generation_failed");
+    assert.equal(cleared, true);
+  }
+});
+
+test("typing API failures do not prevent Gemini replies", async () => {
+  const now = Date.now();
+  let sent = false;
+  let failures = 0;
+  const handle = createReplyDemo({ startedAt: now, async respond() { return "Hi"; }, onTypingFailure() { failures++; } });
+  assert.equal(await handle({ id: "dm", type: "dm", async send() { sent = true; },
+    async startTyping() { throw new Error("unavailable"); }, async stopTyping() { throw new Error("unavailable"); } }, {
+    id: "m", direction: "inbound", sender: { id: "sender" }, timestamp: new Date(now), content: { type: "text", text: "Hi" },
+  }), "reply_sent");
+  assert.equal(sent, true);
+  assert.equal(failures, 2);
+});
