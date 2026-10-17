@@ -4,12 +4,19 @@ export const metadata = { title: "Sign in" };
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ next?: string; error?: string }>;
+  searchParams: Promise<{ next?: string; error?: string; mode?: string }>;
 }) {
   const params = await searchParams;
   return (
     <LoginScreen
       next={safeNext(params.next)}
+      initialMode={
+        params.mode === "recover"
+          ? "recover"
+          : params.mode === "signup"
+            ? "signup"
+            : "signin"
+      }
       expired={params.error === "expired"}
       configured={
         !!(

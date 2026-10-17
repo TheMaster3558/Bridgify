@@ -11,8 +11,9 @@ export default async function Page({
     <main className="mx-auto grid max-w-lg gap-5 p-8 py-20">
       <h1 className="text-2xl font-semibold">Accept your project invitation</h1>
       <p>
-        Signed in as {user.email}. Access is checked against the verified
-        invited email address. No terms are shown until access is confirmed.
+        Signed in as {user.email}. Access is checked against the signed-in
+        account email and the invitation. No terms are shown until access is
+        confirmed.
       </p>
       {/^[a-f0-9]{64}$/.test(token) ? (
         <AcceptInvite token={token} />

@@ -13,5 +13,11 @@ export default defineConfig({
     url: "http://127.0.0.1:3100/login",
     reuseExistingServer: false,
     timeout: 120000,
+    // Browser tests exercise anonymous UI and mock auth POSTs; never use live credentials.
+    env: {
+      NEXT_PUBLIC_SUPABASE_URL: "http://127.0.0.1:54321",
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: "test-only-anonymous-key",
+      APP_BASE_URL: "http://127.0.0.1:3100",
+    },
   },
 });

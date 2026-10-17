@@ -11,7 +11,7 @@ export default async function Page() {
         </h2>
         <p>{user.email}</p>
         <p className="text-sm text-muted-foreground">
-          Recover access by requesting another email sign-in link. Workspace
+          Recover access using Forgot password on the sign-in page. Workspace
           access belongs to this verified account.
         </p>
         <form method="post" action="/auth/signout">

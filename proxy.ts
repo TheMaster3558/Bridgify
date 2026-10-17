@@ -55,6 +55,8 @@ export const config = {
     "/proposals/:path*",
     "/invitations/:path*",
     "/onboarding",
+    "/reset-password",
+    "/api/auth/:path*",
     "/api/v1/:path*",
     "/auth/:path*",
   ],

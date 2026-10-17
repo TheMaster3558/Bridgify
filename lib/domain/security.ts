@@ -5,7 +5,7 @@ export function safeNext(value: unknown, fallback = "/app") {
     const url = new URL(value, "https://bridgify.invalid");
     if (
       url.origin !== "https://bridgify.invalid" ||
-      !/^\/(app(?:\/|$)|proposals\/|invitations\/|onboarding(?:\?|$)|access(?:\?|$))/.test(
+      !/^\/(app(?:\/|$)|proposals\/|invitations\/|onboarding(?:\?|$)|access(?:\?|$)|reset-password(?:\?|$))/.test(
         url.pathname,
       )
     )

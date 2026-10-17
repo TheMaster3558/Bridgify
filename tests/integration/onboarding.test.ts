@@ -139,6 +139,15 @@ beforeAll(async () => {
       "utf8",
     ),
   );
+  await db.exec(
+    await readFile(
+      new URL(
+        "../../supabase/migrations/202610170002_password_auth.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    ),
+  );
   for (const [id, email] of [
     [owner, "owner@example.test"],
     [other, "other@example.test"],
@@ -570,5 +579,30 @@ describe("actual Postgres onboarding migration", () => {
         )
       ).rows[0].status,
     ).toBe("queued");
+  });
+  it("accepts an invited password account without requiring email verification", async () => {
+    const p = await project();
+    const invitation = await command(p.id, p.version, "invite", {
+      email: "client@example.test",
+    });
+    await admin();
+    await db.query(
+      "update auth.users set email_confirmed_at=null where id=$1",
+      [client],
+    );
+    try {
+      await user(client);
+      const result = await db.query<{ next: string }>(
+        "select accept_invitation($1) next",
+        [invitation.invitationToken],
+      );
+      expect(result.rows[0].next).toBe("/access");
+    } finally {
+      await admin();
+      await db.query(
+        "update auth.users set email_confirmed_at=now() where id=$1",
+        [client],
+      );
+    }
   });
 });
