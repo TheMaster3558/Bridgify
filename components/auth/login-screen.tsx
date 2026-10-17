@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Field } from "@/components/dashboard/panel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
@@ -55,17 +54,19 @@ export function LoginScreen() {
                   After signing in you’ll go straight to the proposal you were invited to review.
                 </p>
               ) : null}
-              <Field label="Email">
+              <label className="flex flex-col gap-1.5 text-sm font-medium">
+                Email
                 <Input
                   type="email"
                   defaultValue={mode === "client" ? "maya@harborandpine.example" : "amogh@northlight.example"}
                 />
-              </Field>
-              <Field label="Password">
+              </label>
+              <label className="flex flex-col gap-1.5 text-sm font-medium">
+                Password
                 <Input type="password" defaultValue="password" />
-              </Field>
+              </label>
               <Button asChild>
-                <Link href={mode === "client" ? "/proposals/P-001?revision=2" : "/app"}>Sign in</Link>
+                <Link href="/app">Sign in</Link>
               </Button>
               <p className="text-xs text-muted-foreground">
                 Wrong email or password shows here. Invalid invites stay neutral and don’t reveal other customers.
