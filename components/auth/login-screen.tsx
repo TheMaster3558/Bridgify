@@ -1,80 +1,189 @@
 "use client";
-
 import { useState } from "react";
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { cn } from "@/lib/utils";
-
-const modes = [
-  { id: "owner", label: "Owner sign-in" },
-  { id: "client", label: "Client invite" },
-  { id: "expired", label: "Expired invite" },
-] as const;
-
-export function LoginScreen() {
-  const [mode, setMode] = useState<(typeof modes)[number]["id"]>("owner");
-
+type Mode = "signin" | "signup" | "recover";
+export function LoginScreen({
+  next,
+  expired,
+  configured,
+  initialMode = "signin",
+}: {
+  next: string;
+  expired: boolean;
+  configured: boolean;
+  initialMode?: Mode;
+}) {
+  const [mode, setMode] = useState<Mode>(initialMode),
+    [pending, setPending] = useState(false),
+    [message, setMessage] = useState("");
+  const router = useRouter();
+  const title =
+    mode === "signup"
+      ? "Create your account"
+      : mode === "recover"
+        ? "Reset your password"
+        : "Sign in";
+  function changeMode(mode: Mode) {
+    setMode(mode);
+    setMessage("");
+  }
   return (
-    <main className="flex min-h-screen items-start justify-center px-4 py-16">
-      <div className="flex w-full max-w-sm flex-col gap-4">
-        <div className="mx-auto flex rounded-md border p-0.5 text-sm">
-          {modes.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => setMode(item.id)}
-              className={cn("rounded px-3 py-1.5", mode === item.id && "bg-foreground text-background")}
-            >
-              {item.label}
-            </button>
-          ))}
-        </div>
-        <div className="flex flex-col gap-4 rounded-xl border bg-card p-7">
-          <div className="flex items-center gap-2">
-            <span className="grid size-8 place-items-center rounded-md bg-primary text-sm font-semibold text-primary-foreground">
-              B
-            </span>
-            <span className="font-display text-xl font-semibold">Bridgify</span>
-          </div>
-          {mode === "expired" ? (
+    <main className="flex min-h-screen items-start justify-center px-4 py-20">
+      <form
+        className="flex w-full max-w-md flex-col gap-5 rounded-xl border bg-card p-8"
+        onSubmit={async (event) => {
+          event.preventDefault();
+          setPending(true);
+          setMessage("");
+          const form = new FormData(event.currentTarget);
+          try {
+            const response = await fetch("/api/auth/password", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                action: mode,
+                email: form.get("email"),
+                ...(mode !== "recover"
+                  ? { password: form.get("password") }
+                  : {}),
+                ...(mode === "signup"
+                  ? { password_confirmation: form.get("password_confirmation") }
+                  : {}),
+                next,
+              }),
+            });
+            const body = await response.json();
+            if (!response.ok)
+              throw new Error(
+                body.error || "Authentication failed. Please retry.",
+              );
+            if (body.next) {
+              router.replace(body.next);
+              router.refresh();
+            } else setMessage(body.message);
+          } catch (error) {
+            setMessage((error as Error).message);
+          } finally {
+            setPending(false);
+          }
+        }}
+      >
+        <span className="font-display text-2xl font-semibold">Bridgify</span>
+        <h1 className="text-xl font-semibold">{title}</h1>
+        <p className="text-sm text-muted-foreground">
+          {mode === "signup"
+            ? "Create an account with your email and password to get started immediately."
+            : mode === "recover"
+              ? "Enter your account email to request a password reset link."
+              : "Use your email and password to access your workspace or invitation."}
+        </p>
+        {expired && (
+          <p role="alert">
+            This password reset link is invalid or expired. Request another
+            reset link.
+          </p>
+        )}
+        {!configured && (
+          <p role="alert">
+            Authentication needs configuration. Follow docs/ONBOARDING_SETUP.md
+            to connect Supabase.
+          </p>
+        )}
+        <fieldset disabled={pending} className="grid gap-5">
+          <label className="grid gap-2">
+            Email
+            <Input
+              name="email"
+              type="email"
+              autoComplete="email"
+              required
+              maxLength={254}
+            />
+          </label>
+          {mode !== "recover" && (
+            <label className="grid gap-2">
+              Password
+              <Input
+                key={mode}
+                name="password"
+                type="password"
+                autoComplete={
+                  mode === "signup" ? "new-password" : "current-password"
+                }
+                required
+                minLength={mode === "signup" ? 8 : 1}
+                maxLength={mode === "signup" ? 72 : 1024}
+              />
+            </label>
+          )}
+          {mode === "signup" && (
             <>
-              <h1 className="text-xl font-semibold">This link has expired</h1>
-              <p className="text-sm text-muted-foreground">
-                Ask the person who sent it for a new link. For your security this page doesn’t show which project it was for.
-              </p>
-            </>
-          ) : (
-            <>
-              <h1 className="text-xl font-semibold">
-                {mode === "client" ? "Sign in to review a proposal" : "Sign in"}
-              </h1>
-              {mode === "client" ? (
-                <p className="text-sm text-muted-foreground">
-                  After signing in you’ll go straight to the proposal you were invited to review.
-                </p>
-              ) : null}
-              <label className="flex flex-col gap-1.5 text-sm font-medium">
-                Email
+              <label className="grid gap-2">
+                Confirm password
                 <Input
-                  type="email"
-                  defaultValue={mode === "client" ? "maya@harborandpine.example" : "amogh@northlight.example"}
+                  name="password_confirmation"
+                  type="password"
+                  autoComplete="new-password"
+                  required
+                  minLength={8}
+                  maxLength={72}
                 />
               </label>
-              <label className="flex flex-col gap-1.5 text-sm font-medium">
-                Password
-                <Input type="password" defaultValue="password" />
-              </label>
-              <Button asChild>
-                <Link href="/app">Sign in</Link>
-              </Button>
               <p className="text-xs text-muted-foreground">
-                Wrong email or password shows here. Invalid invites stay neutral and don’t reveal other customers.
+                Use 8–72 characters. No email verification is required.
               </p>
             </>
           )}
+          <Button disabled={pending || !configured}>
+            {pending
+              ? "Please wait…"
+              : mode === "recover"
+                ? "Send password reset link"
+                : title}
+          </Button>
+        </fieldset>
+        <p role="status" aria-live="polite" className="text-sm">
+          {message}
+        </p>
+        <div className="grid gap-3 text-sm">
+          {mode !== "signup" && (
+            <button
+              type="button"
+              className="w-fit underline"
+              disabled={pending}
+              onClick={() => changeMode("signup")}
+            >
+              Create an account
+            </button>
+          )}
+          {mode !== "signin" && (
+            <button
+              type="button"
+              className="w-fit underline"
+              disabled={pending}
+              onClick={() => changeMode("signin")}
+            >
+              Back to sign in
+            </button>
+          )}
+          {mode !== "recover" && (
+            <button
+              type="button"
+              className="w-fit underline"
+              disabled={pending}
+              onClick={() => changeMode("recover")}
+            >
+              Forgot password?
+            </button>
+          )}
         </div>
-      </div>
+        <p className="text-xs text-muted-foreground">
+          Invited clients must use their invited email address and accept their
+          invitation. Signing in alone grants no project access.
+        </p>
+      </form>
     </main>
   );
 }
