@@ -1,80 +1,86 @@
 "use client";
-
 import { useState } from "react";
-import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { cn } from "@/lib/utils";
-
-const modes = [
-  { id: "owner", label: "Owner sign-in" },
-  { id: "client", label: "Client invite" },
-  { id: "expired", label: "Expired invite" },
-] as const;
-
-export function LoginScreen() {
-  const [mode, setMode] = useState<(typeof modes)[number]["id"]>("owner");
-
+export function LoginScreen({
+  next,
+  expired,
+  configured,
+}: {
+  next: string;
+  expired: boolean;
+  configured: boolean;
+}) {
+  const [pending, setPending] = useState(false);
+  const [message, setMessage] = useState("");
   return (
-    <main className="flex min-h-screen items-start justify-center px-4 py-16">
-      <div className="flex w-full max-w-sm flex-col gap-4">
-        <div className="mx-auto flex rounded-md border p-0.5 text-sm">
-          {modes.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => setMode(item.id)}
-              className={cn("rounded px-3 py-1.5", mode === item.id && "bg-foreground text-background")}
-            >
-              {item.label}
-            </button>
-          ))}
-        </div>
-        <div className="flex flex-col gap-4 rounded-xl border bg-card p-7">
-          <div className="flex items-center gap-2">
-            <span className="grid size-8 place-items-center rounded-md bg-primary text-sm font-semibold text-primary-foreground">
-              B
-            </span>
-            <span className="font-display text-xl font-semibold">Bridgify</span>
-          </div>
-          {mode === "expired" ? (
-            <>
-              <h1 className="text-xl font-semibold">This link has expired</h1>
-              <p className="text-sm text-muted-foreground">
-                Ask the person who sent it for a new link. For your security this page doesn’t show which project it was for.
-              </p>
-            </>
-          ) : (
-            <>
-              <h1 className="text-xl font-semibold">
-                {mode === "client" ? "Sign in to review a proposal" : "Sign in"}
-              </h1>
-              {mode === "client" ? (
-                <p className="text-sm text-muted-foreground">
-                  After signing in you’ll go straight to the proposal you were invited to review.
-                </p>
-              ) : null}
-              <label className="flex flex-col gap-1.5 text-sm font-medium">
-                Email
-                <Input
-                  type="email"
-                  defaultValue={mode === "client" ? "maya@harborandpine.example" : "amogh@northlight.example"}
-                />
-              </label>
-              <label className="flex flex-col gap-1.5 text-sm font-medium">
-                Password
-                <Input type="password" defaultValue="password" />
-              </label>
-              <Button asChild>
-                <Link href="/app">Sign in</Link>
-              </Button>
-              <p className="text-xs text-muted-foreground">
-                Wrong email or password shows here. Invalid invites stay neutral and don’t reveal other customers.
-              </p>
-            </>
-          )}
-        </div>
-      </div>
+    <main className="flex min-h-screen items-start justify-center px-4 py-20">
+      <form
+        className="flex w-full max-w-md flex-col gap-5 rounded-xl border bg-card p-8"
+        onSubmit={async (event) => {
+          event.preventDefault();
+          setPending(true);
+          setMessage("");
+          try {
+            const response = await fetch("/api/auth/email", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                email: new FormData(event.currentTarget).get("email"),
+                next,
+              }),
+            });
+            const body = await response.json();
+            setMessage(body.message || body.error);
+          } catch {
+            setMessage("Connection failed. Please retry.");
+          } finally {
+            setPending(false);
+          }
+        }}
+      >
+        <span className="font-display text-2xl font-semibold">Bridgify</span>
+        <h1 className="text-xl font-semibold">
+          Sign in or create your account
+        </h1>
+        <p className="text-sm text-muted-foreground">
+          We’ll email you a secure sign-in link. No password to remember. To
+          recover access, request another link using the same email address.
+        </p>
+        {expired && (
+          <p role="alert">
+            This link is invalid or expired. Request a new link. No project
+            details have been revealed.
+          </p>
+        )}
+        {!configured && (
+          <p role="alert">
+            Authentication needs configuration. Follow docs/ONBOARDING_SETUP.md
+            to connect an empty Supabase project.
+          </p>
+        )}
+        <label className="grid gap-2">
+          Email
+          <Input
+            name="email"
+            type="email"
+            autoComplete="email"
+            required
+            maxLength={254}
+          />
+        </label>
+        <Button disabled={pending || !configured}>
+          {pending ? "Sending…" : "Email sign-in link"}
+        </Button>
+        <p aria-live="polite" className="text-sm">
+          {message}
+        </p>
+        <p className="text-xs text-muted-foreground">
+          Invited clients must use their invited email address. A forwarded link
+          grants no access. If you lose access to your email account, recover
+          that mailbox with your email provider.
+        </p>
+      </form>
     </main>
   );
 }

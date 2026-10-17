@@ -18,7 +18,13 @@ function isActive(pathname: string, href: string) {
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
-export function AppShell({ children }: { children: React.ReactNode }) {
+export function AppShell({
+  children,
+  email,
+}: {
+  children: React.ReactNode;
+  email?: string;
+}) {
   const pathname = usePathname();
 
   return (
@@ -30,7 +36,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </span>
           <span className="font-display text-xl font-semibold">Bridgify</span>
         </Link>
-        <nav aria-label="Main" className="flex gap-1 overflow-x-auto md:flex-col">
+        <nav
+          aria-label="Main"
+          className="flex gap-1 overflow-x-auto md:flex-col"
+        >
           {nav.map((item) => {
             const active = isActive(pathname, item.href);
             return (
@@ -48,6 +57,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             );
           })}
         </nav>
+        <div className="mt-auto grid gap-3 px-2 text-xs text-muted-foreground">
+          <span>{email}</span>
+          <form action="/auth/signout" method="post">
+            <button className="underline" type="submit">
+              Sign out
+            </button>
+          </form>
+        </div>
       </aside>
       <div className="min-w-0">{children}</div>
     </div>
