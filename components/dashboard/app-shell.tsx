@@ -2,6 +2,14 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { DashboardProvider, useDashboard } from "@/components/dashboard/dashboard-context";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 
 const nav = [
@@ -19,7 +27,17 @@ function isActive(pathname: string, href: string) {
 }
 
 export function AppShell({ children }: { children: React.ReactNode }) {
+  return (
+    <DashboardProvider>
+      <AppShellFrame>{children}</AppShellFrame>
+    </DashboardProvider>
+  );
+}
+
+function AppShellFrame({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const { projects, project, setProjectId } = useDashboard();
+  const connected = project.imessage === "connected";
 
   return (
     <div className="grid min-h-screen grid-cols-1 md:grid-cols-[236px_minmax(0,1fr)]">
@@ -49,7 +67,42 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           })}
         </nav>
       </aside>
-      <div className="min-w-0">{children}</div>
+      <div className="flex min-w-0 flex-col">
+        <header className="flex flex-wrap items-center justify-between gap-3 border-b bg-card px-4 py-2.5 sm:px-6">
+          <Select value={project.id} onValueChange={setProjectId}>
+            <SelectTrigger aria-label="Project" className="w-[min(100%,280px)]">
+              <SelectValue placeholder="Select a project" />
+            </SelectTrigger>
+            <SelectContent>
+              {projects.map((item) => (
+                <SelectItem key={item.id} value={item.id}>
+                  {item.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <div className="flex items-center gap-3">
+            <p className={cn("text-sm font-medium", connected ? "text-ok" : "text-crit")}>
+              <span
+                className={cn(
+                  "mr-2 inline-block size-2 rounded-full",
+                  connected ? "bg-ok" : "bg-crit",
+                )}
+                aria-hidden="true"
+              />
+              {connected ? "iMessage: Connected" : "iMessage: Disconnected"}
+            </p>
+            <Link
+              href="/app/settings"
+              aria-label="Account settings"
+              className="rounded-full bg-accent px-3 py-1 text-xs font-semibold text-primary"
+            >
+              Owner
+            </Link>
+          </div>
+        </header>
+        <div className="min-w-0 flex-1">{children}</div>
+      </div>
     </div>
   );
 }
