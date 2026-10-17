@@ -10,11 +10,14 @@
     "test:assistant": "node --conditions=react-server --import tsx --test tests/assistant/*.test.ts",
     "typecheck": "tsc --noEmit",
     "db:migrate": "node --import tsx scripts/migrate.ts",
-    "test:intake": "node --conditions=react-server --import tsx --test tests/intake/*.test.ts"
+    "test:intake": "node --conditions=react-server --import tsx --test tests/intake/*.test.ts",
+    "photon:demo": "node --env-file=.env.local --conditions=react-server --import tsx scripts/photon-reply-demo.ts"
   },
   "dependencies": {
     "@google/genai": "2.30.0",
     "@photon-ai/advanced-imessage": "2.3.0",
+    "@spectrum-ts/core": "12.12.0",
+    "@spectrum-ts/imessage": "12.11.0",
     "@supabase/ssr": "0.8.0",
     "@supabase/supabase-js": "2.109.0",
     "class-variance-authority": "^0.7.1",
