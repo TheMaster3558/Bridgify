@@ -96,11 +96,74 @@ describe("agreement extraction boundary", () => {
       output_text: JSON.stringify(bad),
     });
     await expect(extractAgreement(spans)).rejects.toThrow(/evidence/);
+    expect(create).toHaveBeenCalledTimes(2);
     create.mockResolvedValue({
       status: "incomplete",
       output_text: JSON.stringify(result()),
     });
     await expect(extractAgreement(spans)).rejects.toThrow(/incomplete/);
+  });
+  it("restores exact PDF whitespace in term and commercial quotes", async () => {
+    configured();
+    const source = [
+      {
+        ...spans[0],
+        text: "Landing\npage  included. Two\u00a0revisions. USD\n200.00.",
+      },
+    ];
+    create.mockResolvedValue({
+      status: "completed",
+      output_text: JSON.stringify(result()),
+    });
+    const extracted = await extractAgreement(source);
+    expect(extracted.terms[0].quote).toBe("Landing\npage  included");
+    expect(extracted.commercial.price.quote).toBe("USD\n200.00");
+    expect(extracted.commercial.revision.quote).toBe("Two\u00a0revisions");
+    expect(create).toHaveBeenCalledTimes(1);
+    for (const field of [
+      ...extracted.terms,
+      extracted.commercial.price,
+      extracted.commercial.revision,
+    ])
+      expect(source[0].text.includes(field.quote!)).toBe(true);
+  });
+  it("repairs an incorrect page reference only when the source page is unambiguous", async () => {
+    configured();
+    const wrongId = crypto.randomUUID();
+    const output = result();
+    output.terms[0].span_id = wrongId;
+    create.mockResolvedValue({
+      status: "completed",
+      output_text: JSON.stringify(output),
+    });
+    const source = [
+      ...spans,
+      { ...spans[0], id: wrongId, text: "Signatures only." },
+    ];
+    expect((await extractAgreement(source)).terms[0].span_id).toBe(spans[0].id);
+    const duplicated = [...spans, { ...spans[0], id: crypto.randomUUID() }];
+    await expect(extractAgreement(duplicated)).rejects.toMatchObject({
+      code: "GEMINI_INVALID_EVIDENCE",
+    });
+  });
+  it("re-extracts once after invalid evidence and accepts only corrected source quotes", async () => {
+    configured();
+    const bad = result();
+    bad.terms[0].quote = "A fabricated deliverable";
+    create
+      .mockResolvedValueOnce({
+        status: "completed",
+        output_text: JSON.stringify(bad),
+      })
+      .mockResolvedValueOnce({
+        status: "completed",
+        output_text: JSON.stringify(result()),
+      });
+    expect((await extractAgreement(spans)).terms[0].quote).toBe(
+      "Landing page included",
+    );
+    expect(create).toHaveBeenCalledTimes(2);
+    expect(create.mock.calls[1][0].input).toBe(JSON.stringify(spans));
   });
   it("refuses a missing extraction configuration", async () => {
     vi.stubEnv("GEMINI_API_KEY", "");
