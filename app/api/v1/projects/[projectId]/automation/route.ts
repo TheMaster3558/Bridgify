@@ -27,9 +27,6 @@ export async function GET(request: Request, context: Context) {
       "automation_jobs",
       "automation_requests",
       "automation_rounds",
-      "automation_round_members",
-      "automation_revision_refunds",
-      "automation_round_refunds",
       "automation_runtime_health",
     ] as const;
     const values = await Promise.all(
@@ -48,6 +45,7 @@ export async function GET(request: Request, context: Context) {
           "automation_outbox",
           "automation_jobs",
           "automation_requests",
+          "automation_rounds",
         ].includes(t)
           ? page * 100
           : 0;
@@ -67,6 +65,10 @@ export async function GET(request: Request, context: Context) {
     const accounting = checked(
       await client.rpc("automation_accounting", { p_project: id }),
     );
+    const requests=checked(values[tables.indexOf("automation_requests")])??[];
+    const rounds=checked(values[tables.indexOf("automation_rounds")])??[];
+    const annotations=checked(await client.rpc("automation_history_annotations",{p_project:id,p_requests:requests.map((r:{id:string})=>r.id),p_rounds:rounds.map((r:{id:string})=>r.id)}));
+    const roundPage=annotations.openRound&&!rounds.some((r:{id:string})=>r.id===annotations.openRound.id)?[annotations.openRound,...rounds]:rounds;
     return {
       project,
       page,
@@ -75,6 +77,8 @@ export async function GET(request: Request, context: Context) {
       scope,
       fetchedAt: new Date().toISOString(),
       ...Object.fromEntries(tables.map((t, i) => [t, checked(values[i])])),
+      automation_rounds:roundPage,roundCounts:annotations.roundCounts,
+      automation_round_members:annotations.members,automation_revision_refunds:annotations.requestRefunds,automation_round_refunds:annotations.roundRefunds,
     };
   });
 }

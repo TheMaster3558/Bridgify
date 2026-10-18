@@ -1,4 +1,4 @@
-import { useId, useState, type CSSProperties, type FormEvent, type ReactNode } from "react";
+import { useState, useId, type CSSProperties, type ReactNode } from "react";
 import { Reveal } from "./motion";
 import { ArrowLink, Kicker, Pill, SIGN_UP_HREF, tones } from "./ui";
 
@@ -578,7 +578,7 @@ export function EnterpriseBuilder() {
               </li>
             ))}
           </ul>
-          <QuoteForm summary={summary} />
+          <QuoteForm />
           <p className="mt-4 font-sohne text-[12px] leading-[1.5] text-white/45">
             This is an estimate, not an offer. Final pricing is confirmed in your quote. Planned add-ons are billed only once they’re available.
           </p>
@@ -588,54 +588,8 @@ export function EnterpriseBuilder() {
   );
 }
 
-function QuoteForm({ summary }: { summary: string[] }) {
-  const [email, setEmail] = useState("");
-  const [state, setState] = useState<"idle" | "invalid" | "done">("idle");
-  const id = useId();
-
-  function onSubmit(event: FormEvent) {
-    event.preventDefault();
-    if (!/^\S+@\S+\.\S+$/.test(email.trim())) {
-      setState("invalid");
-      return;
-    }
-    // TODO: send `email` and `summary` to the sales/quote backend. Nothing is stored or sent yet.
-    void summary;
-    setState("done");
-  }
-
-  if (state === "done") {
-    return (
-      <p className="rise mt-6 rounded-[14px] bg-white/10 px-4 py-3 font-sohne text-[14px] text-white" role="status">
-        Thanks. We’ll follow up at <span className="font-medium">{email.trim()}</span> with a quote for this setup.
-      </p>
-    );
-  }
-
-  return (
-    <form onSubmit={onSubmit} noValidate className="mt-6 flex flex-col gap-2">
-      <label htmlFor={id} className="font-sohne text-[13px] text-white/70">
-        Work email
-      </label>
-      <input
-        id={id}
-        type="email"
-        autoComplete="email"
-        placeholder="you@agency.com"
-        value={email}
-        aria-invalid={state === "invalid"}
-        onChange={(e) => {
-          setEmail(e.target.value);
-          if (state === "invalid") setState("idle");
-        }}
-        className="h-11 rounded-full bg-white px-5 font-sohne text-[15px] text-ink-black outline-none placeholder:text-smoke-gray focus-visible:ring-2 focus-visible:ring-brand-tint"
-      />
-      {state === "invalid" ? <p className="font-sohne text-[13px] text-[#ffb4a8]">Enter a valid email address.</p> : null}
-      <button type="submit" className="h-11 rounded-full bg-brand-tint font-sohne text-[15px] font-[430] text-brand transition-colors hover:bg-white">
-        Request a quote
-      </button>
-    </form>
-  );
+function QuoteForm() {
+  return <p className="mt-6 text-sm" role="status">Quote requests and paid plans are not available in this version.</p>;
 }
 
 /* ---------- Pricing FAQ ---------- */

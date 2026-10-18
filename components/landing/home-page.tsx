@@ -4,7 +4,6 @@ import { useRef, type CSSProperties, type PointerEvent, type ReactNode } from "r
 import { DashboardPreview, HeroChat, ProposalPreview, Simulator } from "./artifacts";
 import { SiteFooter, SiteHeader, SkipLink } from "./layout";
 import { Parallax, Reveal, useHeroDrift } from "./motion";
-import { PricingSummary } from "./pricing";
 import { LoopFlow, Marquee, MissionText } from "./story";
 import { ArrowLink, Container, FilledButton, GhostButton, Kicker, Pill, SIGN_IN_HREF, SIGN_UP_HREF, tones } from "./ui";
 
@@ -106,7 +105,7 @@ const faqs = [
   },
   {
     q: "Can a client approve extra work by texting “yes”?",
-    a: "No. A “yes” in the chat points them to the approval page. There, the designated approver signs in and approves the exact proposal revision. Old or superseded versions can’t be approved.",
+    a: "Clients discuss proposals in iMessage. The owner records evidence that the client approved the exact frozen revision before scope, tasks and value update. Ambiguous replies require clarification.",
   },
   {
     q: "What happens when a proposal is approved?",
@@ -336,7 +335,7 @@ export function HomePage() {
                 <ol className="mt-8 flex flex-col gap-4">
                   {[
                     "You review the terms and the exact message before anything is sent.",
-                    "The designated approver signs in to see the terms. Forwarding the link doesn’t pass on the right to approve.",
+                    "Clients receive the exact proposal terms in iMessage. The owner records the client’s response against that revision.",
                     "Changing the terms creates a new version. Old versions can no longer be approved.",
                     "On approval, the scope, tasks and approved value update together, exactly once.",
                   ].map((line, i) => (
@@ -394,13 +393,6 @@ export function HomePage() {
                 </p>
               </article>
             </Reveal>
-          </Container>
-        </section>
-
-        {/* Pricing */}
-        <section id="pricing" className="bg-paper-white pt-8 pb-24">
-          <Container>
-            <PricingSummary />
           </Container>
         </section>
 

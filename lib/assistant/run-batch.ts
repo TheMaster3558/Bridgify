@@ -1,4 +1,5 @@
 import "server-only";
+import { recoverProductMaintenance } from "./product-maintenance";
 import { getDatabase } from "../db/postgres";
 import {
   createAutomationDelivery,
@@ -17,6 +18,7 @@ export async function runAutomationBatch(
     throw new Error("automation_worker_disabled");
   const deadline = Date.now() + 54_000;
   const database = getDatabase();
+  if(!projectId && await recoverProductMaintenance(database)) return {processed:0,sent:0};
   const { projectId: instanceId } = readSpectrumCredentials();
   const candidates = projectId
     ? [projectId]
