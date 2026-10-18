@@ -1181,3 +1181,27 @@ test("resume creates a fresh cutoff and holds old queued work for owner review",
  assert.equal(await count("automation_jobs","state='queued'"),0);assert.equal(await count("owner_decisions"),1);
  assert.equal(await count("project_tasks"),0);
 });
+
+const proposalTerms={title:"Additional landing page",explanation:"Add the agreed campaign page",lines:[{key:"landing",title:"Campaign landing page",acceptance_criteria:"Matches the supplied wording"}],exclusions:["No checkout"],amount_cents:12500,change_due_date:false,new_due_date:null,allowance_delta:0,expires_at:null};
+async function proposalCommand(action:string,terms:unknown=proposalTerms,id:string|null=null,revision:number|null=null,version:number|null=null,key=randomUUID()){
+ return asOwner(()=>pg.query<{result:{proposal_id:string;revision:number;version:number;terms_hash:string;frozen_text:string;status:string}}>("select owner_proposal_command($1,$2,$3,$4,$5,$6,$7) result",[project,id,revision,version,action,JSON.stringify(terms),key]));
+}
+test("proposal sending freezes exact terms, queues once and never creates work before approval",async()=>{
+ const draft=(await proposalCommand("create")).rows[0].result;
+ const key=randomUUID();const sent=(await proposalCommand("send",{},draft.proposal_id,1,1,key)).rows[0].result;
+ assert.equal(sent.status,"awaiting_client");assert.match(sent.terms_hash,/^[a-f0-9]{64}$/);assert.match(sent.frozen_text,/USD 125.00/);
+ assert.deepEqual((await proposalCommand("send",{},draft.proposal_id,1,1,key)).rows[0].result,sent);
+ assert.equal(await count("automation_outbox","purpose like 'proposal:%'"),1);assert.equal(await count("project_tasks"),0);
+ await assert.rejects(proposalCommand("draft",{...proposalTerms,amount_cents:0},draft.proposal_id,1,sent.version),/immutable/);
+ const next=(await proposalCommand("replace",{},sent.proposal_id,1,sent.version)).rows[0].result;
+ assert.equal(next.revision,2);assert.equal(next.status,"draft");assert.equal(await count("proposal_revisions","status='superseded'"),1);
+ assert.equal(await count("automation_outbox","state='cancelled' and purpose like 'proposal:%'"),1);
+ await assert.rejects(proposalCommand("send",{},sent.proposal_id,1,sent.version),/changed/);
+});
+test("proposal mutations reject another owner and stale drafts",async()=>{
+ const draft=(await proposalCommand("create")).rows[0].result;
+ await proposalCommand("draft",proposalTerms,draft.proposal_id,1,1);
+ await assert.rejects(proposalCommand("draft",proposalTerms,draft.proposal_id,1,1),/changed/);
+ await pg.query("select set_config('request.jwt.claim.sub',$1,false)",[randomUUID()]);
+ await assert.rejects(pg.query("select owner_proposal_command($1,$2,1,2,'withdraw','{}',$3)",[project,draft.proposal_id,randomUUID()]),/insufficient_privilege/);
+});

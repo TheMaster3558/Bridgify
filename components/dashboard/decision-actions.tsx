@@ -84,6 +84,7 @@ export function DecisionActions({
         <h3 className="text-base font-semibold tracking-tight">
           Your decision
         </h3>
+        {decision.automation_request_id && <Link className="underline" href={`/app/projects/${decision.project_id}/proposals/new?request=${decision.automation_request_id}`}>Prepare a proposal for this request</Link>}
         {decision.task_change_kind && (
           <Link
             href={`/app/projects/${decision.project_id}/automation`}

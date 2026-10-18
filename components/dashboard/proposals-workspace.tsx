@@ -225,7 +225,7 @@ function ProposalDetail({
     { label: "Exclusions", items: textList(terms.exclusions) },
     { label: "Dependencies", items: textList(terms.dependencies) },
   ];
-  const projectProposals = `/app/projects/${proposal.project_id}/proposals`;
+  const projectProposals = `/app/projects/${proposal.project_id}/proposals/${proposal.proposal_id}?revision=${proposal.revision}`;
 
   return (
     <>
@@ -406,7 +406,7 @@ function ProposalDetail({
         </details>
 
         <p className="text-xs text-neutral-500 dark:text-neutral-400">
-          Delivery state and sent time are not stored yet.
+          Open the revision in its project to inspect delivery and recorded client decisions.
         </p>
       </div>
 
