@@ -15,6 +15,8 @@ import {
   type InterpretationContext,
 } from "../ai/interpret-messages";
 import type { PhotonSendResult } from "../photon/spectrum";
+import { processingErrorCode } from "./processing-errors";
+import { isCourtesyOnly } from "./courtesy";
 
 type Job = {
   id: string;
@@ -142,6 +144,7 @@ export function createProjectAutomationInbox(database: Database): InboxWriter {
             (event.contentType && event.contentType !== "text")
           )
             disposition = "unsupported_input";
+          else if (isCourtesyOnly(event.text)) disposition = "courtesy_context";
           else if (!isOpen(project)) disposition = "policy_denied";
           else disposition = "pending_analysis";
         }
@@ -181,7 +184,7 @@ export function createProjectAutomationInbox(database: Database): InboxWriter {
           );
         }
         let messageId: string | null = null;
-        if (["pending_analysis", "outbound_context"].includes(disposition)) {
+        if (["pending_analysis", "outbound_context", "courtesy_context"].includes(disposition)) {
           // Message identity deduplicates webhook delivery and authenticated history sync.
           const saved = await sql.query<{ id: string }>(
             `insert into automation_messages(project_id,event_id,provider_guid,role,text,occurred_at)
@@ -225,7 +228,10 @@ export function createProjectAutomationInbox(database: Database): InboxWriter {
   };
 }
 
-async function loadSnapshot(sql: Sql, job: Job): Promise<Snapshot> {
+export async function loadAutomationSnapshot(
+  sql: Sql,
+  job: Job,
+): Promise<Snapshot> {
   const project = (
     await sql.query<Project>(
       `select p.*,b.instance_id,b.chat_guid,b.hold_reason,b.verified_at,b.test_state,b.disclosed_message_guid
@@ -273,15 +279,25 @@ async function loadSnapshot(sql: Sql, job: Job): Promise<Snapshot> {
     )
   ).rows;
   const watermark = hash({ project, pending, tasks, scope, messages });
+  const requestStatuses = (
+    await sql.query<
+      NonNullable<InterpretationContext["requestStatuses"]>[number]
+    >(
+      `select r.id,r.summary as title,r.state,t.status as "taskStatus" from automation_requests r
+      left join project_tasks t on t.id=r.task_id and t.project_id=r.project_id
+      where r.project_id=$1 order by r.updated_at desc,r.id limit 20`,
+      [project.id],
+    )
+  ).rows;
   return {
     project,
     pending,
-    watermark,
+    watermark: hash({ watermark, requestStatuses }),
     context: {
       projectId: project.id,
       scopeVersion: project.scope_version,
       policyVersion: project.policy_version,
-      inputWatermark: watermark,
+      inputWatermark: hash({ watermark, requestStatuses }),
       policyExclusions: policy.exclusions,
       messages: messages.map((m) => ({
         revisionId: m.id,
@@ -310,6 +326,7 @@ async function loadSnapshot(sql: Sql, job: Job): Promise<Snapshot> {
         }).slice(0, 1000),
       })),
       tasks,
+      requestStatuses,
     },
   };
 }
@@ -411,6 +428,9 @@ async function applyAnalysis(
     ) {
       if (policy.replies.status_questions) {
         const task = snapshot.context.tasks.find((t) => t.id === intent.taskId);
+        const request = snapshot.context.requestStatuses?.find(
+          (r) => r.id === intent.statusRequestId,
+        );
         const statuses = {
           ready: "queued",
           in_progress: "in progress",
@@ -418,10 +438,20 @@ async function applyAnalysis(
           done: "completed",
           cancelled: "cancelled",
         };
+        const requestStates = {
+          owner_review:
+            "awaiting the project owner's review; it has not been accepted yet",
+          awaiting_details:
+            "waiting for the requested details before it can proceed",
+          accepted: "approved and queued",
+          closed: "closed after owner review",
+        };
         replies.push(
           task
             ? `${task.title.slice(0, 160)}: ${statuses[task.status]}.`
-            : "I couldn't identify a matching task. Which task are you asking about?",
+            : request
+              ? `${request.title.slice(0, 160)}: ${request.state === "accepted" && request.taskStatus ? statuses[request.taskStatus] : requestStates[request.state]}.`
+              : "Which request or task would you like an update on? I can check its saved project status.",
         );
       }
       continue;
@@ -555,8 +585,8 @@ async function applyAnalysis(
         reply: acknowledgment,
       });
       await sql.query(
-        "update owner_decisions set automation_request_id=$2 where id=$1",
-        [decision, id],
+        "update owner_decisions set automation_request_id=$2,source_job_id=$3 where id=$1",
+        [decision, id, job.id],
       );
       await sql.query(
         "update automation_requests set state='owner_review',decision_id=$2 where id=$1",
@@ -649,9 +679,24 @@ export function createAutomationProcessor(
       });
       if (!job) return false;
       try {
+        // Also cover acknowledgments queued before the intake rule was deployed.
+        // No model call, task, review, or reply is needed for a standalone thanks.
+        const source = job.message_id && !job.review_reason
+          ? (await database.query<{ text: string }>(
+              "select text from automation_messages where id=$1 and project_id=$2 and role='requester'",
+              [job.message_id, job.project_id],
+            )).rows[0]
+          : null;
+        if (source && isCourtesyOnly(source.text)) {
+          await database.query(
+            "update automation_jobs set state='done',lease_until=null,error_code=null,analysis=$3,prompt_version='courtesy-v1' where id=$1 and state='running' and lease_token=$2 and lease_until>now()",
+            [job.id, job.lease_token, JSON.stringify({ intents: [] })],
+          );
+          return true;
+        }
         if (job.review_reason || job.attempts > 3)
           throw new Error("owner_review_required");
-        const snapshot = await loadSnapshot(database, job);
+        const snapshot = await loadAutomationSnapshot(database, job);
         const result = await interpreter.interpret(snapshot.context);
         const analysis = validateInterpretation(
           result.interpretation,
@@ -669,7 +714,7 @@ export function createAutomationProcessor(
             )
           ).rows[0];
           if (!live) return;
-          const current = await loadSnapshot(sql, job);
+          const current = await loadAutomationSnapshot(sql, job);
           if (current.watermark !== snapshot.watermark)
             throw new Error("stale_snapshot");
           await applyAnalysis(sql, job, current, analysis);
@@ -696,29 +741,42 @@ export function createAutomationProcessor(
             )
           ).rows[0];
           if (!live) return;
-          const code =
-            error instanceof Error && error.message === "stale_snapshot"
-              ? "stale_snapshot"
-              : "processing_failed";
+          const code = processingErrorCode(error);
           if (!job.review_reason && job.attempts < 3) {
             await sql.query(
               "update automation_jobs set state='queued',lease_until=null,error_code=$2,available_at=now()+interval '10 seconds' where id=$1",
               [job.id, code],
             );
           } else {
-            const event = (
-              await sql.query<{ event: NormalizedEvent }>(
-                "select event from automation_events where id=$1",
-                [job.event_id],
+            await sql.query("select ensure_failed_request_review($1,$2)", [
+              job.id,
+              code,
+            ]);
+            const project = (
+              await sql.query<Project>(
+                `select p.*,b.instance_id,b.chat_guid,b.hold_reason,b.verified_at,b.test_state,b.disclosed_message_guid
+              from projects p join chat_bindings b on b.project_id=p.id where p.id=$1`,
+                [job.project_id],
               )
-            ).rows[0].event;
-            await createDecision(sql, {
-              projectId: job.project_id,
-              id: job.id,
-              summary: "Message requires owner review",
-              reason: job.review_reason ?? "failed_processing",
-              source: event.text ?? "Non-text or membership event",
-            });
+            ).rows[0];
+            const policy = policySchema.safeParse(project?.policy);
+            if (
+              project &&
+              job.message_id &&
+              policy.success &&
+              policy.data.replies.review_acknowledgments
+            ) {
+              await sql.query("savepoint fallback_reply");
+              try {
+                await queueReply(sql, job, project, [
+                  "I've saved your request for the project owner's review. It hasn't been accepted yet.",
+                ]);
+              } catch {
+                await sql.query("rollback to savepoint fallback_reply");
+              } finally {
+                await sql.query("release savepoint fallback_reply");
+              }
+            }
             await sql.query(
               "update automation_jobs set state='failed',lease_until=null,error_code=$2 where id=$1",
               [job.id, code],

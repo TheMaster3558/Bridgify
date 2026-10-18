@@ -13,7 +13,7 @@ There are no seeded customer records or fabricated integrations.
    to `.env.local`, replacing its password placeholder. Keep your existing
    Supabase HTTPS URL and API keys. Never use `NEXT_PUBLIC_` for the Postgres URI.
 2. On an existing configured project database, run `npm run automation:install`.
-   This applies only `202610170010_project_automation.sql` and records its checksum
+   This applies the project automation and review recovery migrations and records their checksums
    without replaying the existing setup schema. For an empty Supabase project,
    apply the files in `supabase/migrations` in order using `db:migrate` with the
    environment loaded. The incompatible historical intake prototype is retained
@@ -30,6 +30,9 @@ There are no seeded customer records or fabricated integrations.
    processes jobs and submits queued replies through the real Spectrum adapter.
    It needs `SPECTRUM_PROJECT_ID`, `SPECTRUM_PROJECT_SECRET`, `GEMINI_API_KEY`,
    `GEMINI_MODEL`, and `DATABASE_URL`. The agreement worker remains separate.
+   `npm run photon:demo` is now a compatibility entry point for this same project
+   facilitator, rather than a separate general chatbot. Run one worker command;
+   restart an existing worker after code changes.
 
 For webhook deployments, set `AUTOMATION_INTAKE=webhook` and the signed Spectrum
 configuration in `.env.example`. The existing Photon webhook route verifies raw
@@ -49,18 +52,28 @@ must equal the Spectrum project used by the sender. Unsigned payloads are reject
   enabled for existing projects.
 - Project creation includes independent controls for status answers, clarification
   questions and review acknowledgments. Earlier policies default these to enabled.
-  Task acceptance always queues a confirmation. Casual messages stay quiet.
+  Task acceptance always queues a confirmation. Standalone thanks and gratitude
+  emoji stay in conversation history without invoking Gemini or queuing replies.
+  Messages combining thanks with a request still follow the normal workflow.
 - Clarifications retain their original request and source IDs, with at most two
   questions. No revision is used while waiting. Ambiguous matching requires review.
-- Status answers use stored task titles and statuses. Owners update task status
+- Status answers use stored request states as well as task titles and statuses,
+  including requests waiting for owner approval or missing details. Owners update task status
   from the task detail panel. Private notes, decision explanations and proposal
   terms are excluded from model context and status replies.
 - Each accepted individual request uses one revision in an immutable accounting
   ledger. Task cancellation does not silently refund it. Contractual rounds remain
   under manual accounting. Owner overrides are explicit and audited.
-- Owners can accept, decline or dismiss review requests, record their reason,
-  and optionally queue an actual client reply. Message identity and delivery
+- Owners can accept, decline, dismiss or delete review items. Approval accepts an
+  editable task title and an optional private decision reason, saves a real task, accounts
+  for the revision and queues a confirmation in the same transaction. An optional
+  owner-written reply replaces the default confirmation. Deletion removes an item
+  from Needs Attention while retaining source and audit history. Message identity and delivery
   reviews must be checked in the conversation rather than accepted as work.
+  When the reason is blank, the audit records the owner's action automatically.
+- Failed interpretation retains the verified original text as an approvable
+  request. Owners can explicitly authorize that work after reviewing the source;
+  no AI-generated values are invented to bypass failed processing.
 
 ## Reliability and verification
 

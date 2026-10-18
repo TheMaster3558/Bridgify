@@ -19,23 +19,28 @@ async function main() {
       );
       await client.query(`create table if not exists public.bridgify_migrations(
         name text primary key,sha256 text not null,applied_at timestamptz not null default now())`);
-      const name = "202610170010_project_automation.sql";
-      const sql = await readFile(`supabase/migrations/${name}`, "utf8");
-      const checksum = createHash("sha256").update(sql).digest("hex");
-      const prior = (
-        await client.query(
-          "select sha256 from public.bridgify_migrations where name=$1",
-          [name],
-        )
-      ).rows[0];
-      if (prior && prior.sha256 !== checksum)
-        throw new Error("migration_changed");
-      if (!prior) {
-        await client.query(sql);
-        await client.query(
-          "insert into public.bridgify_migrations(name,sha256) values($1,$2)",
-          [name, checksum],
-        );
+      for (const name of [
+        "202610170010_project_automation.sql",
+        "202610170011_automation_review_recovery.sql",
+        "202610170012_optional_review_notes.sql",
+      ]) {
+        const sql = await readFile(`supabase/migrations/${name}`, "utf8");
+        const checksum = createHash("sha256").update(sql).digest("hex");
+        const prior = (
+          await client.query(
+            "select sha256 from public.bridgify_migrations where name=$1",
+            [name],
+          )
+        ).rows[0];
+        if (prior && prior.sha256 !== checksum)
+          throw new Error("migration_changed");
+        if (!prior) {
+          await client.query(sql);
+          await client.query(
+            "insert into public.bridgify_migrations(name,sha256) values($1,$2)",
+            [name, checksum],
+          );
+        }
       }
       await client.query("commit");
       console.log(

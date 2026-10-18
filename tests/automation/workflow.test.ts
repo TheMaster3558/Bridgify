@@ -13,6 +13,10 @@ import type {
   Interpretation,
   InterpretationContext,
 } from "../../lib/ai/interpret-messages";
+import {
+  processingErrorCode,
+  processingErrorLabel,
+} from "../../lib/assistant/processing-errors";
 
 // Synthetic test conversations exercise the real migrations and transactions.
 // Production code never imports these fixtures or fabricates customer data.
@@ -231,6 +235,43 @@ test("provider replay and authenticated history import deduplicate at message id
   assert.equal(await count("automation_jobs"), 1);
   await assert.rejects(message("different text", values), /identity_conflict/);
 });
+test("standalone thanks stay in history without model calls, tasks, reviews or replies", async () => {
+  for (const text of ["thanks", "Thanks!", "Thank you so much 🙏", "Great, thanks for the update!", "👍"]) {
+    await message(text);
+  }
+  assert.equal(await count("automation_messages"), 5);
+  assert.equal(await count("automation_events", "disposition='courtesy_context'"), 5);
+  assert.equal(await processor(() => { throw new Error("Must not call Gemini"); }).once(), false);
+  assert.equal(await count("project_tasks"), 0);
+  assert.equal(await count("owner_decisions"), 0);
+  assert.equal(await count("automation_outbox"), 0);
+});
+test("courtesy jobs queued before deployment finish silently even if Gemini is unavailable", async () => {
+  await message("Thanks!");
+  await pg.exec(`insert into automation_jobs(project_id,event_id,message_id)
+    select project_id,event_id,id from automation_messages`);
+  assert.equal(await processor(() => { throw new Error("Must not call Gemini"); }).once(), true);
+  assert.equal(await count("automation_jobs", "state='done' and prompt_version='courtesy-v1'"), 1);
+  assert.equal(await count("automation_outbox"), 0);
+  assert.equal(await count("owner_decisions"), 0);
+});
+test("thanks with a request still creates one task and sends exactly one workflow update across replay", async () => {
+  const identity = {messageGuid: randomUUID(), occurredAt: new Date().toISOString()};
+  await message("Thanks, can you make the heading green?", identity);
+  await processor().once();
+  await message("Thanks, can you make the heading green?", identity);
+  assert.equal(await processor().once(), false);
+  let sends = 0;
+  const delivery = createAutomationDelivery(database, async () => {
+    sends++;
+    return {state: "sent", messageId: "one-workflow-confirmation"};
+  }, instance);
+  assert.equal(await delivery.once(), true);
+  assert.equal(await delivery.once(), false);
+  assert.equal(sends, 1);
+  assert.equal(await count("project_tasks"), 1);
+  assert.equal(await count("automation_outbox", "state='sent' and text like '%Accepted%'"), 1);
+});
 test("clarification is connected to its existing request and consumes allowance only on acceptance", async () => {
   await message("Change the heading color");
   await processor((c) => ({
@@ -333,7 +374,7 @@ test("mixed intents produce one clear reply; status comes from real tasks; casua
   ).rows[0].text;
   assert.match(reply, /Accepted/);
   assert.match(reply, /review queue/);
-  assert.match(reply, /couldn't identify/);
+  assert.match(reply, /Which request or task/);
   await pg.exec("update project_tasks set status='done'");
   await message("Is the heading finished?");
   await processor((c) => ({
@@ -612,6 +653,24 @@ test("owner resolves review once, authorizes a task and queues a separate resolu
   assert.equal(await count("automation_outbox"), 2);
   assert.equal(await count("owner_decisions", "status='resolved'"), 1);
 });
+test("approval without a private note commits the task, revision, audit and one idempotent confirmation", async () => {
+  await changePolicy({ mode: "review_only" });
+  await message();
+  await processor().once();
+  const decision = (await pg.query<{ id: string }>("select id from owner_decisions")).rows[0].id;
+  const key = randomUUID();
+  await asOwner(async () => {
+    const run = () => pg.query("select resolve_automation_review($1,'approve','','',$2,null) result", [decision, key]);
+    const first = await run();
+    assert.deepEqual(await run(), first);
+  });
+  assert.equal(await count("project_tasks", "authorized_by='Owner approval: Accepted by owner'"), 1);
+  assert.equal(await count("automation_requests", "state='accepted' and task_id is not null"), 1);
+  assert.equal(await count("automation_revision_uses"), 1);
+  assert.equal(await count("owner_decisions", "status='resolved' and internal_note='Accepted by owner'"), 1);
+  assert.equal(await count("audit_events", "action='automation:review:approve' and details->>'note'='Accepted by owner'"), 1);
+  assert.equal(await count("automation_outbox", "purpose like 'resolution:%' and text like '%approved and added%'"), 1);
+});
 test("owner can decline without revision usage; another account cannot resolve a decision", async () => {
   await changePolicy({ mode: "review_only" });
   await message();
@@ -670,4 +729,140 @@ test("owner task status updates drive answers and reject stale edits without ref
   })).once();
   assert.equal(await count("automation_outbox", "text like '%completed%'"), 1);
   assert.equal(await count("automation_revision_uses"), 1);
+});
+
+test("failed AI interpretation retains an approvable request and precise safe diagnostics", async () => {
+  await message("Please change the heading to blue");
+  const failed = processor(async () => {
+    throw new Error("interpretation_requires_owner_review");
+  });
+  for (let i = 0; i < 3; i++) {
+    await pg.exec("update automation_jobs set available_at=now()");
+    await failed.once();
+  }
+  assert.equal(
+    await count(
+      "automation_jobs",
+      "state='failed' and error_code='interpretation_invalid'",
+    ),
+    1,
+  );
+  const decision = (
+    await pg.query<{
+      id: string;
+      automation_request_id: string;
+      source_job_id: string;
+    }>("select * from owner_decisions")
+  ).rows[0];
+  assert.ok(decision.automation_request_id);
+  assert.ok(decision.source_job_id);
+  await pg.query(
+    "select ensure_failed_request_review($1,'interpretation_invalid')",
+    [decision.source_job_id],
+  );
+  assert.equal(await count("automation_requests"), 1);
+  await asOwner(() =>
+    pg.query(
+      "select resolve_automation_review($1,'approve','I reviewed the source and authorize this change','',$2,'Change heading to blue')",
+      [decision.id, randomUUID()],
+    ),
+  );
+  assert.equal(
+    await count("project_tasks", "title='Change heading to blue'"),
+    1,
+  );
+  assert.equal(
+    await count(
+      "automation_outbox",
+      "purpose like 'resolution:%' and text like '%has been approved%'",
+    ),
+    1,
+  );
+});
+
+test("delete removes the review without erasing its source or authorizing a task", async () => {
+  await changePolicy({ mode: "review_only" });
+  await message();
+  await processor().once();
+  const decision = (
+    await pg.query<{ id: string }>("select id from owner_decisions")
+  ).rows[0].id;
+  const key = randomUUID();
+  await asOwner(async () => {
+    const args = [decision, key];
+    const first = await pg.query(
+      "select resolve_automation_review($1,'delete','','',$2,null) result",
+      args,
+    );
+    assert.deepEqual(
+      await pg.query(
+        "select resolve_automation_review($1,'delete','','',$2,null) result",
+        args,
+      ),
+      first,
+    );
+  });
+  assert.equal(
+    await count(
+      "owner_decisions",
+      "deleted_at is not null and status='dismissed'",
+    ),
+    1,
+  );
+  assert.equal(await count("automation_requests", "state='closed'"), 1);
+  assert.equal(await count("automation_messages"), 1);
+  assert.equal(await count("project_tasks"), 0);
+  assert.equal(
+    await count("audit_events", "action='automation:review:delete'"),
+    1,
+  );
+});
+
+test("manual review-only policy still understands color requests with empty permissions", async () => {
+  await changePolicy({ mode: "review_only", operations: [] });
+  await message();
+  await processor((c) => ({
+    intents: [
+      intent(c, {
+        payload: { color: "blue", locator: "heading", replacementText: null },
+      }),
+    ],
+  })).once();
+  assert.equal(await count("automation_jobs", "state='done'"), 1);
+  assert.equal(await count("owner_decisions", "reason='policy_denied'"), 1);
+  assert.equal(await count("project_tasks"), 0);
+  await message("What is happening with the heading?");
+  await processor((c) => ({
+    intents: [
+      intent(c, {
+        intent: "status_question",
+        operation: null,
+        targetId: null,
+        statusRequestId: c.requestStatuses![0].id,
+      }),
+    ],
+  })).once();
+  assert.equal(
+    await count(
+      "automation_outbox",
+      "text like '%awaiting the project owner%'",
+    ),
+    1,
+  );
+});
+
+test("diagnostics distinguish provider setup from invalid AI output without leaking content", () => {
+  assert.equal(
+    processingErrorCode({ status: 401, message: "SECRET" }),
+    "gemini_authentication_failed",
+  );
+  assert.equal(
+    processingErrorCode({ status: 429, message: "SECRET" }),
+    "gemini_rate_limited",
+  );
+  assert.equal(
+    processingErrorCode(new Error("interpretation_requires_owner_review")),
+    "interpretation_invalid",
+  );
+  assert.ok(!processingErrorLabel("SECRET").includes("SECRET"));
 });
