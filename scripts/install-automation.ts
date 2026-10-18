@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import { Pool } from "pg";
 
 // Existing projects may have been provisioned through the Supabase SQL editor
@@ -28,6 +28,7 @@ async function main() {
         "202610180015_automation_lifecycle.sql",
         "202610180016_chat_connection_conflicts.sql",
         "202610180017_guidance_automation_policy.sql",
+        ...(await readdir("supabase/migrations")).filter(name=>name.endsWith(".sql")&&name>="202610190018").sort(),
       ]) {
         const sql = await readFile(`supabase/migrations/${name}`, "utf8");
         const checksum = createHash("sha256").update(sql).digest("hex");

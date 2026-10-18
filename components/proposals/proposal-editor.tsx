@@ -1,27 +1,358 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { proposalTermsSchema,type ProposalTerms } from "@/lib/proposals/schema";
-type RecordType={proposal_id:string;revision:number;version:number;status:string;shared_terms:unknown;terms_hash?:string|null;frozen_text?:string|null};
-export function ProposalEditor({projectId,proposal,sourceRequestId,sourceTitle,baselineTerms=[]}:{projectId:string;proposal?:RecordType;sourceRequestId?:string;sourceTitle?:string;baselineTerms?:string[]}){
- const router=useRouter();const parsed=proposalTermsSchema.safeParse(proposal?.shared_terms);
- const [terms,setTerms]=useState<ProposalTerms>(parsed.success?parsed.data:{title:sourceTitle??"",explanation:"",lines:[{key:crypto.randomUUID(),title:sourceTitle??"",acceptance_criteria:""}],exclusions:[],superseded_terms:[],amount_cents:0,change_due_date:false,new_due_date:null,allowance_delta:0,expires_at:null,source_request_id:sourceRequestId??null});
- const [error,setError]=useState("");const [busy,setBusy]=useState(false);const [key,setKey]=useState(()=>crypto.randomUUID());
- const edit=(patch:Partial<ProposalTerms>)=>{setTerms(t=>({...t,...patch}));setKey(crypto.randomUUID());};
- async function act(action:string){setBusy(true);setError("");try{const r=await fetch(proposal?`/api/v1/proposals/${proposal.proposal_id}`:`/api/v1/projects/${projectId}/proposals`,{method:"POST",headers:{"Content-Type":"application/json","Idempotency-Key":key},body:JSON.stringify(proposal?{action,revision:proposal.revision,expectedVersion:proposal.version,...(action==="draft"?{terms}:{} )}:terms)});const v=await r.json();if(!r.ok)throw new Error(v.error?.message??"Proposal could not be saved");setKey(crypto.randomUUID());router.push(`/app/projects/${projectId}/proposals/${v.data.proposal_id}?revision=${v.data.revision}`);router.refresh();}catch(e){setError(e instanceof Error?e.message:"Proposal unavailable");}finally{setBusy(false);}}
- const field="rounded border bg-background p-2";
- return <section className="grid gap-4 rounded border bg-card p-4">{(!proposal||proposal.status==="draft")?<form className="grid gap-3" onSubmit={e=>{e.preventDefault();void act(proposal?"draft":"create");}}>
- <label className="grid gap-1">Title<input className={field} value={terms.title} maxLength={200} required onChange={e=>edit({title:e.target.value})}/></label>
- <label className="grid gap-1">Client explanation<textarea className={field} value={terms.explanation} maxLength={4000} required onChange={e=>edit({explanation:e.target.value})}/></label>
- <h2 className="font-semibold">Deliverables</h2>{terms.lines.map((l,i)=><fieldset className="grid gap-2 rounded border p-3" key={l.key}><label className="grid gap-1">Deliverable {i+1}<input className={field} value={l.title} maxLength={500} required onChange={e=>edit({lines:terms.lines.map((x,n)=>n===i?{...x,title:e.target.value}:x)})}/></label><label className="grid gap-1">Acceptance criteria<textarea className={field} value={l.acceptance_criteria} maxLength={2000} onChange={e=>edit({lines:terms.lines.map((x,n)=>n===i?{...x,acceptance_criteria:e.target.value}:x)})}/></label>{terms.lines.length>1&&<button type="button" onClick={()=>edit({lines:terms.lines.filter((_,n)=>n!==i)})}>Remove deliverable</button>}</fieldset>)}
- <button type="button" disabled={terms.lines.length>=25} onClick={()=>edit({lines:[...terms.lines,{key:crypto.randomUUID(),title:"",acceptance_criteria:""}]})}>Add deliverable</button>
- <label className="grid gap-1">Exclusions (one per line)<textarea className={field} value={terms.exclusions.join("\n")} onChange={e=>edit({exclusions:e.target.value.split("\n").filter(Boolean)})}/></label>
- {!!baselineTerms.length&&<fieldset className="grid gap-2 rounded border p-3"><legend>Current agreement terms this proposal replaces (leave unchecked to retain)</legend>{baselineTerms.map((text,i)=><label className="flex gap-2 text-sm" key={i}><input type="checkbox" checked={terms.superseded_terms.includes(text)} onChange={e=>edit({superseded_terms:e.target.checked?[...terms.superseded_terms,text]:terms.superseded_terms.filter(t=>t!==text)})}/>{text}</label>)}</fieldset>}
- <label className="grid gap-1">Additional price (minor units, e.g. 12500 = 125.00)<input className={field} type="number" min={0} max={100000000} step={1} value={terms.amount_cents} required onChange={e=>edit({amount_cents:Number(e.target.value)})}/></label>
- <label className="flex gap-2"><input type="checkbox" checked={terms.change_due_date} onChange={e=>edit({change_due_date:e.target.checked})}/>Change the client-agreed deadline</label>{terms.change_due_date&&<label className="grid gap-1">New agreed date (blank removes the agreed date)<input className={field} type="date" value={terms.new_due_date??""} onChange={e=>edit({new_due_date:e.target.value||null})}/></label>}
- <label className="grid gap-1">Revision allowance adjustment<input className={field} type="number" min={-10000} max={10000} step={1} value={terms.allowance_delta} onChange={e=>edit({allowance_delta:Number(e.target.value)})}/></label><p className="text-sm">This changes entitlement after recorded approval; existing usage is preserved.</p>
- <label className="grid gap-1">Expires (UTC)<input className={field} type="datetime-local" value={terms.expires_at?.slice(0,16)??""} onChange={e=>edit({expires_at:e.target.value?new Date(e.target.value+"Z").toISOString():null})}/></label>
- <button className="w-fit rounded border px-4 py-2" disabled={busy}>{busy?"Saving…":"Save draft"}</button></form>:<><h2 className="font-semibold">Frozen client terms</h2><pre className="whitespace-pre-wrap rounded border p-4">{proposal.frozen_text??JSON.stringify(proposal.shared_terms,null,2)}</pre><p className="break-all text-xs">Terms hash: {proposal.terms_hash??"Historical revision; no approval hash recorded"}</p></>}
- {proposal&&<div className="flex flex-wrap gap-3">{proposal.status==="draft"&&<button className="rounded border p-2" disabled={busy} onClick={()=>void act("send")}>Send saved terms to client</button>}{["draft","awaiting_client","declined","changes_requested","expired"].includes(proposal.status)&&<><button className="rounded border p-2" disabled={busy} onClick={()=>void act("replace")}>Create replacement revision</button><button className="rounded border p-2" disabled={busy} onClick={()=>void act("withdraw")}>Withdraw proposal</button></>}</div>}
- {error&&<p role="alert">{error}</p>}</section>;
+import {
+  proposalTermsSchema,
+  type ProposalTerms,
+} from "@/lib/proposals/schema";
+type RecordType = {
+  proposal_id: string;
+  revision: number;
+  version: number;
+  status: string;
+  shared_terms: unknown;
+  terms_hash?: string | null;
+  frozen_text?: string | null;
+};
+export function ProposalEditor({
+  projectId,
+  proposal,
+  sourceRequestId,
+  sourceTitle,
+  baselineTerms = [],
+}: {
+  projectId: string;
+  proposal?: RecordType;
+  sourceRequestId?: string;
+  sourceTitle?: string;
+  baselineTerms?: string[];
+}) {
+  const router = useRouter();
+  const parsed = proposalTermsSchema.safeParse(proposal?.shared_terms);
+  const [terms, setTerms] = useState<ProposalTerms>(
+    parsed.success
+      ? parsed.data
+      : {
+          title: sourceTitle ?? "",
+          explanation: "",
+          lines: [
+            {
+              key: crypto.randomUUID(),
+              title: sourceTitle ?? "",
+              acceptance_criteria: "",
+            },
+          ],
+          exclusions: [],
+          superseded_terms: [],
+          amount_cents: 0,
+          change_due_date: false,
+          new_due_date: null,
+          allowance_delta: 0,
+          expires_at: null,
+          source_request_id: sourceRequestId ?? null,
+        },
+  );
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [key, setKey] = useState(() => crypto.randomUUID());
+  const edit = (patch: Partial<ProposalTerms>) => {
+    setTerms((t) => ({ ...t, ...patch }));
+    setKey(crypto.randomUUID());
+  };
+  async function act(action: string) {
+    setBusy(true);
+    setError("");
+    try {
+      const r = await fetch(
+        proposal
+          ? `/api/v1/proposals/${proposal.proposal_id}`
+          : `/api/v1/projects/${projectId}/proposals`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Idempotency-Key": key,
+          },
+          body: JSON.stringify(
+            proposal
+              ? {
+                  action,
+                  revision: proposal.revision,
+                  expectedVersion: proposal.version,
+                  ...(action === "draft" ? { terms } : {}),
+                }
+              : terms,
+          ),
+        },
+      );
+      const v = await r.json();
+      if (!r.ok)
+        throw new Error(v.error?.message ?? "Proposal could not be saved");
+      setKey(crypto.randomUUID());
+      router.push(
+        `/app/projects/${projectId}/proposals/${v.data.proposal_id}?revision=${v.data.revision}`,
+      );
+      router.refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Proposal unavailable");
+    } finally {
+      setBusy(false);
+    }
+  }
+  const field = "rounded border bg-background p-2";
+  return (
+    <section className="grid gap-4 rounded border bg-card p-4">
+      {!proposal || proposal.status === "draft" ? (
+        <form
+          className="grid gap-3"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void act(proposal ? "draft" : "create");
+          }}
+        >
+          <label className="grid gap-1">
+            Title
+            <input
+              className={field}
+              value={terms.title}
+              maxLength={200}
+              required
+              onChange={(e) => edit({ title: e.target.value })}
+            />
+          </label>
+          <label className="grid gap-1">
+            Client explanation
+            <textarea
+              className={field}
+              value={terms.explanation}
+              maxLength={4000}
+              required
+              onChange={(e) => edit({ explanation: e.target.value })}
+            />
+          </label>
+          <h2 className="font-semibold">Deliverables</h2>
+          {terms.lines.map((l, i) => (
+            <fieldset className="grid gap-2 rounded border p-3" key={l.key}>
+              <label className="grid gap-1">
+                Deliverable {i + 1}
+                <input
+                  className={field}
+                  value={l.title}
+                  maxLength={500}
+                  required
+                  onChange={(e) =>
+                    edit({
+                      lines: terms.lines.map((x, n) =>
+                        n === i ? { ...x, title: e.target.value } : x,
+                      ),
+                    })
+                  }
+                />
+              </label>
+              <label className="grid gap-1">
+                Acceptance criteria
+                <textarea
+                  className={field}
+                  value={l.acceptance_criteria}
+                  maxLength={2000}
+                  onChange={(e) =>
+                    edit({
+                      lines: terms.lines.map((x, n) =>
+                        n === i
+                          ? { ...x, acceptance_criteria: e.target.value }
+                          : x,
+                      ),
+                    })
+                  }
+                />
+              </label>
+              {terms.lines.length > 1 && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    edit({ lines: terms.lines.filter((_, n) => n !== i) })
+                  }
+                >
+                  Remove deliverable
+                </button>
+              )}
+            </fieldset>
+          ))}
+          <button
+            type="button"
+            disabled={terms.lines.length >= 25}
+            onClick={() =>
+              edit({
+                lines: [
+                  ...terms.lines,
+                  {
+                    key: crypto.randomUUID(),
+                    title: "",
+                    acceptance_criteria: "",
+                  },
+                ],
+              })
+            }
+          >
+            Add deliverable
+          </button>
+          <label className="grid gap-1">
+            Exclusions (one per line)
+            <textarea
+              className={field}
+              value={terms.exclusions.join("\n")}
+              onChange={(e) =>
+                edit({ exclusions: e.target.value.split("\n").filter(Boolean) })
+              }
+            />
+          </label>
+          {!!baselineTerms.length && (
+            <fieldset className="grid gap-2 rounded border p-3">
+              <legend>
+                Current agreement terms this proposal replaces (leave unchecked
+                to retain)
+              </legend>
+              {baselineTerms.map((text, i) => (
+                <label className="flex gap-2 text-sm" key={i}>
+                  <input
+                    type="checkbox"
+                    checked={terms.superseded_terms.includes(text)}
+                    onChange={(e) =>
+                      edit({
+                        superseded_terms: e.target.checked
+                          ? [...terms.superseded_terms, text]
+                          : terms.superseded_terms.filter((t) => t !== text),
+                      })
+                    }
+                  />
+                  {text}
+                </label>
+              ))}
+            </fieldset>
+          )}
+          <label className="grid gap-1">
+            Additional price (project currency)
+            <input
+              className={field}
+              type="number"
+              min={0}
+              max={1000000}
+              step={0.01}
+              value={terms.amount_cents / 100}
+              required
+              onChange={(e) =>
+                edit({ amount_cents: Math.round(Number(e.target.value) * 100) })
+              }
+            />
+          </label>
+          <label className="flex gap-2">
+            <input
+              type="checkbox"
+              checked={terms.change_due_date}
+              onChange={(e) => edit({ change_due_date: e.target.checked })}
+            />
+            Change the client-agreed deadline
+          </label>
+          {terms.change_due_date && (
+            <label className="grid gap-1">
+              New agreed date (blank removes the agreed date)
+              <input
+                className={field}
+                type="date"
+                value={terms.new_due_date ?? ""}
+                onChange={(e) => edit({ new_due_date: e.target.value || null })}
+              />
+            </label>
+          )}
+          <label className="grid gap-1">
+            Revision allowance adjustment
+            <input
+              className={field}
+              type="number"
+              min={-10000}
+              max={10000}
+              step={1}
+              value={terms.allowance_delta}
+              onChange={(e) =>
+                edit({ allowance_delta: Number(e.target.value) })
+              }
+            />
+          </label>
+          <p className="text-sm">
+            This changes entitlement after recorded approval; existing usage is
+            preserved.
+          </p>
+          <label className="grid gap-1">
+            Expires (UTC)
+            <input
+              className={field}
+              type="datetime-local"
+              value={terms.expires_at?.slice(0, 16) ?? ""}
+              onChange={(e) =>
+                edit({
+                  expires_at: e.target.value
+                    ? new Date(e.target.value + "Z").toISOString()
+                    : null,
+                })
+              }
+            />
+          </label>
+          <button className="w-fit rounded border px-4 py-2" disabled={busy}>
+            {busy ? "Saving…" : "Save draft"}
+          </button>
+        </form>
+      ) : (
+        <>
+          <h2 className="font-semibold">Frozen client terms</h2>
+          <pre className="whitespace-pre-wrap rounded border p-4">
+            {proposal.frozen_text ??
+              JSON.stringify(proposal.shared_terms, null, 2)}
+          </pre>
+          <p className="break-all text-xs">
+            Terms hash:{" "}
+            {proposal.terms_hash ??
+              "Historical revision; no approval hash recorded"}
+          </p>
+        </>
+      )}
+      {proposal && (
+        <div className="flex flex-wrap gap-3">
+          {proposal.status === "draft" && (
+            <button
+              className="rounded border p-2"
+              disabled={busy}
+              onClick={() => void act("send")}
+            >
+              Send saved terms to client
+            </button>
+          )}
+          {[
+            "draft",
+            "awaiting_client",
+            "declined",
+            "changes_requested",
+            "expired",
+          ].includes(proposal.status) && (
+            <>
+              <button
+                className="rounded border p-2"
+                disabled={busy}
+                onClick={() => void act("replace")}
+              >
+                Create replacement revision
+              </button>
+              <button
+                className="rounded border p-2"
+                disabled={busy}
+                onClick={() => void act("withdraw")}
+              >
+                Withdraw proposal
+              </button>
+            </>
+          )}
+        </div>
+      )}
+      {error && <p role="alert">{error}</p>}
+    </section>
+  );
 }

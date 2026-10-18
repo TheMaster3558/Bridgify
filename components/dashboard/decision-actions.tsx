@@ -84,7 +84,7 @@ export function DecisionActions({
         <h3 className="text-base font-semibold tracking-tight">
           Your decision
         </h3>
-        {decision.automation_request_id && <Link className="underline" href={`/app/projects/${decision.project_id}/proposals/new?request=${decision.automation_request_id}`}>Prepare a proposal for this request</Link>}
+        {decision.automation_request_id && !decision.task_change_kind && <Link className="underline" href={`/app/projects/${decision.project_id}/proposals/new?request=${decision.automation_request_id}`}>Prepare a proposal for this request</Link>}
         {decision.task_change_kind && (
           <Link
             href={`/app/projects/${decision.project_id}/automation`}
@@ -104,7 +104,7 @@ export function DecisionActions({
             />
           </Link>
         )}
-        {decision.reason === "exhausted_allowance" && <label className="flex gap-2"><input type="checkbox" checked={extraRevision} onChange={e=>{setExtraRevision(e.target.checked);setShowNote(true);}}/>Authorize one additional revision for this request; enter a private reason below.</label>}
+        {canApprove && <label className="flex gap-2"><input type="checkbox" checked={extraRevision} onChange={e=>{setExtraRevision(e.target.checked);setShowNote(true);}}/>Authorize one extra revision if included allowance is exhausted; enter a private reason below.</label>}
         {canApprove && (
           <label className="grid gap-2">
             <span className="text-sm font-medium">Task to approve</span>

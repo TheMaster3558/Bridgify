@@ -1,6 +1,6 @@
 # Bridgify — Owner workspace and iMessage automation specification
 
-Updated 2026-10-18. This document supersedes the archived dual-sided product specification.
+Updated for the current product completion work. This document supersedes the archived dual-sided product specification. See [Product Completion](Product_Completion.md) for the workflow matrix, PR/release status and operator handoff.
 
 ## Product and authority
 
@@ -18,7 +18,10 @@ The assistant facilitates work that the owner performs; it does not edit website
 
 ## Owner pages
 
-- Home, Projects and project overview: real database records and setup progress.
+- Home, Projects and project overview: real database records, paginated discovery,
+  setup progress, work/decision counts, revision accounting and approved value.
+- Requests and Activity: paginated source evidence and audit history with links to
+  decisions, tasks, proposals and retained agreement versions.
 - Work: task details, saved status, reviewed corrections/cancellation and explicit
   revision refunds. Private notes never become client replies.
 - Needs Attention: original evidence, owner authorization, decline, dismissal,
@@ -28,10 +31,11 @@ The assistant facilitates work that the owner performs; it does not edit website
 - Conversation: real Photon history and owner-written iMessage replies.
 - Automation: saved permissions, versioned amendments, worker health, processing
   history, editable/cancellable queued replies and receipt-based delivery recovery.
-- Proposals: private historical commercial records. Any discussion occurs through
-  iMessage; the app never claims a web approval or changes commercial terms from
-  an ambiguous client response. Full commercial proposal authoring is separate
-  from routine request automation.
+- Proposals: owner-authored drafts and immutable sent revisions, delivered through
+  iMessage. Owners record client-message evidence against the exact frozen terms.
+  Approval atomically appends scope and commercial history, creates deliverable
+  tasks and queues confirmation. Clients have no website access. Pending,
+  superseded, expired or withdrawn terms never authorize work.
 - Settings: owner profile, workspace and actual integration health.
 
 ## Automated request workflow
@@ -138,3 +142,15 @@ stale writes, duplicate commands, ambiguous receipts, model failure, retries,
 policy changes and accounting. Verify owner browser flows and retired client URLs.
 
 Deployment: [operator steps for Vercel Hobby](Automation_Deployment.md).
+
+## Version boundary
+
+This version excludes subscriptions/billing, paid-plan limits, team access,
+reminders, private owner notifications, policy simulation, private asset management,
+automatic pre-work corrections and exports. Existing optional progress replies
+remain part of project automation. Interface changes support functioning actions;
+there is no visual redesign.
+
+Current-product code is delivered in unmerged, dependency-ordered PRs until the
+owner chooses to merge and deploy. Live-provider verification remains a release
+step, not an inference from local tests.

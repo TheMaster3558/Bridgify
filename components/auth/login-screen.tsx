@@ -6,7 +6,7 @@ import { LinkButton } from "@/components/base/buttons/link-button";
 import { Input } from "@/components/base/input/input";
 type Mode = "signin" | "signup" | "recover";
 const INVITE_NOTE =
-  "Invited clients must use their invited email address and accept their invitation. Signing in alone grants no project access.";
+  "This workspace is for project owners. Clients communicate through the connected iMessage conversation.";
 export function LoginScreen({
   next,
   expired,

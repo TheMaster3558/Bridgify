@@ -7,7 +7,6 @@ export const nav = [
   { href: "/#loop", label: "How it works" },
   { href: "/#try", label: "Try it" },
   { href: "/#dashboard", label: "Dashboard" },
-  { href: "/pricing", label: "Pricing" },
   { href: "/#faq", label: "FAQ" },
 ];
 

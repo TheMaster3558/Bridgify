@@ -45,6 +45,7 @@ type Data = {
   automation_jobs: Row[];
   automation_requests: Row[];
   automation_rounds: Row[];
+  roundCounts?:Record<string,number>;
   automation_round_members: { request_id: string; round_id: string }[];
   automation_revision_refunds: { request_id: string }[];
   automation_round_refunds: { round_id: string }[];
@@ -216,7 +217,7 @@ export function AutomationManagement({
               <p>
                 {round.title} · {round.state} ·{" "}
                 {
-                  data.automation_round_members.filter(
+                  data.roundCounts?.[round.id] ?? data.automation_round_members.filter(
                     (m) => m.round_id === round.id,
                   ).length
                 }{" "}
@@ -477,7 +478,8 @@ export function AutomationManagement({
               data.automation_jobs,
               data.automation_requests,
               data.automation_outbox,
-            ].some((rows) => rows.length === 100)
+              data.automation_rounds,
+            ].some((rows) => rows.length >= 100)
           }
           onClick={() =>
             void load(search, (data.page ?? 0) + 1).catch((e) =>

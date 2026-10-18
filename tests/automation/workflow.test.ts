@@ -1269,3 +1269,19 @@ test('edited approval evidence and other owners cannot change commercial commitm
  await assert.rejects(pg.query("select record_proposal_response($1,$2,1,2,1,$3,'approved',$4,true,'Verified response',$5)",[project,sent.proposal_id,sent.terms_hash,[evidence],randomUUID()]),/insufficient_privilege/);
  assert.equal(await count('project_tasks'),0);assert.equal(await count('proposal_responses'),0);
 });
+
+test('expired proposals cancel queued commercial messages and cannot authorize work',async()=>{
+ const d=(await proposalCommand('create',{...proposalTerms,expires_at:new Date(Date.now()+60000).toISOString()})).rows[0].result;
+ await proposalCommand('send',{},d.proposal_id,1,1);
+ await pg.query("update proposal_revisions set expires_at=now()-interval '1 second' where proposal_id=$1",[d.proposal_id]);
+ await pg.query('select expire_pending_proposals()');
+ assert.equal(await count('proposal_revisions',"status='expired'"),1);assert.equal(await count('automation_outbox',"state='cancelled'"),1);assert.equal(await count('project_tasks'),0);
+});
+test('round history annotations include full membership counts beyond one page',async()=>{
+ await changePolicy({mode:'review_only',allowance_mode:'manual_rounds',allowance:200});await message();await processor().once();
+ const d=(await pg.query<{id:string}>('select id from owner_decisions')).rows[0];await asOwner(()=>pg.query("select resolve_automation_review($1,'approve','','',$2,null)",[d.id,randomUUID()]));
+ const request=(await pg.query<{id:string}>('select id from automation_requests')).rows[0];
+ const round=(await ownerCommand('round_open',{})).rows[0].result.id;await ownerCommand('round_add',{id:round,requestId:request.id});
+ const annotations=await asOwner(()=>pg.query<{result:{roundCounts:Record<string,number>;openRound:{id:string};members:unknown[]}}>('select automation_history_annotations($1,$2,$3) result',[project,[request.id],[]]));
+ assert.equal(annotations.rows[0].result.openRound.id,round);assert.equal(annotations.rows[0].result.roundCounts[round],1);assert.equal(annotations.rows[0].result.members.length,1);
+});

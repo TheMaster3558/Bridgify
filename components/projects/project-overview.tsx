@@ -120,7 +120,7 @@ export function ProjectOverview({
           {accounting && <p className="mb-3">{p.policy?.allowance ?? 0} included {p.policy?.allowance_mode === "manual_rounds" ? "rounds" : "requests"} · {p.policy?.allowance_mode === "manual_rounds" ? accounting.roundsUsed : accounting.requestsUsed} used · {Math.max(0,(p.policy?.allowance??0)-(p.policy?.allowance_mode === "manual_rounds"?accounting.roundsUsed:accounting.requestsUsed))} remaining · {accounting.requestRefunds} request refunds</p>}
           <p className="text-sm text-muted-foreground">
             {accounting ? "Acceptance uses a revision. Cancellation preserves usage unless explicitly refunded." : revisions?.allowance != null
-              ? "Allowance from the owner-confirmed agreement. Revision consumption and reservations are not connected yet."
+              ? "Allowance from the owner-confirmed agreement. Inspect usage and refunds in Scope & Revisions."
               : "No revision allowance is available from a confirmed agreement."}
           </p>
           <div className="mt-7 grid gap-3 border-t pt-5 text-sm">

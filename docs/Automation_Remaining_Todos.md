@@ -22,5 +22,4 @@ webhook and enable the recovery callback. No hosted availability is claimed unti
 those steps and a real consenting-client delivery check succeed.
 
 The website is for owners only. Clients use iMessage; historical website
-invitations and shared proposal access are retired. Actual website editing and
-full commercial proposal authoring are outside routine request automation.
+invitations and shared proposal access are retired. Actual website editing is outside this product. Commercial proposals and owner-recorded client evidence are implemented separately from routine request acceptance; see [Product Completion](Product_Completion.md).
