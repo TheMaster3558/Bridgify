@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { requireOwner } from "@/lib/auth/session";
 import {
   queryList,
@@ -24,6 +25,7 @@ export default async function Page({
   const rows = result.items as unknown as ProposalRevisionRecord[];
   return (
     <>
+      <p className="px-6 pt-6 text-sm">Create proposals from a project’s Proposals tab or an owner decision. <Link className="underline" href="/app/projects">Choose project</Link></p>
       <ListControls
         input={input}
         total={result.total}
