@@ -47,6 +47,7 @@ export type Bundle = {
   }[];
   members: { user_id: string; requester: boolean; approver: boolean }[];
   binding: {
+    introduction_text?: string | null;
     verified_at: string | null;
     test_state: string;
     hold_reason: string | null;

@@ -75,9 +75,9 @@ describe("agreement extraction boundary", () => {
       expect(sent).not.toContain(`"${keyword}"`);
     expect(schema.properties.terms.items.required).toContain("span_id");
     expect(extracted.commercial.revision.unit).toBe("ambiguous");
-    expect(
-      extracted.warnings.some((w) => w.includes("Revision allowance")),
-    ).toBe(true);
+    expect(extracted.warnings.some((w) => w.includes("Included changes"))).toBe(
+      true,
+    );
     const review = initialReview(extracted);
     expect(reviewedAgreementSchema.safeParse(review).success).toBe(false);
     review.commercial.revision.unit = "rounds";

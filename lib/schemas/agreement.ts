@@ -53,26 +53,38 @@ export const reviewDraftSchema = z.object({
 });
 export const reviewedAgreementSchema = reviewDraftSchema.superRefine(
   (v, ctx) => {
-    if (!commercialSchema.safeParse(v.commercial).success)
-      ctx.addIssue({
-        code: "custom",
-        message: "Check the price, currency, date and revision fields",
-      });
-    if (!z.array(termSchema).safeParse(v.terms).success)
-      ctx.addIssue({
-        code: "custom",
-        message: "Every term needs wording and a source excerpt",
-      });
+    const commercial = commercialSchema.safeParse(v.commercial);
+    if (!commercial.success)
+      for (const issue of commercial.error.issues)
+        ctx.addIssue({
+          code: "custom",
+          path: ["commercial", ...issue.path],
+          message: "Enter a valid value for this contract detail.",
+        });
+    const terms = z.array(termSchema).safeParse(v.terms);
+    if (!terms.success)
+      for (const issue of terms.error.issues)
+        ctx.addIssue({
+          code: "custom",
+          path: ["terms", ...issue.path],
+          message:
+            "Each item needs a description and an exact excerpt from the agreement.",
+        });
     if (!v.terms.some((t) => t.kind === "inclusion"))
       ctx.addIssue({
         code: "custom",
-        message: "Confirm at least one included deliverable",
+        path: ["terms"],
+        message: "Confirm at least one item of included work.",
       });
-    if (v.issues.some((i) => !i.resolution.trim()))
-      ctx.addIssue({
-        code: "custom",
-        message: "Resolve or explicitly acknowledge every flagged issue",
-      });
+    v.issues.forEach((issue, i) => {
+      if (!issue.resolution.trim())
+        ctx.addIssue({
+          code: "custom",
+          path: ["issues", i, "resolution"],
+          message:
+            "Explain how you resolved this question, or acknowledge that the agreement does not specify it.",
+        });
+    });
     const r = v.commercial.revision;
     if (
       r.unit === "ambiguous" ||
@@ -80,8 +92,9 @@ export const reviewedAgreementSchema = reviewDraftSchema.superRefine(
     )
       ctx.addIssue({
         code: "custom",
+        path: ["commercial", "revision", "unit"],
         message:
-          "Resolve whether revisions mean requests, rounds, or an unspecified allowance",
+          "Choose individual requests, rounds of feedback, or no changes specified in the agreement.",
       });
     for (const [name, field] of Object.entries(v.commercial)) {
       const present =
@@ -94,7 +107,9 @@ export const reviewedAgreementSchema = reviewDraftSchema.superRefine(
       if (present && (!field.span_id || !field.quote?.trim()))
         ctx.addIssue({
           code: "custom",
-          message: `${name} needs a source excerpt`,
+          path: ["commercial", name, "quote"],
+          message:
+            "Choose a source page and copy the exact words supporting this contract detail.",
         });
     }
     if (
@@ -103,7 +118,13 @@ export const reviewedAgreementSchema = reviewDraftSchema.superRefine(
     )
       ctx.addIssue({
         code: "custom",
-        message: "Price requires both amount and currency, or neither",
+        path: [
+          "commercial",
+          "price",
+          v.commercial.price.currency ? "amount_cents" : "currency",
+        ],
+        message:
+          "Enter both the price and currency, or leave both blank if the agreement does not specify them.",
       });
   },
 );
