@@ -11,6 +11,9 @@ export const nav = [
   { href: "/#faq", label: "FAQ" },
 ];
 
+/** The header keeps a shorter list; every section stays on the page and in the footer. */
+const headerNav = nav.filter((item) => item.href !== "/#loop" && item.href !== "/#dashboard");
+
 export function SkipLink() {
   return (
     <a
@@ -48,7 +51,7 @@ export function SiteHeader({ current }: { current?: string }) {
         <div className="grid h-16 grid-cols-[1fr_auto] items-center lg:grid-cols-[1fr_auto_1fr]">
           <Logo />
           <nav className="hidden items-center gap-7 lg:flex" aria-label="Primary">
-            {nav.map((item) => (
+            {headerNav.map((item) => (
               <a
                 key={item.href}
                 href={item.href}
@@ -85,7 +88,7 @@ export function SiteHeader({ current }: { current?: string }) {
         >
           <div className="overflow-hidden" inert={open ? undefined : true}>
             <div className="flex flex-col gap-4 pb-5">
-              {nav.map((item) => (
+              {headerNav.map((item) => (
                 <a key={item.href} href={item.href} className="font-sohne text-[16px] font-[430] text-ink-black" onClick={() => setOpen(false)}>
                   {item.label}
                 </a>
