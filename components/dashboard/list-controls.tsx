@@ -5,11 +5,15 @@ export function ListControls({
   total,
   statuses,
   projects = [],
+  reasons = [],
+  taskFilters = false,
 }: {
   input: ListInput;
   total: number;
   statuses: string[];
   projects?: { id: string; name: string }[];
+  reasons?: string[];
+  taskFilters?: boolean;
 }) {
   const link = (page: number) =>
     `?${new URLSearchParams({ ...input, page: String(page) })}`;
@@ -19,6 +23,9 @@ export function ListControls({
       aria-label="Search and pagination"
     >
       <form className="flex flex-wrap items-end gap-3" method="get">
+        {input.task !== "all" && (
+          <input type="hidden" name="task" value={input.task} />
+        )}
         <input type="hidden" name="sort" value={input.sort} />
         <input type="hidden" name="dir" value={input.dir} />
         <label className="grid gap-1 text-sm">
@@ -61,6 +68,33 @@ export function ListControls({
                 </option>
               ))}
             </select>
+          </label>
+        )}
+        {!!reasons.length && (
+          <label className="grid gap-1 text-sm">
+            Reason
+            <select
+              className="rounded border bg-card p-2"
+              name="reason"
+              defaultValue={input.reason}
+            >
+              <option value="all">All reasons</option>
+              {reasons.map((r) => (
+                <option key={r} value={r}>
+                  {r.replaceAll("_", " ")}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        {taskFilters && (
+          <label className="grid gap-1 text-sm">
+            Assignee (exact name; blank for all)
+            <input
+              className="rounded border bg-card p-2"
+              name="assignee"
+              defaultValue={input.assignee === "all" ? "" : input.assignee}
+            />
           </label>
         )}
         {!projects.length && input.project !== "all" && (

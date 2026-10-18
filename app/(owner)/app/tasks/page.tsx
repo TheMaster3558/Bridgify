@@ -26,6 +26,7 @@ export default async function Page({
   return (
     <>
       <ListControls
+        taskFilters
         input={input}
         total={result.total}
         statuses={[
@@ -40,7 +41,13 @@ export default async function Page({
       />
       <TasksWorkspace
         key={JSON.stringify(input)}
-        creationForm={<TaskEditor projects={projects.filter(p => ["active","review_only"].includes(p.status))}/>}
+        creationForm={
+          <TaskEditor
+            projects={projects.filter((p) =>
+              ["active", "review_only"].includes(p.status),
+            )}
+          />
+        }
         tasks={rows}
         serverManaged
         clientPhotos={await loadClientPhotos(

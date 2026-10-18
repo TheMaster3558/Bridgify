@@ -51,7 +51,6 @@ import {
 } from "@/components/dashboard/table-ui";
 import {
   settingsButton,
-  settingsPrimaryButton,
 } from "@/components/settings/settings-ui";
 import { clientKey } from "@/lib/clients/photos";
 import type { DashboardTask } from "@/lib/dashboard/work-management-types";
@@ -386,7 +385,7 @@ function TaskDetail({
         </PanelSection>
       </div>
 
-      {task.request_code && <Link className="px-6 py-2 text-sm underline" href={`/app/projects/${task.project_id}/requests?q=${encodeURIComponent(task.title)}`}>View request evidence</Link>}
+      {task.request_code && <Link className="px-6 py-2 text-sm underline" href={`/app/projects/${task.project_id}/requests?task=${task.id}`}>View request evidence</Link>}
       <TaskEditor key={`edit-${task.id}-${task.updated_at}`} task={task} onSaved={onSaved} />
       <TaskStatusActions key={task.id} task={task} onSaved={onSaved} />
     </>
@@ -424,7 +423,7 @@ export function TasksWorkspace({
   });
 
   const allTasks = useMemo(
-    () => tasks.map((task) => saved[task.id] ?? task),
+    () => tasks.map((task) => saved[task.id] && Date.parse(saved[task.id].updated_at)>Date.parse(task.updated_at) ? saved[task.id] : task),
     [tasks, saved],
   );
   const projects = useMemo(

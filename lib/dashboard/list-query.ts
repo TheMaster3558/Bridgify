@@ -16,7 +16,10 @@ export function listInput(raw: SearchParams = {}) {
       q: z.string().trim().max(100).catch(""),
       sort: z.string().max(30).catch("updated"),
       dir: z.enum(["asc", "desc"]).catch("desc"),
+      reason: z.string().max(60).catch("all"),
+      assignee: z.string().max(200).catch("all"),
       status: z.string().max(60).catch("all"),
+      task: z.union([z.uuid(), z.literal("all")]).catch("all"),
       project: z.union([z.uuid(), z.literal("all")]).catch("all"),
     })
     .parse({
@@ -25,7 +28,10 @@ export function listInput(raw: SearchParams = {}) {
       sort: one("sort"),
       dir: one("dir"),
       status: one("status"),
+      reason: one("reason"),
+      assignee: one("assignee") || "all",
       project: one("project"),
+      task: one("task"),
     });
 }
 export type ListInput = ReturnType<typeof listInput>;
@@ -81,9 +87,16 @@ export async function queryList(
     );
   if (input.project !== "all" && kind !== "projects")
     query = query.eq("project_id", input.project);
+  if (kind === "requests" && input.task !== "all")
+    query = query.eq("task_id", input.task);
   if (input.q)
     query = query.ilike(c.search, `%${input.q.replace(/[\\%_]/g, "\\$&")}%`);
-  if (kind === "decisions") query = query.is("deleted_at", null);
+  if (kind === "decisions") {
+    query = query.is("deleted_at", null);
+    if (input.reason !== "all") query = query.eq("reason", input.reason);
+  }
+  if (kind === "tasks" && input.assignee !== "all")
+    query = query.eq("assignee", input.assignee);
   if (input.status !== "all") {
     if (kind === "projects" && input.status === "active")
       query = query.in("status", ["active", "review_only"]);
@@ -97,7 +110,7 @@ export async function queryList(
       ? {
           name: "name",
           date: "agreed_due_date",
-          value: "original_amount_cents",
+          value: "approved_total_cents",
           updated: "updated_at",
         }
       : kind === "tasks"
@@ -116,7 +129,7 @@ export async function queryList(
           : kind === "proposals"
             ? {
                 title: "shared_terms->>title",
-                price: "shared_terms->>amount_cents",
+                price: "shared_terms->amount_cents",
                 expires: "expires_at",
                 default: "proposal_id",
               }

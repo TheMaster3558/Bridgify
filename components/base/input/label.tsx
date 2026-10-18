@@ -54,10 +54,8 @@ export function Label({
       {isRequired && (
         <span
           aria-hidden="true"
-          className="text-body-medium text-text-error-primary"
-        >
-          *
-        </span>
+          className="text-body-medium text-text-error-primary after:content-['*']"
+        />
       )}
       {tooltip && (
         <RiInformationFill

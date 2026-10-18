@@ -14,11 +14,11 @@ test.beforeAll(async () => {
       import {AutomationSetup} from './components/setup/automation-setup';
       import {NeedsAttention} from './components/dashboard/needs-attention';
       const task={id:'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',status:'ready',updated_at:'2026-10-17T12:00:00.000Z'};
-      const decision={id:'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',title:'Change the heading color',automation_request_id:'cccccccc-cccc-4ccc-8ccc-cccccccccccc',reason:location.pathname==='/failed-decision'?'failed_processing':'policy_denied',severity:'warning',history:[],missing_details:[],suggested_options:[],updated_at:'2026-10-17T12:00:00.000Z'};
+      const decision={status:'open',project_id:'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',project_name:'Website',client_name:'Client',source_text:'Change the heading color',source_meta:'Verified client message',evidence:'Included styling',evidence_source:'Agreement',explanation:'Owner review needed',reply_preview:'',id:'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',title:'Change the heading color',automation_request_id:'cccccccc-cccc-4ccc-8ccc-cccccccccccc',reason:location.pathname==='/failed-decision'?'failed_processing':'policy_denied',severity:'warning',history:[],missing_details:[],suggested_options:[],updated_at:'2026-10-17T12:00:00.000Z'};
       const project={policy:null,scope_version:0};
       const root=createRoot(document.getElementById('root'));
       root.render(location.pathname==='/reviews'?<NeedsAttention decisions={[decision]}/>:location.pathname==='/settings'?<AutomationSetup project={project} bundle={{scope:[]}} locked={false} onSave={async p=>{await fetch('/saved-policy',{method:'POST',body:JSON.stringify(p)})}}/>:
-        location.pathname.includes('decision')?<DecisionActions decision={decision}/>:<TaskStatusActions task={task} onSaved={t=>window.savedTask=t}/>);`,
+        location.pathname.includes('decision')?<DecisionActions decision={decision} onDelete={async()=>{await fetch("/api/v1/decisions/"+decision.id,{method:"POST",body:JSON.stringify({action:"delete",note:"",reply:"",expectedUpdatedAt:decision.updated_at})})}}/>:<TaskStatusActions task={task} onSaved={t=>window.savedTask=t}/>);`,
     },
     bundle: true,
     write: false,
@@ -29,16 +29,13 @@ test.beforeAll(async () => {
       {
         name: "test-navigation",
         setup(builder) {
-          builder.onResolve({ filter: /^next\/navigation$/ }, (args) => ({
+          builder.onResolve({ filter: /^next\/(navigation|link)$/ }, (args) => ({
             path: args.path,
             namespace: "test-navigation",
           }));
           builder.onLoad(
             { filter: /.*/, namespace: "test-navigation" },
-            () => ({
-              contents:
-                "export const useRouter=()=>({refresh:()=>{window.refreshed=true}});",
-            }),
+            (args) => ({loader:"jsx",resolveDir:process.cwd(),contents:args.path.endsWith("navigation") ? "export const useRouter=()=>({refresh:()=>{window.refreshed=true}});" : 'import React from "react";export default function Link({href,children,...props}){return <a href={href} {...props}>{children}</a>}' }),
           );
         },
       },
@@ -81,6 +78,8 @@ test("owner approval works immediately without a private note or custom reply", 
     note: "",
     reply: "",
     taskTitle: "Change the heading color",
+    expectedUpdatedAt:"2026-10-17T12:00:00.000Z",
+    extraRevision:false,
   });
   expect(sent.headers()["idempotency-key"]).toBeTruthy();
 });
@@ -171,9 +170,8 @@ test("failed processing reviews allow approval with an owner-edited task title",
   await expect(
     page.getByText("Automatic interpretation failed.", { exact: false }),
   ).toBeVisible();
-  await page
-    .getByLabel("Decision reason (private, optional)")
-    .fill("Source checked and accepted");
+  await page.getByRole("button",{name:"Add a private reason"}).click();
+  await page.getByRole("textbox",{name:"Private reason",exact:false}).fill("Source checked and accepted");
   await page.getByLabel("Task to approve").fill("Make the heading blue");
   const request = page.waitForRequest((r) => r.method() === "POST");
   await page.getByRole("button", { name: "Accept work" }).click();
@@ -199,9 +197,8 @@ test("the review disappears from the list only after a successful backend save",
   page,
 }) => {
   await page.goto("https://automation.test/reviews");
-  await page.getByRole("button", { name: "Delete review" }).click();
-  await expect(
-    page.getByText("No decisions are waiting for review."),
-  ).toBeVisible();
+  await page.getByText("Change the heading color",{exact:true}).click();
+  await page.getByRole("button", { name: "Delete review",exact:true }).click();
+  await page.getByRole("dialog").getByRole("button",{name:"Delete review",exact:true}).click();
   await expect(page.getByRole("button", { name: "All (0)" })).toBeVisible();
 });

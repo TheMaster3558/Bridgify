@@ -1,3 +1,5 @@
+> Historical planning reference. Use [Current Product Completion](Product_Completion.md) for this version’s scope, implemented workflows and release handoff.
+
 # Bridgify — Feature Completion Checklist
 **Date:** October 17, 2026  
 **Purpose:** A feature-based build and verification checklist for the functioning application.  
