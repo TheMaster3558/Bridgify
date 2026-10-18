@@ -106,7 +106,7 @@ for (const width of [400, 700, 1280]) {
       nav.getByRole("link", { name: "Home", exact: true }),
     ).toBeInViewport();
     await expect(
-      page.getByRole("button", { name: "Account", exact: true }),
+      nav.getByRole("button", { name: "Settings", exact: true }),
     ).toBeInViewport();
     const bottomProject = await page
       .getByRole("button", { name: "Bottom project", exact: true })
