@@ -268,6 +268,14 @@ export function ProjectWizard({
                 })
               }
             />
+            {p.people && (
+              <Link
+                className="text-sm underline"
+                href={`/app/projects/${p.id}/conversation`}
+              >
+                View client iMessage conversation
+              </Link>
+            )}
             <div className="grid gap-4">
               <h3 className="font-semibold">2. Introduce the assistant</h3>
               <blockquote className="rounded border p-4 text-sm">

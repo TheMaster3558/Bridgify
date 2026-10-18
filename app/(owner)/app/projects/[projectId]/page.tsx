@@ -70,6 +70,12 @@ export default async function Page({
               : "Choose the client from your Photon users"}
           </p>
           <p>Introduction: {b.binding?.test_state || "Not sent"}</p>
+          <Link
+            className="underline"
+            href={`/app/projects/${p.id}/conversation`}
+          >
+            View iMessage conversation
+          </Link>
           {b.binding?.hold_reason && (
             <p role="alert">{b.binding.hold_reason}</p>
           )}
