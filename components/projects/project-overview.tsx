@@ -180,7 +180,7 @@ export function ProjectOverview({
         </Link>
         <Link
           className="text-primary hover:underline"
-          href={`${root}/setup?step=3`}
+          href={p.activation_cutoff ? `${root}/automation` : `${root}/setup?step=3`}
         >
           Manage client connection
         </Link>
