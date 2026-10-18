@@ -187,6 +187,16 @@ async function changePolicy(patch: object) {
   ]);
 }
 
+test("owner-only schema revokes invitation, client proposal and legacy command access", async () => {
+  await asOwner(async () => {
+    await assert.rejects(pg.query("select accept_invitation('retired')"), /permission denied/);
+    await assert.rejects(pg.query("select shared_proposal($1,1)", [project]), /permission denied/);
+    await assert.rejects(pg.query("select onboarding_command($1,1,'invite','{}',$2)", [project,randomUUID()]), /iMessage/);
+    const exposed = await pg.query<{n:number}>(`select count(*)::int n from pg_proc where pronamespace='public'::regnamespace
+      and proname like 'onboarding_command_before%' and has_function_privilege('authenticated',oid,'execute')`);
+    assert.equal(exposed.rows[0].n,0);
+  });
+});
 test("allowed request atomically populates task, revision ledger, evidence, audit, analysis and confirmation", async () => {
   await message();
   await processor().once();

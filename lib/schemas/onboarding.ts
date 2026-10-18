@@ -96,14 +96,6 @@ export const policySchema = z
     (v) => v.mode !== "enabled" || (v.allowance > 0 && v.operations.length > 0),
     "Enabled automation needs allowance and operations",
   );
-export const invitationSchema = z.object({
-  email: z
-    .email()
-    .max(254)
-    .transform((v) => v.toLowerCase()),
-  proposal_id: z.string().uuid().nullable().default(null),
-  revision: z.number().int().positive().nullable().default(null),
-});
 export const lifecycleSchema = z.object({
   status: z.enum(["active", "paused", "review_only", "completed", "archived"]),
   reason: z.string().trim().min(3).max(1000),
