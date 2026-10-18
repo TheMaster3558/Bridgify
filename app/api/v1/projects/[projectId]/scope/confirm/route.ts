@@ -1,3 +1,4 @@
+import { reviewedAgreementSchema } from "@/lib/schemas/agreement";
 import { readJson } from "@/lib/body";
 import { z } from "zod";
 import { api, projectCommand } from "@/lib/api";
@@ -18,7 +19,10 @@ export async function POST(
       z.uuid().parse((await context.params).projectId),
       "scope",
       body.expectedVersion,
-      scopeSchema.parse(body),
+      {
+        ...scopeSchema.parse(body),
+        review: reviewedAgreementSchema.parse(body.review),
+      },
       client,
     );
   });

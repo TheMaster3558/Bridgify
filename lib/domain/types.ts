@@ -1,3 +1,7 @@
+import type {
+  AgreementExtraction,
+  AgreementReview,
+} from "@/lib/schemas/agreement";
 import type { z } from "zod";
 import type {
   basicsSchema,
@@ -9,6 +13,7 @@ import type {
 export type Project = z.infer<typeof basicsSchema> & {
   id: string;
   status: string;
+  current_agreement_document_id?: string | null;
   version: number;
   setup_step: number;
   scope_version: number;
@@ -25,7 +30,9 @@ export type Document = {
   kind: string;
   error: string | null;
   original_text: string | null;
-  extraction: { terms: Term[]; warnings: string[] } | null;
+  extraction: AgreementExtraction | null;
+  review_draft: AgreementReview | null;
+  review_version: number;
 };
 export type Bundle = {
   project: Project;
@@ -35,6 +42,7 @@ export type Bundle = {
     version: number;
     document_id: string;
     terms: Term[];
+    agreement?: AgreementReview | null;
     confirmed_at: string;
   }[];
   members: { user_id: string; requester: boolean; approver: boolean }[];
