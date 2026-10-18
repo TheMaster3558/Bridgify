@@ -74,6 +74,12 @@ export async function POST(
       p_hash: membershipHash(participants),
       p_introduction:introduction,
     });
+    if (begin.error?.code === "PGRST202")
+      throw new ApiError(
+        503,
+        "MIGRATION_REQUIRED",
+        "The database is missing the latest client connection setup. Run npm run automation:install to apply migration 202610190021_connection_recovery.sql, then retry. No introduction was sent.",
+      );
     if (
       begin.error?.code === "23505" &&
       begin.error.hint === "chat_binding_reserved"

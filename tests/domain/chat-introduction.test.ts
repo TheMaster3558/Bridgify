@@ -201,3 +201,19 @@ it("detects a missing introduction column before reserving the conversation or s
   expect(f.rpc).not.toHaveBeenCalled();
   expect(f.send).not.toHaveBeenCalled();
 });
+
+it("explains a missing introduction RPC migration without contacting Photon", async () => {
+  f.rpc.mockResolvedValue({
+    error: {
+      code: "PGRST202",
+      message: "Could not find the function public.begin_chat_test in the schema cache",
+    },
+  });
+  await expect(POST(request("Project introduction"), context)).rejects.toMatchObject({
+    status: 503,
+    code: "MIGRATION_REQUIRED",
+    message: expect.stringContaining("npm run automation:install"),
+  });
+  expect(f.send).not.toHaveBeenCalled();
+  expect(f.update).not.toHaveBeenCalled();
+});
