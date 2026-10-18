@@ -307,9 +307,11 @@ export function TasksWorkspace() {
                       }}
                       className="cursor-pointer border-b last:border-0 hover:bg-muted/60 focus-visible:bg-muted/60"
                     >
-                      <td className="max-w-[320px] px-3 py-3">
-                        <span className="mr-2 font-mono text-xs text-muted-foreground">{task.id}</span>
-                        <span className="font-medium">{task.title}</span>
+                      <td className="w-[320px] min-w-[320px] px-3 py-3">
+                        <div className="flex min-w-0 items-start gap-2">
+                          <span className="shrink-0 whitespace-nowrap font-mono text-xs text-muted-foreground">{task.id}</span>
+                          <span className="min-w-0 break-words font-medium">{task.title}</span>
+                        </div>
                         {task.blocked && (
                           <span className="mt-1 block text-xs text-muted-foreground">Blocked: {task.blocked}</span>
                         )}
@@ -361,7 +363,7 @@ export function TasksWorkspace() {
                         onClick={() => setSelectedTask(task)}
                         className="flex flex-col gap-2 rounded-md border bg-card p-3 text-left text-sm shadow-sm hover:border-primary/50"
                       >
-                        <span className="font-medium">{task.title}</span>
+                        <span className="min-w-0 break-words font-medium">{task.title}</span>
                         <span className="text-xs text-muted-foreground">{task.originText} · {task.date ?? "No date agreed"}</span>
                         <span className="font-mono text-[11px] text-muted-foreground">{task.id}</span>
                       </button>
