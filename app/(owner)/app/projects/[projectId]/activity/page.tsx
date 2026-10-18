@@ -1,11 +1,15 @@
-import Link from "next/link";
 import { requireOwner } from "@/lib/auth/session";
+import { checked } from "@/lib/api";
 import {
   queryList,
   listInput,
   type SearchParams,
 } from "@/lib/dashboard/list-query";
 import { ListControls } from "@/components/dashboard/list-controls";
+import {
+  ActivityTimeline,
+  type ActivityEvent,
+} from "@/components/projects/activity-timeline";
 export default async function Page({
   params,
   searchParams,
@@ -13,62 +17,24 @@ export default async function Page({
   params: Promise<{ projectId: string }>;
   searchParams: Promise<SearchParams>;
 }) {
-  const { client } = await requireOwner();
+  const { client, user } = await requireOwner();
   const { projectId } = await params;
   const input = listInput({ ...(await searchParams), project: projectId });
-  const result = await queryList(client, "activity", input);
+  const [result, project] = await Promise.all([
+    queryList(client, "activity", input),
+    client.from("projects").select("timezone").eq("id", projectId).maybeSingle(),
+  ]);
+  const timezone = (checked(project) as { timezone?: string } | null)?.timezone || "UTC";
   return (
-    <main className="grid gap-4 p-6">
-      <h1 className="text-2xl font-semibold">Activity</h1>
-      <ListControls input={input} total={result.total} statuses={[]} />
-      {!result.items.length && <p>No matching activity.</p>}
-      {result.items.map((r) => {
-        const d = (r.details ?? {}) as Record<string, string>;
-        return (
-          <article key={String(r.id)} className="grid gap-2 rounded border p-4">
-            <h2 className="font-medium">{String(r.action)}</h2>
-            <p className="text-sm">
-              {String(r.created_at)} ·{" "}
-              {r.actor_id ? `Owner ${r.actor_id}` : "System"} · version{" "}
-              {String(r.version ?? "")}
-            </p>
-            <nav className="flex gap-4">
-              {d.taskId && (
-                <Link className="underline" href={`/app/tasks/${d.taskId}`}>
-                  Task
-                </Link>
-              )}
-              {d.requestId && (
-                <Link
-                  className="underline"
-                  href={`/app/projects/${projectId}/requests/${d.requestId}`}
-                >
-                  Request
-                </Link>
-              )}
-              {d.decisionId && (
-                <Link
-                  className="underline"
-                  href={`/app/decisions?status=all&project=${projectId}&decision=${d.decisionId}`}
-                >
-                  Decision
-                </Link>
-              )}
-              {d.proposalId && (
-                <Link
-                  className="underline"
-                  href={`/app/projects/${projectId}/proposals/${d.proposalId}`}
-                >
-                  Proposal
-                </Link>
-              )}
-            </nav>
-            <pre className="whitespace-pre-wrap text-sm">
-              {JSON.stringify(r.details, null, 2)}
-            </pre>
-          </article>
-        );
-      })}
-    </main>
+    <ActivityTimeline
+      projectId={projectId}
+      events={result.items as unknown as ActivityEvent[]}
+      viewerId={user.id}
+      timezone={timezone}
+      now={new Date().toISOString()}
+      toolbar={
+        <ListControls embedded input={input} total={result.total} statuses={[]} />
+      }
+    />
   );
 }
