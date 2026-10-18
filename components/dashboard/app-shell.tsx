@@ -4,13 +4,14 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 
+import { AccountMenu } from "@/components/dashboard/account-menu";
+
 const nav = [
   { href: "/app", label: "Home" },
   { href: "/app/projects", label: "Projects" },
   { href: "/app/tasks", label: "Actionable Tasks" },
   { href: "/app/decisions", label: "Needs Attention" },
   { href: "/app/proposals", label: "Proposals" },
-  { href: "/app/settings", label: "Settings" },
 ];
 
 function isActive(pathname: string, href: string) {
@@ -21,9 +22,15 @@ function isActive(pathname: string, href: string) {
 export function AppShell({
   children,
   email,
+  name,
+  timezone,
+  organization,
 }: {
   children: React.ReactNode;
   email?: string;
+  name: string;
+  timezone: string;
+  organization: string;
 }) {
   const pathname = usePathname();
 
@@ -57,13 +64,13 @@ export function AppShell({
             );
           })}
         </nav>
-        <div className="mt-auto grid gap-3 px-2 text-xs text-muted-foreground">
-          <span>{email}</span>
-          <form action="/auth/signout" method="post">
-            <button className="underline" type="submit">
-              Sign out
-            </button>
-          </form>
+        <div className="mt-auto px-2">
+          <AccountMenu
+            email={email || ""}
+            name={name}
+            timezone={timezone}
+            organization={organization}
+          />
         </div>
       </aside>
       <div className="min-w-0">{children}</div>
