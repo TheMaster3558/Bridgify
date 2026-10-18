@@ -32,8 +32,8 @@ export const plans: Plan[] = [
     id: "basic",
     name: "Basic",
     tagline: "For solo freelancers and small duos.",
-    monthly: 24,
-    annual: 19,
+    monthly: 27,
+    annual: 22,
     people: "Up to 3 people",
     limits: ["3 active projects", "500 client messages handled / month"],
     highlights: [
@@ -49,8 +49,8 @@ export const plans: Plan[] = [
     id: "pro",
     name: "Pro",
     tagline: "For studios juggling several clients at once.",
-    monthly: 59,
-    annual: 47,
+    monthly: 65,
+    annual: 52,
     people: "Up to 7 people",
     limits: ["15 active projects", "3,000 client messages handled / month"],
     highlights: [
@@ -272,7 +272,7 @@ const compareGroups: { group: string; rows: { label: string; values: [Cell, Cell
   {
     group: "Dashboard and proposals",
     rows: [
-      { label: "Home, tasks, Needs attention, request history", values: [true, true, true] },
+      { label: "Home, Actionable tasks, Needs attention, scope and history", values: [true, true, true] },
       { label: "Proposals with versioning and withdrawal", values: [true, true, true] },
       { label: "Authenticated client approval page", values: [true, true, true] },
       { label: "Policy simulator (no effects)", values: [false, "planned", "planned"] },
