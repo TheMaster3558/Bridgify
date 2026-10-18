@@ -1162,3 +1162,22 @@ test("commercial exceptions cannot be accepted as routine included work",async()
  await assert.rejects(asOwner(()=>pg.query("select owner_review_command($1,$2,'approve','','',null,false,$3)",[d.id,d.updated_at,randomUUID()])),/proposal/);
  assert.equal(await count("project_tasks"),0);assert.equal(await count("automation_revision_uses"),0);
 });
+
+test("connection recovery is owner/version guarded and only accepts a matching actual receipt",async()=>{
+ await pg.query("update projects set status='paused' where id=$1",[project]);
+ await pg.query("update chat_bindings set hold_reason='Check identity',introduction_text='Assistant disclosure',introduction_attempted_at=now(),test_state='unknown' where project_id=$1",[project]);
+ await assert.rejects(asOwner(()=>pg.query("select reset_chat_verification($1,1,false,'Checked conversation',$2)",[project,randomUUID()])),/non-delivery/);
+ await assert.rejects(pg.query("select confirm_chat_receipt($1,1,$2,'intro-real','WRONG',now(),$3,$4)",[project,owner,instance,chat]),/match/);
+ await pg.query("select confirm_chat_receipt($1,1,$2,'intro-real','Assistant disclosure',now(),$3,$4)",[project,owner,instance,chat]);
+ assert.equal(await count("chat_bindings","test_state='sent' and hold_reason is null"),1);
+ await assert.rejects(asOwner(()=>pg.query("select reset_chat_verification($1,1,true,'Checked conversation',$2)",[project,randomUUID()])),/changed/);
+});
+test("resume creates a fresh cutoff and holds old queued work for owner review",async()=>{
+ await message();
+ await pg.query("update projects set status='paused' where id=$1",[project]);
+ const payload={status:'active',disclosed:true,reason:'Verified client and resumed'};
+ await assert.rejects(asOwner(()=>pg.query("select onboarding_command($1,1,'lifecycle',$2,$3)",[project,JSON.stringify({...payload,disclosed:false}),randomUUID()])),/consent/);
+ await asOwner(()=>pg.query("select onboarding_command($1,1,'lifecycle',$2,$3)",[project,JSON.stringify(payload),randomUUID()]));
+ assert.equal(await count("automation_jobs","state='queued'"),0);assert.equal(await count("owner_decisions"),1);
+ assert.equal(await count("project_tasks"),0);
+});
