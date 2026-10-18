@@ -91,6 +91,14 @@ export function checked<T>(result: {
       );
     if (code === "P0001" || code === "23514" || code === "22023")
       throw new ApiError(422, "SETUP_REQUIRED", result.error.message);
+    // Missing tables/columns usually mean the Supabase migrations have not
+    // been applied (or the PostgREST schema cache has not refreshed).
+    if (code === "42P01" || code === "42703" || code === "PGRST204" || code === "PGRST205")
+      throw new ApiError(
+        503,
+        "SETUP_REQUIRED",
+        "The database schema is out of date. Apply the Supabase migrations and retry.",
+      );
     throw new ApiError(
       503,
       "DATABASE",
