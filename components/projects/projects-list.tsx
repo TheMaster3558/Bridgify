@@ -21,6 +21,7 @@ import {
   Plus,
   Search,
   Sparkles,
+  UserRound,
   Workflow,
 } from "lucide-react";
 import { DropdownMenu } from "radix-ui";
@@ -51,6 +52,8 @@ import {
   settingsButton,
   settingsPrimaryButton,
 } from "@/components/settings/settings-ui";
+import { ClientPhotoCard } from "@/components/dashboard/client-photo";
+import { clientKey } from "@/lib/clients/photos";
 import { formatAgreedDate } from "@/lib/projects/draft";
 import {
   projectListStatus,
@@ -182,9 +185,13 @@ function ProjectPanel({
   project,
   pending,
   onClose,
+  photo,
+  onPhotoChange,
 }: {
   project: WorkspaceProject;
   pending: number;
+  photo?: string | null;
+  onPhotoChange: (url: string | null) => void;
   onClose: () => void;
 }) {
   const status = projectListStatus(project.status);
@@ -205,7 +212,7 @@ function ProjectPanel({
       <header className={panelHeader}>
         <div className="flex items-start justify-between gap-3">
           <div className="flex min-w-0 items-center gap-3">
-            <InitialsAvatar name={project.name} size="md" square />
+            <InitialsAvatar name={project.name} size="md" square src={photo} />
             <div className="min-w-0">
               <h2 className="truncate text-xl leading-snug font-semibold tracking-tight">
                 {project.name}
@@ -256,6 +263,23 @@ function ProjectPanel({
             />
           </Link>
         )}
+
+        <PanelSection icon={UserRound} title="Client">
+          <ClientPhotoCard
+            clientName={project.client_name}
+            src={photo}
+            onChange={onPhotoChange}
+          >
+            <p className="truncate text-[15px] font-medium">
+              {project.client_name}
+            </p>
+            <p className="text-sm text-neutral-500 dark:text-neutral-400">
+              {photo
+                ? "Photo shows on every project for this client."
+                : "Add a photo to show instead of initials."}
+            </p>
+          </ClientPhotoCard>
+        </PanelSection>
 
         <PanelSection icon={Sparkles} title="Automation">
           <div className="grid justify-items-start gap-2 rounded-2xl bg-sidebar p-4">
@@ -339,10 +363,19 @@ function ProjectPanel({
 export function ProjectsList({
   workspaceProjects = [],
   pendingDecisions = {},
+  clientPhotos = {},
 }: {
   workspaceProjects?: WorkspaceProject[];
   pendingDecisions?: Record<string, number>;
+  clientPhotos?: Record<string, string>;
 }) {
+  const [photoOverrides, setPhotoOverrides] = useState<
+    Record<string, string | null>
+  >({});
+  const photoFor = (name: string) => {
+    const key = clientKey(name);
+    return key in photoOverrides ? photoOverrides[key] : clientPhotos[key];
+  };
   const router = useRouter();
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<(typeof FILTERS)[number]["id"]>("all");
@@ -615,7 +648,11 @@ export function ProjectsList({
                           >
                             <td className="py-2 pr-3 pl-4">
                               <div className="flex max-w-72 items-center gap-2.5">
-                                <InitialsAvatar name={project.name} square />
+                                <InitialsAvatar
+                                  name={project.name}
+                                  square
+                                  src={photoFor(project.client_name)}
+                                />
                                 <div className="min-w-0">
                                   <p className="truncate text-[15px] leading-5 font-medium">
                                     {project.name}
@@ -774,6 +811,13 @@ export function ProjectsList({
               key={selected.id}
               project={selected}
               pending={pendingDecisions[selected.id] ?? 0}
+              photo={photoFor(selected.client_name)}
+              onPhotoChange={(url) =>
+                setPhotoOverrides((current) => ({
+                  ...current,
+                  [clientKey(selected.client_name)]: url,
+                }))
+              }
               onClose={() => setSelectedId(null)}
             />
           </aside>

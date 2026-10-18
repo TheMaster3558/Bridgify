@@ -21,6 +21,8 @@ import {
 } from "lucide-react";
 import { Checkbox, Dialog, DropdownMenu } from "radix-ui";
 import { DecisionActions } from "./decision-actions";
+import { ClientPhotoCard } from "@/components/dashboard/client-photo";
+import { clientKey } from "@/lib/clients/photos";
 import { settingsButton } from "@/components/settings/settings-ui";
 import {
   DotChip,
@@ -157,11 +159,15 @@ function DecisionDetail({
   onClose,
   onResolved,
   onDelete,
+  photo,
+  onPhotoChange,
 }: {
   decision: Decision;
   onClose: () => void;
   onResolved: (id: string) => void;
   onDelete: () => void;
+  photo?: string | null;
+  onPhotoChange: (url: string | null) => void;
 }) {
   const options = decision.suggested_options;
   return (
@@ -198,27 +204,30 @@ function DecisionDetail({
       </header>
 
       <div className="grid gap-7 px-6 py-6">
-        <div className="flex items-center gap-3 rounded-2xl bg-sidebar p-3">
-          <InitialsAvatar name={decision.client_name} size="md" />
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-[15px] font-medium">
-              {decision.client_name}
-            </p>
-            <p className="truncate text-sm text-neutral-500 dark:text-neutral-400">
-              {decision.project_name}
-            </p>
-          </div>
-          <div className="text-right text-xs text-neutral-500 dark:text-neutral-400">
-            <p>Updated</p>
-            <p className="font-medium text-foreground tabular-nums">
-              {formatShortDate(decision.updated_at)}
-            </p>
-          </div>
-        </div>
+        <ClientPhotoCard
+          clientName={decision.client_name}
+          src={photo}
+          onChange={onPhotoChange}
+          aside={
+            <div className="text-right text-xs text-neutral-500 dark:text-neutral-400">
+              <p>Updated</p>
+              <p className="font-medium text-foreground tabular-nums">
+                {formatShortDate(decision.updated_at)}
+              </p>
+            </div>
+          }
+        >
+          <p className="truncate text-[15px] font-medium">
+            {decision.client_name}
+          </p>
+          <p className="truncate text-sm text-neutral-500 dark:text-neutral-400">
+            {decision.project_name}
+          </p>
+        </ClientPhotoCard>
 
         <PanelSection icon={MessageCircle} title="Client request">
           <div className="flex items-end gap-2.5">
-            <InitialsAvatar name={decision.client_name} />
+            <InitialsAvatar name={decision.client_name} src={photo} />
             <div className="min-w-0">
               <div className="w-fit max-w-full rounded-[20px] rounded-bl-md bg-sidebar-accent px-4 py-2.5 text-[15px] leading-relaxed whitespace-pre-wrap">
                 {decision.source_text || (
@@ -527,7 +536,20 @@ function DeleteDialog({
   );
 }
 
-export function NeedsAttention({ decisions }: { decisions: Decision[] }) {
+export function NeedsAttention({
+  decisions,
+  clientPhotos = {},
+}: {
+  decisions: Decision[];
+  clientPhotos?: Record<string, string>;
+}) {
+  const [photoOverrides, setPhotoOverrides] = useState<
+    Record<string, string | null>
+  >({});
+  const photoFor = (name: string) => {
+    const key = clientKey(name);
+    return key in photoOverrides ? photoOverrides[key] : clientPhotos[key];
+  };
   const [resolvedIds, setResolvedIds] = useState<string[]>([]);
   const [filter, setFilter] = useState("all");
   const router = useRouter();
@@ -806,7 +828,10 @@ export function NeedsAttention({ decisions }: { decisions: Decision[] }) {
                         </td>
                         <td className="py-2 pr-3 pl-2">
                           <div className="flex max-w-52 items-center gap-2.5">
-                            <InitialsAvatar name={decision.client_name} />
+                            <InitialsAvatar
+                              name={decision.client_name}
+                              src={photoFor(decision.client_name)}
+                            />
                             <span className="truncate text-[15px] font-medium">
                               {decision.client_name}
                             </span>
@@ -908,6 +933,13 @@ export function NeedsAttention({ decisions }: { decisions: Decision[] }) {
                 setSelectedId(null);
               }}
               onDelete={() => setDeleteTargets([selected])}
+              photo={photoFor(selected.client_name)}
+              onPhotoChange={(url) =>
+                setPhotoOverrides((current) => ({
+                  ...current,
+                  [clientKey(selected.client_name)]: url,
+                }))
+              }
             />
           </aside>
         </>
