@@ -1,12 +1,13 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { AlertCircle, CalendarDays, Check, LayoutGrid, List, X } from "lucide-react";
+import { AlertCircle, CalendarDays, LayoutGrid, List, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { DashboardTask } from "@/lib/dashboard/work-management-types";
 import { cn } from "@/lib/utils";
+import { TaskStatusActions } from "./task-status-actions";
 
 type TaskStatus = Exclude<DashboardTask["status"], "cancelled">;
 const statusFilters: { id: "all" | TaskStatus; label: string }[] = [
@@ -128,7 +129,7 @@ export function TasksWorkspace({ tasks }: { tasks: DashboardTask[] }) {
           </section>
         )}
 
-        <p className="flex items-start gap-2 text-xs text-muted-foreground"><AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />Task records load from your workspace database. Task state changes are not enabled yet.</p>
+        <p className="flex items-start gap-2 text-xs text-muted-foreground"><AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />Task status is saved to your workspace and used in automatic client status replies.</p>
       </main>
 
       {selectedTask && (
@@ -137,12 +138,10 @@ export function TasksWorkspace({ tasks }: { tasks: DashboardTask[] }) {
           <aside className="relative z-10 flex h-full w-full max-w-xl flex-col overflow-y-auto border-l bg-card shadow-xl" role="dialog" aria-modal="true" aria-labelledby="task-detail-title">
             <div className="flex items-start justify-between gap-4 border-b p-5"><div className="min-w-0"><span className="font-mono text-xs text-muted-foreground">{selectedTask.task_code}</span><h2 id="task-detail-title" className="mt-1 break-words font-display text-xl font-semibold">{selectedTask.title}</h2><div className="mt-3 flex flex-wrap items-center gap-2 text-sm"><Badge variant="outline" className={statusClass[selectedTask.status]}>{statusLabels[selectedTask.status]}</Badge><span className="capitalize text-muted-foreground">{selectedTask.priority} priority · {selectedTask.assignee || "Unassigned"}</span></div></div><Button variant="ghost" size="icon-sm" aria-label="Close task details" onClick={() => setSelectedTask(null)}><X aria-hidden="true" /></Button></div>
             <div className="flex flex-col gap-6 p-5">
-              <div className="flex flex-wrap gap-2"><Button disabled><Check aria-hidden="true" />{selectedTask.status === "ready" ? "Start task" : "Mark done"}</Button><Button variant="outline" disabled>Mark blocked…</Button><Button variant="outline" disabled>Cancel task…</Button></div>
-              {selectedTask.status === "ready" && selectedTask.origin === "auto" && <div className="rounded-md border border-info/20 bg-info-soft p-3 text-sm text-info">Starting this task consumes its reserved revision unit. This happens once.</div>}
+              <TaskStatusActions key={selectedTask.id} task={selectedTask} onSaved={setSelectedTask} />
               <section className="grid gap-3"><h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Requested change</h3><dl className="grid grid-cols-[max-content_minmax(0,1fr)] gap-x-5 gap-y-2 text-sm">{selectedTask.operation && <><dt className="text-muted-foreground">Operation</dt><dd className="font-mono text-xs">{selectedTask.operation}</dd></>}{selectedTask.target_id && <><dt className="text-muted-foreground">Target</dt><dd className="font-mono text-xs">{selectedTask.target_id}</dd></>}<dt className="text-muted-foreground">{selectedTask.origin === "auto" ? "Value" : "Deliverable"}</dt><dd>{selectedTask.value ?? selectedTask.title}</dd>{selectedTask.acceptance_criteria && <><dt className="text-muted-foreground">Acceptance criteria</dt><dd>{selectedTask.acceptance_criteria}</dd></>}<dt className="text-muted-foreground">Agreed date</dt><dd>{displayDate(selectedTask.agreed_due_date) ?? "No date agreed"}</dd></dl></section>
               <section className="grid gap-3"><h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Why this task exists</h3><blockquote className="rounded-r-md border-l-[3px] border-info bg-info-soft p-3 text-sm">“{selectedTask.source_text ?? "No linked source message is recorded."}”<cite className="mt-1 block text-xs not-italic text-muted-foreground">{selectedTask.source_meta ?? selectedTask.origin_text}</cite></blockquote><dl className="grid grid-cols-[max-content_minmax(0,1fr)] gap-x-5 gap-y-2 text-sm"><dt className="text-muted-foreground">Project</dt><dd>{selectedTask.project_name} · {selectedTask.client_name}</dd>{selectedTask.request_code && <><dt className="text-muted-foreground">Request</dt><dd>{selectedTask.request_code}</dd></>}{selectedTask.authorized_by && <><dt className="text-muted-foreground">Authorized by</dt><dd>{selectedTask.authorized_by}</dd></>}{selectedTask.revision_unit && <><dt className="text-muted-foreground">Revision unit</dt><dd>{selectedTask.revision_unit}</dd></>}</dl></section>
               <section className="grid gap-3"><h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Internal notes · owner only</h3><p className="rounded-md border border-warn/20 bg-warn-soft p-3 text-sm">{selectedTask.internal_note ?? "No internal note recorded."}</p></section>
-              <section className="grid gap-3 rounded-lg border p-4 opacity-75"><h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Complete task</h3><label className="grid gap-1 text-sm font-medium">What was done (internal record)<textarea className="min-h-20 rounded-md border bg-background p-3 font-normal" disabled /></label><label className="grid gap-1 text-sm font-medium">Public completion note<textarea className="min-h-20 rounded-md border bg-background p-3 font-normal" disabled /></label><Button disabled>Mark done</Button></section>
               <section className="grid gap-2 text-xs text-muted-foreground"><p className="flex items-center gap-2"><CalendarDays className="size-4" aria-hidden="true" />Updated {new Date(selectedTask.updated_at).toLocaleString()}</p>{selectedTask.history.map((entry, index) => <p key={`${selectedTask.id}-history-${index}`}>{entry}</p>)}</section>
             </div>
           </aside>

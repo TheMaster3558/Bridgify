@@ -39,7 +39,7 @@ export async function listOwnerDecisions(client: Client) {
   const rows = checked(
     await client
       .from("owner_decisions")
-      .select("id,project_id,decision_code,request_code,reason,title,severity,status,source_text,source_meta,evidence,evidence_source,explanation,missing_details,suggested_options,reply_preview,internal_note,history,created_at,updated_at")
+      .select("id,project_id,automation_request_id,decision_code,request_code,reason,title,severity,status,source_text,source_meta,evidence,evidence_source,explanation,missing_details,suggested_options,reply_preview,internal_note,history,created_at,updated_at")
       .in("status", ["open", "reviewing"])
       .order("updated_at", { ascending: false }),
   ) as Omit<OwnerDecisionRecord, "project_name" | "client_name">[];

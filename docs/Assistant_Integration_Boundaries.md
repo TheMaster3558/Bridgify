@@ -1,5 +1,11 @@
 # Assistant contracts and adapters
 
+**Current implementation:** [Project Automation](./Project_Automation.md) now
+connects the canonical project setup schema, real Photon history/signed webhooks,
+Gemini interpretation, atomic task acceptance and revision accounting, owner review
+commands, task statuses, and durable reply delivery. The inventory below is a
+historical description of the earlier integration boundaries.
+
 **Update:** The subsequent intake feature now implements Postgres inbox/history
 persistence, a signed Spectrum Cloud webhook handler and authorized history reads.
 See [Photon Intake Setup](./Photon_Intake_Setup.md) for current setup, exact supported

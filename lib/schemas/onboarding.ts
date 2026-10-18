@@ -77,6 +77,11 @@ export const policySchema = z
     exclusions: z.string().trim().min(1).max(4000),
     max_open_tasks: z.number().int().min(1).max(10),
     notifications: z.literal("dashboard"),
+    replies: z.object({
+      status_questions: z.boolean(),
+      clarifications: z.boolean(),
+      review_acknowledgments: z.boolean(),
+    }).default({ status_questions: true, clarifications: true, review_acknowledgments: true }),
   })
   .refine((v) => v.mode !== "enabled" || v.targets.length > 0, {
     message:
