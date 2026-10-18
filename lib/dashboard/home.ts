@@ -1,10 +1,12 @@
 import { checked } from "@/lib/api";
 import type { db } from "@/lib/db/server";
+import { homeActivity } from "@/lib/dashboard/home-activity";
 
 type Client = Awaited<ReturnType<typeof db>>;
 
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
-const LIST_SIZE = 6;
+// Four per page in the Home cards, three pages.
+const LIST_SIZE = 12;
 
 type ProjectRef = { name: string; client_name: string };
 
@@ -42,7 +44,11 @@ async function count(
 
 // Everything the Home overview shows, read from the same tables as Actionable
 // Tasks, Needs Attention, Proposals and project automation.
-export async function homeOverview(client: Client, now = new Date()) {
+export async function homeOverview(
+  client: Client,
+  now = new Date(),
+  timeZone?: string,
+) {
   const head = { head: true, count: "exact" } as const;
   const weekAgo = new Date(now.getTime() - WEEK_MS).toISOString();
   const [
@@ -61,6 +67,7 @@ export async function homeOverview(client: Client, now = new Date()) {
     handled,
     work,
     deliveryIssues,
+    activity,
   ] = await Promise.all([
     count(client.from("project_tasks").select("*", head).eq("status", "ready")),
     count(
@@ -153,6 +160,7 @@ export async function homeOverview(client: Client, now = new Date()) {
       .order("updated_at", { ascending: false })
       .limit(1)
       .maybeSingle(),
+    homeActivity(client, now, timeZone),
   ]);
 
   const decisionRows = (checked(decisions) ?? []).map((d) => ({
@@ -193,7 +201,7 @@ export async function homeOverview(client: Client, now = new Date()) {
         (priorityRank[a.priority] ?? 1) - (priorityRank[b.priority] ?? 1) ||
         b.updatedAt.localeCompare(a.updatedAt),
     )
-    .slice(0, 8);
+    .slice(0, 25);
 
   const latestIssue = checked(deliveryIssues);
 
@@ -236,6 +244,7 @@ export async function homeOverview(client: Client, now = new Date()) {
       project: project(r.projects),
     })),
     work: workRows,
+    activity,
     issues: {
       deliveryUnknown,
       deliveryFailed,

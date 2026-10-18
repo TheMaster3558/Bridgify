@@ -1,5 +1,6 @@
 import { HomeOverview } from "@/components/dashboard/home-overview";
 import { requireOwner } from "@/lib/auth/session";
+import { loadClientPhotos } from "@/lib/clients/photo-urls";
 import { homeOverview } from "@/lib/dashboard/home";
 
 function text(metadata: unknown, key: string) {
@@ -11,6 +12,7 @@ function text(metadata: unknown, key: string) {
 }
 
 function validZone(zone: string) {
+  if (!zone) return undefined;
   try {
     new Intl.DateTimeFormat("en-US", { timeZone: zone });
     return zone;
@@ -19,45 +21,37 @@ function validZone(zone: string) {
   }
 }
 
+function organizationName(value: unknown): string {
+  const org = Array.isArray(value) ? value[0] : value;
+  return org && typeof org === "object" && "name" in org
+    ? String(org.name)
+    : "";
+}
+
 export default async function Page() {
-  const { client, user } = await requireOwner();
-  const data = await homeOverview(client);
-  // Greet in the owner's own timezone from Settings, not the server's.
+  const { client, user, membership } = await requireOwner();
+  // Charts and dates follow the owner's own timezone from Settings.
   const timeZone = validZone(text(user.user_metadata, "timezone"));
-  const now = new Date(data.now);
-  const hour = Number(
-    new Intl.DateTimeFormat("en-US", {
-      hour: "numeric",
-      hourCycle: "h23",
-      timeZone,
-    }).format(now),
-  );
-  const part =
-    hour < 5
-      ? "evening"
-      : hour < 12
-        ? "morning"
-        : hour < 17
-          ? "afternoon"
-          : "evening";
+  const data = await homeOverview(client, new Date(), timeZone);
+  const clientPhotos = await loadClientPhotos(client, [
+    ...data.decisions.items.map((d) => d.project.client_name),
+    ...data.handled.map((h) => h.project.client_name),
+    ...data.work.map((w) => w.project.client_name),
+  ]);
   const firstName = text(user.user_metadata, "display_name")
     .trim()
     .split(/\s+/)[0];
   return (
     <HomeOverview
       data={data}
-      greeting={`Good ${part}${firstName ? `, ${firstName}` : ""}`}
-      today={new Intl.DateTimeFormat("en-US", {
-        weekday: "long",
-        month: "long",
-        day: "numeric",
-        timeZone,
-      }).format(now)}
+      clientPhotos={clientPhotos}
+      organization={organizationName(membership.organizations)}
+      greeting={firstName ? `Welcome ${firstName}` : "Welcome back"}
       refreshedAt={new Intl.DateTimeFormat("en-US", {
         hour: "numeric",
         minute: "2-digit",
         timeZone,
-      }).format(now)}
+      }).format(new Date(data.now))}
     />
   );
 }
