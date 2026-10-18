@@ -10,6 +10,11 @@ import {
 } from "@/lib/projects/setup-validation";
 import { SetupField, SetupForm, SetupSubmit } from "./setup-form";
 import type { ContinueStateChange } from "./use-setup-continue";
+import {
+  AUTOMATIC_ACCEPTANCE_GUIDANCE,
+  MANUAL_ACCEPTANCE_GUIDANCE,
+  initialAcceptanceGuidance,
+} from "@/lib/assistant/policy-guidance";
 
 export function AutomationSetup({
   project: p,
@@ -39,6 +44,10 @@ export function AutomationSetup({
     p.policy?.allowance_mode ||
       (revision?.unit === "rounds" ? "manual_rounds" : "per_request"),
   );
+  const [guidance, setGuidance] = useState(() =>
+    initialAcceptanceGuidance(p.policy),
+  );
+  const [guidanceEdited, setGuidanceEdited] = useState(false);
   const validate = useCallback(
     (form: FormData) => {
       const errors = validatePolicy(form);
@@ -52,6 +61,7 @@ export function AutomationSetup({
   return (
     <SetupForm
       validate={validate}
+      validationKey={`${mode}:${guidance}`}
       onContinueState={onContinueState}
       disabled={locked}
       onSave={(form) => onSave(policyPayload(form))}
@@ -59,19 +69,48 @@ export function AutomationSetup({
       <SetupField
         label="How should the assistant handle requests?"
         name="mode"
-        hint="Manual approval is a good starting point. You can review each request before accepting work."
+        hint="The assistant evaluates requests against your confirmed agreement. Choose whether it can accept clear requests or must ask you first."
       >
         <select
           name="mode"
           value={mode}
-          onChange={(e) => setMode(e.target.value as typeof mode)}
+          onChange={(e) => {
+            setMode(e.target.value as typeof mode);
+            if (!guidanceEdited)
+              setGuidance(
+                e.target.value === "enabled"
+                  ? AUTOMATIC_ACCEPTANCE_GUIDANCE
+                  : MANUAL_ACCEPTANCE_GUIDANCE,
+              );
+          }}
           className="rounded border p-2"
         >
           <option value="review_only">I approve every request</option>
           <option value="enabled" disabled={manualRequired}>
-            Accept permitted small changes automatically
+            Let the assistant accept clear, in-scope requests
           </option>
         </select>
+      </SetupField>
+      <SetupField
+        label={
+          mode === "enabled"
+            ? "What may the assistant accept automatically?"
+            : "Request review guidance (optional)"
+        }
+        name="acceptance_guidance"
+        hint="Edit this in your own words. The assistant uses this guidance and the agreement to decide whether to create a task, ask a question or put the request in your review queue. It accepts work for you to do; it does not edit the website."
+      >
+        <Textarea
+          name="acceptance_guidance"
+          rows={5}
+          maxLength={4000}
+          required={mode === "enabled"}
+          value={guidance}
+          onChange={(e) => {
+            setGuidance(e.target.value);
+            setGuidanceEdited(true);
+          }}
+        />
       </SetupField>
       {manualRequired && (
         <p className="text-sm text-muted-foreground">
@@ -120,51 +159,21 @@ export function AutomationSetup({
       </SetupField>
       <details className="rounded-lg border p-4">
         <summary className="cursor-pointer font-medium">
-          Advanced settings · permitted changes and limits
+          Advanced settings · optional limits
         </summary>
         <div className="mt-4 grid gap-5">
           <p className="text-sm text-muted-foreground">
-            The default is manual approval for every request. No pages or
-            elements are authorized for automatic changes until you choose them.
+            You can leave the page or element list blank. The confirmed
+            agreement and your guidance set the boundaries. Adding a list
+            narrows the requests eligible for automatic acceptance.
           </p>
           <SetupField
-            label="Types of change the assistant may accept"
-            name="operations"
-            hint="These permissions apply only when automatic acceptance is enabled."
-          >
-            <div className="grid gap-3 rounded border p-3" role="group">
-              <label className="flex gap-2">
-                <input
-                  name="operations"
-                  type="checkbox"
-                  value="replace_text"
-                  defaultChecked={(
-                    p.policy?.operations ?? DEFAULT_SETUP_POLICY.operations
-                  ).includes("replace_text")}
-                />
-                Replace existing text
-              </label>
-              <label className="flex gap-2">
-                <input
-                  name="operations"
-                  type="checkbox"
-                  value="change_color"
-                  defaultChecked={(
-                    p.policy?.operations ?? DEFAULT_SETUP_POLICY.operations
-                  ).includes("change_color")}
-                />
-                Change an existing element’s color
-              </label>
-            </div>
-          </SetupField>
-          <SetupField
-            label="Pages or elements covered by these permissions"
+            label="Pages or elements covered by these permissions (optional)"
             name="targets"
-            hint="Defaults to none. Leave blank for manual approval. To enable automatic acceptance, enter the exact page or element identifiers from your website or design file, one per line (for example, home.hero.heading). Ask your developer or designer if you do not know them."
+            hint="Leave blank to evaluate requests across the confirmed scope. To restrict automatic acceptance to specific pages or elements, list their names or identifiers, one per line."
           >
             <Textarea
               name="targets"
-              required={mode === "enabled"}
               defaultValue={p.policy?.targets.join("\n") || ""}
               rows={3}
             />
@@ -204,16 +213,45 @@ export function AutomationSetup({
       </details>
       <fieldset className="grid gap-3 rounded-lg border p-4">
         <legend className="px-1 font-medium">Automatic client replies</legend>
-        <p className="text-sm text-muted-foreground">These replies also work with manual approval. Accepted requests always receive a task confirmation. Casual conversation stays quiet.</p>
-        {([
-          ["status_questions", "Answer status questions from saved task information"],
-          ["progress_updates", "Send updates when I start, block, complete or cancel work"],
-          ["clarifications", "Ask for missing request details (up to two follow-ups)"],
-          ["review_acknowledgments", "Acknowledge requests waiting for my review"],
-        ] as const).map(([key, label]) => (
+        <p className="text-sm text-muted-foreground">
+          These replies also work with manual approval. Accepted requests always
+          receive a task confirmation. Casual conversation stays quiet.
+        </p>
+        {(
+          [
+            [
+              "status_questions",
+              "Answer status questions from saved task information",
+            ],
+            [
+              "progress_updates",
+              "Send updates when I start, block, complete or cancel work",
+            ],
+            [
+              "clarifications",
+              "Ask for missing request details (up to two follow-ups)",
+            ],
+            [
+              "review_acknowledgments",
+              "Acknowledge requests waiting for my review",
+            ],
+          ] as const
+        ).map(([key, label]) => (
           <label key={key} className="grid gap-1 text-sm">
             {label}
-            <select name={`reply_${key}`} defaultValue={key === "progress_updates" ? (p.policy?.replies?.progress_updates ? "on" : "off") : p.policy?.replies?.[key] === false ? "off" : "on"} className="rounded border p-2">
+            <select
+              name={`reply_${key}`}
+              defaultValue={
+                key === "progress_updates"
+                  ? p.policy?.replies?.progress_updates
+                    ? "on"
+                    : "off"
+                  : p.policy?.replies?.[key] === false
+                    ? "off"
+                    : "on"
+              }
+              className="rounded border p-2"
+            >
               <option value="on">Enabled</option>
               <option value="off">Disabled</option>
             </select>

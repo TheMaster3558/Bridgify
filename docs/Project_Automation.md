@@ -51,13 +51,18 @@ selects SDK mode without editing the saved webhook configuration.
 
 - Manual approval routes work to Needs Attention without spending revisions.
   Automatic acceptance requires active lifecycle, enabled policy, a per-request
-  allowance, permitted operation and target, agreement inclusion evidence, no
+  allowance, a clearly allowed assessment under saved acceptance guidance,
+  agreement inclusion evidence, no
   applicable exclusions, complete fields and available task capacity. Scope and
   policy versions are checked again after Gemini returns.
-- Text replacement and color changes are the supported routine task operations.
-  New features, scope additions, deadline changes, conflicts, cancellations and
-  uncertain interpretation require the owner. No new operation is silently
-  enabled for existing projects.
+- Step 4 uses an editable guidance box instead of two operation checkboxes.
+  The model can classify text, visual, layout, asset and other included changes
+  into owner tasks. Optional advanced page/element limits narrow eligibility;
+  blank means evaluate the confirmed scope. New features outside the saved
+  guidance, scope additions, deadline changes, conflicts, cancellations and
+  uncertainty require the owner. Existing operation-list policies are preserved
+  until explicitly edited. General tasks store instructions and a descriptive
+  target; no website edit is executed or claimed.
 - Project creation includes independent controls for status answers, clarification
   questions and review acknowledgments. Earlier policies default these to enabled.
   Task acceptance always queues a confirmation. Standalone thanks and gratitude

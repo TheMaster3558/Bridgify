@@ -14,7 +14,7 @@ export const DEFAULT_SETUP_POLICY = {
   mode: "review_only",
   allowance_mode: "per_request",
   allowance: 0,
-  operations: ["replace_text"] as ("replace_text" | "change_color")[],
+  operations: [] as ("replace_text" | "change_color")[],
   targets: [] as string[],
   exclusions:
     "New pages, accounts, payments, integrations, price changes and deadline changes always need my approval.",
@@ -105,7 +105,9 @@ export function policyPayload(form: FormData) {
     mode: String(form.get("mode")),
     allowance_mode: String(form.get("allowance_mode")),
     allowance: Number(form.get("allowance")),
-    operations: form.getAll("operations"),
+    permission_mode: "guidance" as const,
+    acceptance_guidance: String(form.get("acceptance_guidance") || "").trim(),
+    operations: [],
     targets: [
       ...new Set(
         String(form.get("targets") || "")
@@ -121,7 +123,8 @@ export function policyPayload(form: FormData) {
       progress_updates: form.get("reply_progress_updates") === "on",
       status_questions: form.get("reply_status_questions") !== "off",
       clarifications: form.get("reply_clarifications") !== "off",
-      review_acknowledgments: form.get("reply_review_acknowledgments") !== "off",
+      review_acknowledgments:
+        form.get("reply_review_acknowledgments") !== "off",
     },
   };
 }
@@ -141,13 +144,9 @@ export function validatePolicy(form: FormData): FieldErrors {
     if (!/^\d+$/.test(raw) || Number(raw) < min || Number(raw) > max)
       errors[key] = `Enter a whole number of ${label} from ${min} to ${max}.`;
   }
-  if (
-    (value.mode === "enabled" && !value.targets.length) ||
-    value.targets.length > 30 ||
-    value.targets.some((t) => t.length > 200)
-  )
+  if (value.targets.length > 30 || value.targets.some((t) => t.length > 200))
     errors.targets =
-      "Automatic acceptance needs 1–30 page or element identifiers, one per line, with no more than 200 characters each. Leave blank only when every request needs your approval.";
+      "Enter at most 30 optional page or element limits, one per line, with no more than 200 characters each.";
   if (!value.exclusions || value.exclusions.length > 4000)
     errors.exclusions =
       "Describe what the assistant must leave for your approval, using 1–4,000 characters.";
@@ -158,9 +157,9 @@ export function validatePolicy(form: FormData): FieldErrors {
     if (value.allowance < 1)
       errors.allowance =
         "Automatic acceptance needs at least one included change. Otherwise choose manual approval.";
-    if (!value.operations.length)
-      errors.operations =
-        "Select at least one type of change the assistant may accept.";
+    if (!value.acceptance_guidance || value.acceptance_guidance.length > 4000)
+      errors.acceptance_guidance =
+        "Describe the changes that may be accepted automatically, using 1–4,000 characters.";
   }
   // Keep the browser in step with the API's policy boundary.
   const parsed = policySchema.safeParse(value);

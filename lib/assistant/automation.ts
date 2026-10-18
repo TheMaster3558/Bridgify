@@ -305,6 +305,8 @@ export async function loadAutomationSnapshot(
       policyVersion: project.policy_version,
       inputWatermark: hash({ watermark, requestStatuses }),
       policyExclusions: policy.exclusions,
+      permissionMode: policy.permission_mode,
+      acceptanceGuidance: policy.acceptance_guidance,
       messages: messages.map((m) => ({
         revisionId: m.id,
         text: m.text,
@@ -417,6 +419,7 @@ const fields = {
   replacement_text: "the exact replacement text",
   locator: "the existing text to replace",
   color: "the requested color",
+  instructions: "the requested result and any details needed to carry it out",
 };
 
 async function applyAnalysis(
@@ -558,15 +561,19 @@ async function applyAnalysis(
         continue;
       }
     }
+    const permittedByGuidance = policy.permission_mode === "guidance";
+    if (!reason && permittedByGuidance && intent.policyAssessment !== "allowed")
+      reason = "policy_denied";
     if (
       !reason &&
       (p.status !== "active" ||
         policy.mode !== "enabled" ||
         policy.allowance_mode !== "per_request" ||
         !intent.operation ||
-        !policy.operations.includes(intent.operation) ||
-        !intent.targetId ||
-        !policy.targets.includes(intent.targetId))
+        (!permittedByGuidance && !policy.operations.includes(intent.operation as "replace_text" | "change_color")) ||
+        (policy.targets.length > 0
+          ? !intent.targetId || !policy.targets.includes(intent.targetId)
+          : !permittedByGuidance || !intent.payload.targetDescription))
     )
       reason = "policy_denied";
     if (!reason) {
@@ -620,8 +627,8 @@ async function applyAnalysis(
           intent.summary.slice(0, 500),
           code("REQ", id),
           intent.operation,
-          intent.targetId,
-          intent.payload.replacementText ?? intent.payload.color,
+          intent.targetId ?? intent.payload.targetDescription,
+          intent.operation === "project_change" ? intent.payload.instructions : intent.payload.replacementText ?? intent.payload.color,
           JSON.stringify(intent.payload),
           source,
           sourceIds.join(", "),

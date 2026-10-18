@@ -1062,6 +1062,65 @@ test("new owner commands and accounting records remain private to the project ow
  await assert.rejects(pg.query('select automation_accounting($1)',[project]));
  }finally{await pg.exec('reset role');}
 });
+const guidancePolicy = { ...policy, permission_mode: "guidance", acceptance_guidance: "Accept small layout and spacing changes covered by the agreement.", operations: [], targets: [] };
+async function layoutScope() {
+  await pg.query("update scope_versions set terms=$2 where project_id=$1", [project,JSON.stringify([{kind:"inclusion",text:"Spacing and layout adjustments are included."}])]);
+}
+function layoutIntent(c: InterpretationContext, patch: Partial<Interpretation["intents"][number]> = {}) {
+  return intent(c,{operation:"project_change",targetId:null,summary:"Increase homepage heading spacing to 24px",policyAssessment:"allowed",
+    payload:{color:null,locator:null,replacementText:null,targetDescription:"Homepage heading",instructions:"Increase homepage heading spacing to 24px"},
+    scopeEvidence:[{scopeItemId:"scope-0",quote:"layout adjustments"}],...patch});
+}
+test("guidance policy saves with no operation selection or targets and activates only after disclosure", async () => {
+  await pg.exec("update projects set status='draft',activation_cutoff=null,policy_version=0,policy=null;delete from policy_versions;");
+  const key=randomUUID();
+  const save=()=>asOwner(()=>pg.query<{result:{project:{version:number}}}>("select onboarding_command($1,1,'policy',$2,$3) result",[project,JSON.stringify(guidancePolicy),key]));
+  const first=await save();assert.equal((await save()).rows[0].result.project.version,first.rows[0].result.project.version);
+  const version=first.rows[0].result.project.version;
+  await assert.rejects(asOwner(()=>pg.query("select onboarding_command($1,$2,'lifecycle',$3,$4)",[project,version,JSON.stringify({status:"active",reason:"Reviewed setup",disclosed:false}),randomUUID()])),/agreed/);
+  await asOwner(()=>pg.query("select onboarding_command($1,$2,'lifecycle',$3,$4)",[project,version,JSON.stringify({status:"active",reason:"Reviewed setup",disclosed:true}),randomUUID()]));
+  assert.equal(await count("projects","status='active' and policy->>'permission_mode'='guidance'"),1);
+  assert.equal(await count("policy_versions"),1);
+});
+test("guidance creates a real general-change task without invented target identifiers", async () => {
+  await changePolicy(guidancePolicy);await layoutScope();await message("Increase homepage heading spacing to 24px");
+  await processor(c=>{
+    assert.equal(c.permissionMode,"guidance");assert.equal(c.acceptanceGuidance,guidancePolicy.acceptance_guidance);assert.equal(c.targets.length,0);
+    return {intents:[layoutIntent(c)]};
+  }).once();
+  assert.equal(await count("project_tasks","operation='project_change' and target_id='Homepage heading' and value='Increase homepage heading spacing to 24px'"),1);
+  assert.equal(await count("automation_revision_uses"),1);assert.equal(await count("automation_outbox"),1);
+});
+test("uncertain guidance and excluded scope still require review even with automatic acceptance enabled", async () => {
+  await changePolicy(guidancePolicy);await layoutScope();await message("Increase homepage heading spacing to 24px");
+  await processor(c=>({intents:[layoutIntent(c,{policyAssessment:"uncertain"})]})).once();
+  assert.equal(await count("owner_decisions","reason='policy_denied'"),1);
+  await message("Add a new payments page");
+  await processor(c=>({intents:[layoutIntent(c,{scopeAssessment:"excluded",policyAssessment:"allowed"})]})).once();
+  assert.equal(await count("owner_decisions","reason='scope_addition'"),1);assert.equal(await count("project_tasks"),0);assert.equal(await count("automation_revision_uses"),0);
+});
+test("guidance does not remove revision or manual-review safeguards", async () => {
+  await changePolicy({...guidancePolicy,allowance:1});await layoutScope();
+  await message("Increase homepage heading spacing to 24px");await processor(c=>({intents:[layoutIntent(c)]})).once();
+  await message("Increase homepage heading spacing to 32px");await processor(c=>({intents:[layoutIntent(c)]})).once();
+  assert.equal(await count("project_tasks"),1);assert.equal(await count("owner_decisions","reason='exhausted_allowance'"),1);
+  await changePolicy({mode:"review_only"});await message("Increase homepage heading spacing to 40px");await processor(c=>({intents:[layoutIntent(c)]})).once();
+  assert.equal(await count("project_tasks"),1);
+});
+test("activated policy amendments support guidance while preserving accounting", async () => {
+  await message();await processor().once();
+  await ownerCommand("amend_policy",{expectedVersion:1,policy:guidancePolicy});
+  assert.equal(await count("policy_versions","version=2 and policy->>'permission_mode'='guidance'"),1);
+  assert.equal(await count("automation_revision_uses"),1);
+  await assert.rejects(ownerCommand("amend_policy",{expectedVersion:2,policy:{...guidancePolicy,acceptance_guidance:""}}),/guidance/);
+});
+test("owner approval of a general request preserves instructions and its descriptive target", async () => {
+  await changePolicy({...guidancePolicy,mode:"review_only"});await layoutScope();await message("Increase homepage heading spacing to 24px");
+  await processor(c=>({intents:[layoutIntent(c)]})).once();
+  const d=(await pg.query<{decision_id:string}>("select decision_id from automation_requests")).rows[0];
+  await asOwner(()=>pg.query("select resolve_automation_review($1,'approve','','',$2,null)",[d.decision_id,randomUUID()]));
+  assert.equal(await count("project_tasks","operation='project_change' and target_id='Homepage heading' and value='Increase homepage heading spacing to 24px'"),1);
+});
 test("project deletion cascades new round accounting and runtime records",async()=>{
  await changePolicy({mode:'review_only',allowance_mode:'manual_rounds'});await message();await processor().once();
  const r=(await pg.query<{id:string;decision_id:string}>('select id,decision_id from automation_requests')).rows[0];

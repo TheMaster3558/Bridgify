@@ -108,6 +108,7 @@ export function SetupForm({
   disabled = false,
   resetOnSave = false,
   onContinueState,
+  validationKey,
   children,
 }: {
   validate: (form: FormData) => FieldErrors;
@@ -115,6 +116,7 @@ export function SetupForm({
   disabled?: boolean;
   resetOnSave?: boolean;
   onContinueState?: ContinueStateChange;
+  validationKey?: string;
   children: ReactNode;
 }) {
   const ref = useRef<HTMLFormElement>(null);
@@ -133,7 +135,7 @@ export function SetupForm({
   );
   useEffect(() => {
     if (ref.current) setErrors(checkForm(ref.current, validate));
-  }, [validate]);
+  }, [validate, validationKey]);
   const visibleErrors = {
     ...serverErrors,
     ...Object.fromEntries(

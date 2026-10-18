@@ -54,6 +54,19 @@ test("color requests tolerate descriptive locators without granting policy permi
   assert.throws(() => validateInterpretation(mixed,context));
 });
 
+test("guidance mode supports actionable owner tasks without inventing a technical target ID", () => {
+  const value = output();
+  value.intents[0] = { ...value.intents[0], operation: "project_change", targetId: null, policyAssessment: "allowed",
+    payload: { color: null, locator: null, replacementText: null, targetDescription: "Homepage heading", instructions: "Increase the heading's spacing to 24px" } };
+  expectGuidance(value);
+  assert.throws(() => validateInterpretation(value, { ...context, targets: [] }), /invalid_interpretation/);
+  value.intents[0].targetId = "invented-id";
+  assert.throws(() => expectGuidance(value), /invalid_interpretation/);
+});
+function expectGuidance(value: Interpretation) {
+  return validateInterpretation(value, { ...context, permissionMode: "guidance", acceptanceGuidance: "Accept small visual changes", targets: [] });
+}
+
 test("status references are restricted to the same project's saved requests", () => {
   const raw = output(); raw.intents[0].intent = "status_question"; raw.intents[0].statusRequestId = "r1";
   assert.throws(() => validateInterpretation(raw,context));

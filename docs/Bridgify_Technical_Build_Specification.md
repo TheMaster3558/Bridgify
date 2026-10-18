@@ -42,12 +42,28 @@ mixed requests into independent structured intents and send one combined workflo
 update. Standalone gratitude is silent. Clarification answers attach only to an
 unambiguous unresolved request, with at most two follow-ups.
 
-Automatic acceptance requires enabled policy, permitted operation and target,
+New policies use editable plain-language acceptance guidance. The model assesses
+each request against that guidance and the confirmed agreement; it may recommend
+acceptance, clarification or review. The advanced page/element list is optional
+and narrows eligibility when populated. There are no preselected change types.
+The default guidance covers small content, styling, layout and supplied-asset
+updates; owners can edit it. General changes become actionable owner tasks with
+instructions and a descriptive target, without invented technical identifiers.
+Previously saved operation/target-list policies retain their existing limits
+until the owner explicitly saves new settings.
+
+Automatic acceptance requires enabled policy, a clear allowed guidance assessment
+(or permitted legacy operation and target),
 confirmed inclusion evidence, no exclusion/conflict/deadline change, complete
 fields, capacity and available individual-request allowance. Otherwise create an
 owner review. Acceptance atomically creates a task, usage entry, audit record and
 confirmation. Status answers use actual tasks/requests; older records are searched
 within the same project, with bounded matching context and ambiguity handling.
+
+Review & activate lists each missing prerequisite with a link to its setup step.
+The activation action explains missing setup or consent when clicked; it is only
+disabled while saving or after activation. Client disclosure, a recorded verified
+introduction, scope and policy confirmation remain mandatory backend conditions.
 
 Corrections and cancellations require owner authorization and a specific existing
 task. Apply them to that task under version checks; never create an accidental

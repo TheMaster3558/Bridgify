@@ -72,30 +72,60 @@ export const policySchema = z
     mode: z.enum(["enabled", "review_only"]),
     allowance_mode: z.enum(["per_request", "manual_rounds"]),
     allowance: z.number().int().min(0).max(10000),
+    permission_mode: z
+      .enum(["listed_operations", "guidance"])
+      .default("listed_operations"),
+    acceptance_guidance: z.string().trim().max(4000).default(""),
     operations: z.array(z.enum(["replace_text", "change_color"])).max(2),
     targets: z.array(z.string().trim().min(1).max(200)).max(30),
     exclusions: z.string().trim().min(1).max(4000),
     max_open_tasks: z.number().int().min(1).max(10),
     notifications: z.literal("dashboard"),
-    replies: z.object({
-      progress_updates: z.boolean().default(false),
-      status_questions: z.boolean(),
-      clarifications: z.boolean(),
-      review_acknowledgments: z.boolean(),
-    }).default({ status_questions: true, clarifications: true, review_acknowledgments: true, progress_updates: false }),
+    replies: z
+      .object({
+        progress_updates: z.boolean().default(false),
+        status_questions: z.boolean(),
+        clarifications: z.boolean(),
+        review_acknowledgments: z.boolean(),
+      })
+      .default({
+        status_questions: true,
+        clarifications: true,
+        review_acknowledgments: true,
+        progress_updates: false,
+      }),
   })
-  .refine((v) => v.mode !== "enabled" || v.targets.length > 0, {
-    message:
-      "Choose at least one page or element before enabling automatic acceptance.",
-    path: ["targets"],
-  })
+  .refine(
+    (v) =>
+      v.mode !== "enabled" ||
+      v.permission_mode === "guidance" ||
+      v.targets.length > 0,
+    {
+      message:
+        "Choose at least one page or element before enabling automatic acceptance.",
+      path: ["targets"],
+    },
+  )
   .refine(
     (v) => v.allowance_mode !== "manual_rounds" || v.mode === "review_only",
     "Revision rounds require review-only mode",
   )
   .refine(
-    (v) => v.mode !== "enabled" || (v.allowance > 0 && v.operations.length > 0),
+    (v) =>
+      v.mode !== "enabled" ||
+      (v.allowance > 0 &&
+        (v.permission_mode === "guidance" || v.operations.length > 0)),
     "Enabled automation needs allowance and operations",
+  )
+  .refine(
+    (v) =>
+      v.mode !== "enabled" ||
+      v.permission_mode !== "guidance" ||
+      !!v.acceptance_guidance,
+    {
+      message: "Describe which requests may be accepted automatically.",
+      path: ["acceptance_guidance"],
+    },
   );
 export const lifecycleSchema = z.object({
   status: z.enum(["active", "paused", "review_only", "completed", "archived"]),
