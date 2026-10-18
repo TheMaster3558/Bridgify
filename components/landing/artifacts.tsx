@@ -244,21 +244,21 @@ export function Simulator() {
   const [active, setActive] = useState(0);
   const [stage, setStage] = useState(3);
   const [userPicked, setUserPicked] = useState(false);
-  const animate = useRef(false);
+  const [animate, setAnimate] = useState(false);
   const autoplay = !userPicked && inView && visible && !prefersReducedMotion();
 
   // Step through the examples while visible, until the visitor picks one.
   useEffect(() => {
     if (!autoplay) return;
     const timer = window.setTimeout(() => {
-      animate.current = true;
+      setAnimate(true);
       setActive((a) => (a + 1) % scenarios.length);
     }, autoplayMs);
     return () => window.clearTimeout(timer);
   }, [autoplay, active]);
 
   useEffect(() => {
-    if (!animate.current || prefersReducedMotion()) {
+    if (!animate || prefersReducedMotion()) {
       setStage(3);
       return;
     }
@@ -270,7 +270,7 @@ export function Simulator() {
       window.clearTimeout(t1);
       window.clearTimeout(t2);
     };
-  }, [active]);
+  }, [active, animate]);
 
   const scenario = scenarios[active]!;
 
@@ -283,7 +283,7 @@ export function Simulator() {
             type="button"
             aria-pressed={index === active}
             onClick={() => {
-              animate.current = true;
+              setAnimate(true);
               setUserPicked(true);
               setActive(index);
             }}
@@ -333,8 +333,7 @@ export function Simulator() {
               {scenario.effects.map((effect, i) => (
                 <li
                   key={effect.title}
-                  // eslint-disable-next-line react-hooks/refs -- only flips after a timer or click, both of which re-render
-                  className={`grid grid-cols-[auto_1fr] gap-3 ${stage === 3 && animate.current ? "rise" : ""}`}
+                  className={`grid grid-cols-[auto_1fr] gap-3 ${stage === 3 && animate ? "rise" : ""}`}
                   style={{ animationDelay: `${i * 90}ms` }}
                 >
                   <span className="mt-[7px] size-1.5 rounded-full bg-ink-black/40" aria-hidden="true" />
