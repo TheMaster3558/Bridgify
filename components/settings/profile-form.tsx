@@ -2,9 +2,7 @@
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -12,10 +10,24 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  SettingsGroup,
+  SettingsRow,
+  settingsField,
+  settingsPrimaryButton,
+} from "@/components/settings/settings-ui";
 import { TIMEZONES } from "@/lib/projects/draft";
 
 function idempotencyKey() {
   return crypto.randomUUID().replaceAll("-", "");
+}
+
+function FieldError({ id, message }: { id: string; message?: string }) {
+  return message ? (
+    <p id={id} className="w-full text-sm text-crit sm:text-right" role="alert">
+      {message}
+    </p>
+  ) : null;
 }
 
 export function ProfileForm({
@@ -50,78 +62,117 @@ export function ProfileForm({
   }
 
   return (
-    <section className="rounded-xl border bg-card p-6 shadow-sm">
-      <h2 className="text-xl font-semibold">Profile</h2>
-      <p className="mt-1 text-sm text-muted-foreground">{email}</p>
-      <form
-        className="mt-5 grid gap-4"
-        onSubmit={async (event) => {
-          event.preventDefault();
-          setPending(true);
-          setError("");
-          setFieldErrors({});
-          setNotice("");
-          try {
-            const response = await fetch("/api/v1/account", {
-              method: "PATCH",
-              headers: {
-                "Content-Type": "application/json",
-                "Idempotency-Key": key.current,
-              },
-              body: JSON.stringify(draft),
+    <form
+      className="grid gap-6"
+      onSubmit={async (event) => {
+        event.preventDefault();
+        setPending(true);
+        setError("");
+        setFieldErrors({});
+        setNotice("");
+        try {
+          const response = await fetch("/api/v1/account", {
+            method: "PATCH",
+            headers: {
+              "Content-Type": "application/json",
+              "Idempotency-Key": key.current,
+            },
+            body: JSON.stringify(draft),
+          });
+          const body = await response.json();
+          if (!response.ok) {
+            const fields = body.error?.fieldErrors?.fieldErrors as
+              Record<string, string[]> | undefined;
+            setFieldErrors({
+              name: fields?.name?.[0] || "",
+              timezone: fields?.timezone?.[0] || "",
+              organization: fields?.organization?.[0] || "",
             });
-            const body = await response.json();
-            if (!response.ok) {
-              const fields = body.error?.fieldErrors?.fieldErrors as
-                | Record<string, string[]>
-                | undefined;
-              setFieldErrors({
-                name: fields?.name?.[0] || "",
-                timezone: fields?.timezone?.[0] || "",
-                organization: fields?.organization?.[0] || "",
-              });
-              throw new Error(body.error?.message || "Unable to save settings.");
-            }
-            key.current = idempotencyKey();
-            setNotice("Saved.");
-            router.refresh();
-          } catch (cause) {
-            setError((cause as Error).message);
-          } finally {
-            setPending(false);
+            throw new Error(body.error?.message || "Unable to save settings.");
           }
-        }}
-      >
-        <div className="grid gap-2">
-          <Label htmlFor="profile-name">Name</Label>
+          key.current = idempotencyKey();
+          setNotice("Saved.");
+          router.refresh();
+        } catch (cause) {
+          setError((cause as Error).message);
+        } finally {
+          setPending(false);
+        }
+      }}
+    >
+      <SettingsGroup label="Account">
+        <SettingsRow title="Email" description="Used to sign in">
+          <span className="text-sm text-foreground">{email}</span>
+        </SettingsRow>
+        <SettingsRow
+          title="Name"
+          description="Shown to your team"
+          htmlFor="profile-name"
+        >
           <Input
             id="profile-name"
             name="name"
             autoComplete="name"
             maxLength={80}
             value={draft.name}
+            className={settingsField}
             aria-invalid={Boolean(fieldErrors.name)}
-            aria-describedby={fieldErrors.name ? "profile-name-error" : undefined}
+            aria-describedby={
+              fieldErrors.name ? "profile-name-error" : undefined
+            }
             onChange={(event) => edit({ name: event.target.value })}
           />
-          {fieldErrors.name ? (
-            <p id="profile-name-error" className="text-sm text-crit" role="alert">
-              {fieldErrors.name}
-            </p>
-          ) : null}
-        </div>
-        <div className="grid gap-2">
-          <Label htmlFor="profile-timezone">Timezone</Label>
+          <FieldError id="profile-name-error" message={fieldErrors.name} />
+        </SettingsRow>
+        <SettingsRow
+          title="Organization"
+          description="Your workspace name"
+          htmlFor="profile-organization"
+        >
+          <Input
+            id="profile-organization"
+            name="organization"
+            autoComplete="organization"
+            maxLength={120}
+            value={draft.organization}
+            className={settingsField}
+            aria-invalid={Boolean(fieldErrors.organization)}
+            aria-describedby={
+              fieldErrors.organization
+                ? "profile-organization-error"
+                : undefined
+            }
+            onChange={(event) => edit({ organization: event.target.value })}
+          />
+          <FieldError
+            id="profile-organization-error"
+            message={fieldErrors.organization}
+          />
+        </SettingsRow>
+      </SettingsGroup>
+      <SettingsGroup label="Preferences">
+        <SettingsRow
+          title="Timezone"
+          description={
+            <span id="profile-timezone-hint">
+              Used for dates in Settings. Each project keeps its own timezone.
+            </span>
+          }
+          htmlFor="profile-timezone"
+        >
           <Select
             value={draft.timezone || undefined}
             onValueChange={(value) => edit({ timezone: value })}
           >
             <SelectTrigger
               id="profile-timezone"
-              className="w-full"
+              size="sm"
+              className={settingsField}
               aria-invalid={Boolean(fieldErrors.timezone)}
               aria-describedby={
-                fieldErrors.timezone ? "profile-timezone-error" : "profile-timezone-hint"
+                fieldErrors.timezone
+                  ? "profile-timezone-error"
+                  : "profile-timezone-hint"
               }
             >
               <SelectValue placeholder="Choose a timezone" />
@@ -134,40 +185,13 @@ export function ProfileForm({
               ))}
             </SelectContent>
           </Select>
-          <p id="profile-timezone-hint" className="text-xs text-muted-foreground">
-            Used for dates in Settings. Each project keeps its own timezone.
-          </p>
-          {fieldErrors.timezone ? (
-            <p id="profile-timezone-error" className="text-sm text-crit" role="alert">
-              {fieldErrors.timezone}
-            </p>
-          ) : null}
-        </div>
-        <div className="grid gap-2">
-          <Label htmlFor="profile-organization">Organization</Label>
-          <Input
-            id="profile-organization"
-            name="organization"
-            autoComplete="organization"
-            maxLength={120}
-            value={draft.organization}
-            aria-invalid={Boolean(fieldErrors.organization)}
-            aria-describedby={
-              fieldErrors.organization ? "profile-organization-error" : undefined
-            }
-            onChange={(event) => edit({ organization: event.target.value })}
+          <FieldError
+            id="profile-timezone-error"
+            message={fieldErrors.timezone}
           />
-          {fieldErrors.organization ? (
-            <p id="profile-organization-error" className="text-sm text-crit" role="alert">
-              {fieldErrors.organization}
-            </p>
-          ) : null}
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button type="submit" disabled={pending}>
-            {pending ? "Saving…" : "Save"}
-          </Button>
-        </div>
+        </SettingsRow>
+      </SettingsGroup>
+      <div className="flex flex-wrap items-center justify-end gap-3">
         {notice ? (
           <p role="status" className="text-sm text-ok">
             {notice}
@@ -178,12 +202,14 @@ export function ProfileForm({
             {error}
           </p>
         ) : null}
-      </form>
-      <form method="post" action="/auth/signout" className="mt-4">
-        <Button type="submit" variant="outline">
-          Sign out
-        </Button>
-      </form>
-    </section>
+        <button
+          type="submit"
+          disabled={pending}
+          className={settingsPrimaryButton}
+        >
+          {pending ? "Saving…" : "Save changes"}
+        </button>
+      </div>
+    </form>
   );
 }
