@@ -2,7 +2,7 @@ import { GoogleGenAI } from "@google/genai";
 import { z } from "zod";
 import { geminiOutputSchema } from "./gemini-schema";
 import { type Span } from "../schemas/onboarding";
-import { validateEvidence } from "../domain/security";
+import { repairAgreementEvidence } from "./agreement-evidence";
 import { agreementExtractionSchema } from "../schemas/agreement";
 import {
   AgreementAnalysisError,
@@ -41,7 +41,7 @@ Warnings must be short, actionable questions in plain language, with no schema n
   const models = [
     ...new Set([model, ...(fallback && fallback !== model ? [fallback] : [])]),
   ];
-  let output: string | undefined;
+  let extraction: z.infer<typeof extractionSchema> | undefined;
   let usedModel = model;
   let fallbackReason: string | null = null;
   for (let i = 0; i < models.length; i++) {
@@ -55,30 +55,60 @@ Warnings must be short, actionable questions in plain language, with no schema n
       continue;
     }
     try {
-      const response = await ai.interactions.create(
-        {
-          model: candidate,
-          input: JSON.stringify(spans),
-          system_instruction: systemInstruction,
-          store: false,
-          generation_config: {
-            thinking_level: "low",
-            max_output_tokens: 12000,
-          },
-          response_format: {
-            type: "text",
-            mime_type: "application/json",
-            schema: geminiOutputSchema(z.toJSONSchema(extractionSchema)),
-          },
-        },
-        { timeout_ms: 20_000, retries: { strategy: "none" } },
-      );
-      if (response.status !== "completed" || !response.output_text)
-        throw new AgreementAnalysisError(
-          "GEMINI_INCOMPLETE",
-          "Extraction was incomplete. Retry; no baseline was confirmed.",
-        );
-      output = response.output_text;
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+          const response = await ai.interactions.create(
+            {
+              model: candidate,
+              input: JSON.stringify(spans),
+              system_instruction:
+                systemInstruction +
+                (attempt
+                  ? "\nThe previous extraction failed exact source-evidence validation. Re-extract from the original spans. Copy span IDs exactly and preserve original whitespace, punctuation and line breaks inside quotes. Do not paraphrase quotes or join separate excerpts. Every stated commercial value must have valid source evidence."
+                  : ""),
+              store: false,
+              generation_config: {
+                thinking_level: "low",
+                max_output_tokens: 12000,
+              },
+              response_format: {
+                type: "text",
+                mime_type: "application/json",
+                schema: geminiOutputSchema(z.toJSONSchema(extractionSchema)),
+              },
+            },
+            { timeout_ms: 20_000, retries: { strategy: "none" } },
+          );
+          if (response.status !== "completed" || !response.output_text)
+            throw new AgreementAnalysisError(
+              "GEMINI_INCOMPLETE",
+              "Extraction was incomplete. Retry; no baseline was confirmed.",
+            );
+          const parsed = extractionSchema.safeParse(
+            JSON.parse(response.output_text),
+          );
+          if (!parsed.success)
+            throw new AgreementAnalysisError(
+              "GEMINI_INVALID_RESULT",
+              "Gemini returned an invalid extraction. Retry; no baseline was confirmed.",
+            );
+          extraction = repairAgreementEvidence(parsed.data, spans);
+          break;
+        } catch (error) {
+          if (
+            attempt === 0 &&
+            error instanceof AgreementAnalysisError &&
+            error.code === "GEMINI_INVALID_EVIDENCE"
+          )
+            continue;
+          if (error instanceof SyntaxError)
+            throw new AgreementAnalysisError(
+              "GEMINI_INVALID_RESULT",
+              "Gemini returned an invalid extraction. Retry; no baseline was confirmed.",
+            );
+          throw error;
+        }
+      }
       usedModel = candidate;
       modelCooldowns.delete(candidate);
       break;
@@ -94,43 +124,11 @@ Warnings must be short, actionable questions in plain language, with no schema n
       throw failure;
     }
   }
-  let extraction: z.infer<typeof extractionSchema>;
-  try {
-    extraction = extractionSchema.parse(JSON.parse(output || ""));
-  } catch {
+  if (!extraction)
     throw new AgreementAnalysisError(
       "GEMINI_INVALID_RESULT",
       "Gemini returned an invalid extraction. Retry; no baseline was confirmed.",
     );
-  }
-  if (
-    !validateEvidence(
-      [
-        ...extraction.terms,
-        ...Object.values(extraction.commercial).filter(
-          (v): v is typeof v & { span_id: string; quote: string } =>
-            !!v.span_id && !!v.quote,
-        ),
-      ],
-      spans,
-    )
-  )
-    throw new AgreementAnalysisError(
-      "GEMINI_INVALID_EVIDENCE",
-      "Extraction cited invalid source evidence. Retry; no baseline was confirmed.",
-    );
-  for (const field of Object.values(extraction.commercial)) {
-    const present =
-      ("amount_cents" in field && field.amount_cents !== null) ||
-      ("currency" in field && field.currency !== null) ||
-      ("value" in field && field.value !== null) ||
-      ("unit" in field && field.unit !== "not_specified");
-    if (present && (!field.span_id || !field.quote))
-      throw new AgreementAnalysisError(
-        "GEMINI_INVALID_EVIDENCE",
-        "Extraction is missing commercial source evidence. Retry; no baseline was confirmed.",
-      );
-  }
   const warnings = new Set(extraction.warnings);
   for (const [kind, label] of [
     ["inclusion", "the work to be delivered"],
@@ -166,6 +164,6 @@ Warnings must be short, actionable questions in plain language, with no schema n
     model: usedModel,
     fallback_from: usedModel !== model ? model : null,
     fallback_reason: usedModel !== model ? fallbackReason : null,
-    prompt_version: "agreement-v4",
+    prompt_version: "agreement-v5",
   };
 }
