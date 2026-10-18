@@ -35,8 +35,8 @@ export function AppShell({
   const pathname = usePathname();
 
   return (
-    <div className="grid min-h-screen grid-cols-1 md:grid-cols-[236px_minmax(0,1fr)]">
-      <aside className="flex flex-col gap-4 border-b bg-card p-3 md:border-r md:border-b-0 md:p-4">
+    <div className="min-h-screen md:pl-[236px]">
+      <aside className="flex flex-col gap-4 border-b bg-card p-3 md:fixed md:inset-y-0 md:left-0 md:w-[236px] md:overflow-hidden md:border-r md:border-b-0 md:p-4">
         <Link href="/app" className="flex items-center gap-2.5 px-2">
           <span className="grid size-8 place-items-center rounded-md bg-primary text-sm font-semibold text-primary-foreground">
             B
