@@ -1,10 +1,19 @@
 "use client";
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Dialog } from "radix-ui";
+import { MoreHorizontal } from "lucide-react";
+import { Dialog, DropdownMenu } from "radix-ui";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-export function DeleteProject({ id, name }: { id: string; name: string }) {
+export function DeleteProject({
+  id,
+  name,
+  menu = false,
+}: {
+  id: string;
+  name: string;
+  menu?: boolean;
+}) {
   const router = useRouter();
   const [open, setOpen] = useState(false),
     [confirmation, setConfirmation] = useState(""),
@@ -14,6 +23,13 @@ export function DeleteProject({ id, name }: { id: string; name: string }) {
     null,
   );
   const busy = useRef(false);
+  const menuTrigger = useRef<HTMLButtonElement>(null);
+  function beginDelete() {
+    setConfirmation("");
+    setError("");
+    setDeleted(null);
+    setOpen(true);
+  }
   function close() {
     setOpen(false);
     if (deleted) {
@@ -30,27 +46,63 @@ export function DeleteProject({ id, name }: { id: string; name: string }) {
           close();
           return;
         }
-        setConfirmation("");
-        setError("");
-        setDeleted(null);
-        setOpen(true);
+        beginDelete();
       }}
     >
-      <Dialog.Trigger asChild>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="text-destructive hover:text-destructive"
-          aria-label={`Delete project ${name}`}
-        >
-          Delete
-        </Button>
-      </Dialog.Trigger>
+      {menu ? (
+        <DropdownMenu.Root>
+          <DropdownMenu.Trigger asChild>
+            <Button
+              ref={menuTrigger}
+              type="button"
+              variant="ghost"
+              size="icon"
+              aria-label={`Project actions for ${name}`}
+            >
+              <MoreHorizontal className="size-4" aria-hidden="true" />
+            </Button>
+          </DropdownMenu.Trigger>
+          <DropdownMenu.Portal>
+            <DropdownMenu.Content
+              align="end"
+              sideOffset={5}
+              onCloseAutoFocus={(event) => {
+                if (open) event.preventDefault();
+              }}
+              className="z-50 min-w-36 rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
+            >
+              <DropdownMenu.Item
+                onSelect={beginDelete}
+                className="cursor-pointer rounded-sm px-3 py-2 text-sm text-destructive outline-none focus:bg-muted"
+              >
+                Delete
+              </DropdownMenu.Item>
+            </DropdownMenu.Content>
+          </DropdownMenu.Portal>
+        </DropdownMenu.Root>
+      ) : (
+        <Dialog.Trigger asChild>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="text-destructive hover:text-destructive"
+            aria-label={`Delete project ${name}`}
+          >
+            Delete
+          </Button>
+        </Dialog.Trigger>
+      )}
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-50 bg-black/40" />
         <Dialog.Content
           className="fixed top-1/2 left-1/2 z-50 grid w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl border bg-card p-6 text-card-foreground shadow-xl"
+          onCloseAutoFocus={(event) => {
+            if (menu) {
+              event.preventDefault();
+              menuTrigger.current?.focus();
+            }
+          }}
           onEscapeKeyDown={(e) => {
             if (pending) e.preventDefault();
           }}

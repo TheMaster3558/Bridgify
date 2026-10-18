@@ -209,7 +209,7 @@ export function ProjectsList({
                         {workspaceValue(project)}
                       </td>
                       <td className="px-3 py-3">
-                        <div className="flex items-center gap-3">
+                        <div className="flex items-center justify-end gap-3">
                           {project.status === "draft" ? (
                             <Link
                               href={workspaceHref(project)}
@@ -225,7 +225,11 @@ export function ProjectsList({
                               Open
                             </Link>
                           )}
-                          <DeleteProject id={project.id} name={project.name} />
+                          <DeleteProject
+                            id={project.id}
+                            name={project.name}
+                            menu
+                          />
                         </div>
                       </td>
                     </tr>

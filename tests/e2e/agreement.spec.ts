@@ -828,10 +828,11 @@ test("project deletion requires the exact name, supports cancel and preserves er
   });
   await page.goto("https://agreement.test/app/projects");
   const trigger = page.getByRole("button", {
-    name: `Delete project ${bundle.project.name}`,
+    name: `Project actions for ${bundle.project.name}`,
     exact: true,
   });
   await trigger.click();
+  await page.getByRole("menuitem", { name: "Delete", exact: true }).click();
   const dialog = page.getByRole("dialog"),
     confirm = dialog.getByRole("button", {
       name: "Delete project permanently",
@@ -843,7 +844,11 @@ test("project deletion requires the exact name, supports cancel and preserves er
   await expect(confirm).toBeDisabled();
   await dialog.getByRole("button", { name: "Cancel" }).click();
   expect(calls).toBe(0);
-  await trigger.click();
+  await expect(trigger).toBeFocused();
+  await trigger.press("Enter");
+  await page
+    .getByRole("menuitem", { name: "Delete", exact: true })
+    .press("Enter");
   await dialog
     .getByLabel("Type the project name to confirm")
     .fill(bundle.project.name);
