@@ -1,21 +1,28 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   ArrowDown,
   ArrowUp,
+  Check,
   ChevronsUpDown,
   Eye,
   MessagesSquare,
+  Minus,
   MoreVertical,
   ShieldAlert,
+  Trash2,
   Workflow,
   X,
 } from "lucide-react";
-import { DropdownMenu } from "radix-ui";
+import { Checkbox, Dialog, DropdownMenu } from "radix-ui";
 import { DecisionActions } from "./decision-actions";
-import { SettingsGroup } from "@/components/settings/settings-ui";
+import {
+  SettingsGroup,
+  settingsButton,
+} from "@/components/settings/settings-ui";
 import type { OwnerDecisionRecord } from "@/lib/dashboard/work-management-types";
 import { cn } from "@/lib/utils";
 
@@ -66,7 +73,7 @@ const avatarTones = [
 ];
 
 const iconButton =
-  "grid size-8 shrink-0 place-items-center rounded-lg bg-card text-neutral-600 shadow-[0_1px_2px_rgba(0,0,0,0.08)] ring-1 ring-black/5 outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-sidebar-ring/40 dark:bg-background dark:text-neutral-300 dark:ring-white/10";
+  "grid size-7 shrink-0 place-items-center rounded-lg bg-card text-neutral-600 shadow-[0_1px_2px_rgba(0,0,0,0.08)] ring-1 ring-black/5 outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-sidebar-ring/40 dark:bg-background dark:text-neutral-300 dark:ring-white/10";
 
 const sectionLabel =
   "px-3.5 text-sm font-medium text-neutral-500 dark:text-neutral-400";
@@ -112,7 +119,7 @@ function ClientAvatar({
       aria-hidden
       className={cn(
         "grid shrink-0 place-items-center rounded-full font-semibold",
-        size === "sm" ? "size-8 text-xs" : "size-10 text-sm",
+        size === "sm" ? "size-7 text-[11px]" : "size-10 text-sm",
         avatarTone(name),
       )}
     >
@@ -136,7 +143,7 @@ function ReasonPill({ reason }: { reason: string }) {
 
 function SeverityChip({ severity }: { severity: Decision["severity"] }) {
   return (
-    <span className="inline-flex h-8 items-center gap-2 rounded-lg bg-card px-2.5 text-sm font-medium whitespace-nowrap text-foreground ring-1 ring-black/10 dark:bg-background dark:ring-white/10">
+    <span className="inline-flex h-7 items-center gap-2 rounded-lg bg-card px-2.5 text-sm font-medium whitespace-nowrap text-foreground ring-1 ring-black/10 dark:bg-background dark:ring-white/10">
       <span
         aria-hidden
         className={cn("size-2 rounded-full", severityDot[severity])}
@@ -393,10 +400,151 @@ function DecisionDetail({
   );
 }
 
+function SelectBox({
+  checked,
+  label,
+  onChange,
+}: {
+  checked: boolean | "indeterminate";
+  label: string;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <Checkbox.Root
+      checked={checked}
+      aria-label={label}
+      onCheckedChange={(value) => onChange(value === true)}
+      onClick={(event) => event.stopPropagation()}
+      className="grid size-[18px] shrink-0 place-items-center rounded-[5px] border border-neutral-300 bg-card text-white outline-none transition-colors hover:border-neutral-400 focus-visible:ring-[3px] focus-visible:ring-sidebar-ring/40 data-[state=checked]:border-[#2563eb] data-[state=checked]:bg-[#2563eb] data-[state=indeterminate]:border-[#2563eb] data-[state=indeterminate]:bg-[#2563eb] dark:border-neutral-600 dark:bg-background"
+    >
+      <Checkbox.Indicator>
+        {checked === "indeterminate" ? (
+          <Minus aria-hidden className="size-3.5" strokeWidth={3} />
+        ) : (
+          <Check aria-hidden className="size-3.5" strokeWidth={3} />
+        )}
+      </Checkbox.Indicator>
+    </Checkbox.Root>
+  );
+}
+
+async function deleteDecision(id: string) {
+  const response = await fetch(`/api/v1/decisions/${id}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Idempotency-Key": crypto.randomUUID(),
+    },
+    body: JSON.stringify({ action: "delete" }),
+  });
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    throw new Error(body.error?.message ?? "Review could not be deleted.");
+  }
+}
+
+function DeleteDialog({
+  targets,
+  onCancel,
+  onDeleted,
+}: {
+  targets: Decision[];
+  onCancel: () => void;
+  onDeleted: (ids: string[]) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const single = targets.length === 1;
+
+  async function confirm() {
+    setBusy(true);
+    setError("");
+    const results = await Promise.allSettled(
+      targets.map((decision) => deleteDecision(decision.id)),
+    );
+    const deleted = targets
+      .filter((_, index) => results[index].status === "fulfilled")
+      .map((decision) => decision.id);
+    const failed = results.filter((result) => result.status === "rejected");
+    setBusy(false);
+    if (deleted.length) onDeleted(deleted);
+    if (failed.length) {
+      setError(
+        failed.length === targets.length
+          ? ((failed[0] as PromiseRejectedResult).reason?.message ??
+              "Reviews could not be deleted.")
+          : `${failed.length} of ${targets.length} reviews could not be deleted. Try again.`,
+      );
+      return;
+    }
+    onCancel();
+  }
+
+  return (
+    <Dialog.Root
+      open={targets.length > 0}
+      onOpenChange={(open) => !open && !busy && onCancel()}
+    >
+      <Dialog.Portal>
+        <Dialog.Overlay className="fixed inset-0 z-50 bg-black/40" />
+        <Dialog.Content className="fixed top-1/2 left-1/2 z-50 grid w-[min(440px,calc(100%-2rem))] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-[28px] border bg-card p-6 shadow-xl outline-none dark:bg-background">
+          <div className="flex items-start gap-3">
+            <span className="grid size-10 shrink-0 place-items-center rounded-full bg-rose-100 text-rose-600 dark:bg-rose-500/15 dark:text-rose-300">
+              <Trash2 aria-hidden className="size-5" />
+            </span>
+            <div className="min-w-0">
+              <Dialog.Title className="text-lg font-medium">
+                {single
+                  ? "Delete this review?"
+                  : `Delete ${targets.length} reviews?`}
+              </Dialog.Title>
+              <Dialog.Description className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
+                {single ? (
+                  <>
+                    “{targets[0].title}” will be removed from Needs Attention.
+                  </>
+                ) : (
+                  "The selected reviews will be removed from Needs Attention."
+                )}{" "}
+                The client is not messaged. This can’t be undone here.
+              </Dialog.Description>
+            </div>
+          </div>
+          {error && (
+            <p role="alert" className="text-sm text-crit">
+              {error}
+            </p>
+          )}
+          <div className="flex justify-end gap-2">
+            <Dialog.Close className={settingsButton} disabled={busy}>
+              Cancel
+            </Dialog.Close>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void confirm()}
+              className="inline-flex h-8 items-center justify-center rounded-lg border border-rose-700 bg-gradient-to-b from-rose-500 to-rose-600 px-3.5 text-sm font-medium text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.2),0_1px_2px_rgba(225,29,72,0.35)] outline-none hover:brightness-105 focus-visible:ring-[3px] focus-visible:ring-rose-500/40 disabled:pointer-events-none disabled:opacity-60"
+            >
+              {busy
+                ? "Deleting…"
+                : single
+                  ? "Delete review"
+                  : `Delete ${targets.length}`}
+            </button>
+          </div>
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
+  );
+}
+
 export function NeedsAttention({ decisions }: { decisions: Decision[] }) {
   const [resolvedIds, setResolvedIds] = useState<string[]>([]);
   const [filter, setFilter] = useState("all");
+  const router = useRouter();
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [checkedIds, setCheckedIds] = useState<string[]>([]);
+  const [deleteTargets, setDeleteTargets] = useState<Decision[]>([]);
   const [sort, setSort] = useState<{ key: SortKey; dir: "asc" | "desc" }>({
     key: "updated",
     dir: "desc",
@@ -428,14 +576,41 @@ export function NeedsAttention({ decisions }: { decisions: Decision[] }) {
     (decision) => decision.id === selectedId,
   );
 
+  const checkedVisible = visible.filter((decision) =>
+    checkedIds.includes(decision.id),
+  );
+  const allChecked: boolean | "indeterminate" =
+    checkedVisible.length === 0
+      ? false
+      : checkedVisible.length === visible.length
+        ? true
+        : "indeterminate";
+
+  function toggleChecked(id: string, value: boolean) {
+    setCheckedIds((current) =>
+      value ? [...current, id] : current.filter((item) => item !== id),
+    );
+  }
+
+  function onDeleted(ids: string[]) {
+    setResolvedIds((previous) => [...previous, ...ids]);
+    setCheckedIds((current) => current.filter((id) => !ids.includes(id)));
+    // Keep only failures in the dialog so a retry never resends a delete.
+    setDeleteTargets((current) =>
+      current.filter((decision) => !ids.includes(decision.id)),
+    );
+    if (selectedId && ids.includes(selectedId)) setSelectedId(null);
+    router.refresh();
+  }
+
   useEffect(() => {
-    if (!selected) return;
+    if (!selected || deleteTargets.length) return;
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") setSelectedId(null);
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [selected]);
+  }, [selected, deleteTargets.length]);
 
   function onSort(key: SortKey) {
     setSort((current) =>
@@ -452,7 +627,7 @@ export function NeedsAttention({ decisions }: { decisions: Decision[] }) {
   const filterIdle =
     "bg-sidebar-accent text-neutral-600 hover:text-foreground dark:text-neutral-300";
   const headCell =
-    "px-3 py-3 text-left text-[15px] font-medium whitespace-nowrap";
+    "px-3 py-2.5 text-left text-[15px] font-medium whitespace-nowrap";
 
   return (
     <main
@@ -482,7 +657,10 @@ export function NeedsAttention({ decisions }: { decisions: Decision[] }) {
           <button
             type="button"
             aria-pressed={filter === "all"}
-            onClick={() => setFilter("all")}
+            onClick={() => {
+              setFilter("all");
+              setCheckedIds([]);
+            }}
             className={cn(
               filterButton,
               filter === "all" ? filterActive : filterIdle,
@@ -495,7 +673,10 @@ export function NeedsAttention({ decisions }: { decisions: Decision[] }) {
               key={reason}
               type="button"
               aria-pressed={filter === reason}
-              onClick={() => setFilter(reason)}
+              onClick={() => {
+                setFilter(reason);
+                setCheckedIds([]);
+              }}
               className={cn(
                 filterButton,
                 filter === reason ? filterActive : filterIdle,
@@ -510,14 +691,40 @@ export function NeedsAttention({ decisions }: { decisions: Decision[] }) {
           aria-labelledby="open-decisions-heading"
           className="@container min-w-0 overflow-hidden rounded-2xl border border-sidebar-border bg-card"
         >
-          <div className="flex items-baseline justify-between gap-3 px-4 py-3.5">
+          <div className="flex min-h-[3.25rem] flex-wrap items-center justify-between gap-3 px-4 py-2.5">
             <h2 id="open-decisions-heading" className="text-[17px] font-medium">
               Open decisions
             </h2>
-            <p className="text-sm text-neutral-500 dark:text-neutral-400">
-              {visible.length} {visible.length === 1 ? "item" : "items"} · owner
-              review required
-            </p>
+            {checkedVisible.length > 0 ? (
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium text-blue-600 dark:text-blue-400">
+                  {checkedVisible.length} selected
+                </span>
+                <button
+                  type="button"
+                  className={settingsButton}
+                  onClick={() => setCheckedIds([])}
+                >
+                  Clear
+                </button>
+                <button
+                  type="button"
+                  className={cn(
+                    settingsButton,
+                    "gap-1.5 text-crit hover:text-crit",
+                  )}
+                  onClick={() => setDeleteTargets(checkedVisible)}
+                >
+                  <Trash2 aria-hidden className="size-4" />
+                  Delete selected
+                </button>
+              </div>
+            ) : (
+              <p className="text-sm text-neutral-500 dark:text-neutral-400">
+                {visible.length} {visible.length === 1 ? "item" : "items"} ·
+                owner review required
+              </p>
+            )}
           </div>
           {visible.length === 0 ? (
             <div className="grid place-items-center border-t border-sidebar-border px-4 py-14 text-center">
@@ -539,7 +746,18 @@ export function NeedsAttention({ decisions }: { decisions: Decision[] }) {
               <table className="w-full border-collapse">
                 <thead className="border-y border-sidebar-border bg-sidebar text-neutral-500 dark:text-neutral-400">
                   <tr>
-                    <th scope="col" className={cn(headCell, "pl-4")}>
+                    <th scope="col" className="w-0 py-2.5 pr-1 pl-4">
+                      <SelectBox
+                        checked={allChecked}
+                        label="Select all decisions"
+                        onChange={(value) =>
+                          setCheckedIds(
+                            value ? visible.map((decision) => decision.id) : [],
+                          )
+                        }
+                      />
+                    </th>
+                    <th scope="col" className={cn(headCell, "pl-2")}>
                       <SortHeader
                         label="Client"
                         sortKey="client"
@@ -589,6 +807,7 @@ export function NeedsAttention({ decisions }: { decisions: Decision[] }) {
                 <tbody>
                   {visible.map((decision) => {
                     const isSelected = selected?.id === decision.id;
+                    const isChecked = checkedIds.includes(decision.id);
                     return (
                       <tr
                         key={decision.id}
@@ -596,11 +815,20 @@ export function NeedsAttention({ decisions }: { decisions: Decision[] }) {
                         aria-selected={isSelected}
                         className={cn(
                           "cursor-pointer border-b border-sidebar-border transition-colors last:border-b-0 hover:bg-sidebar",
-                          isSelected &&
+                          (isSelected || isChecked) &&
                             "bg-blue-50 hover:bg-blue-50 dark:bg-blue-500/10 dark:hover:bg-blue-500/10",
                         )}
                       >
-                        <td className="py-3 pr-3 pl-4">
+                        <td className="py-2 pr-1 pl-4">
+                          <SelectBox
+                            checked={isChecked}
+                            label={`Select ${decision.title}`}
+                            onChange={(value) =>
+                              toggleChecked(decision.id, value)
+                            }
+                          />
+                        </td>
+                        <td className="py-2 pr-3 pl-2">
                           <div className="flex max-w-52 items-center gap-2.5">
                             <ClientAvatar name={decision.client_name} />
                             <span className="truncate text-[15px] font-medium">
@@ -608,7 +836,7 @@ export function NeedsAttention({ decisions }: { decisions: Decision[] }) {
                             </span>
                           </div>
                         </td>
-                        <td className="px-3 py-3">
+                        <td className="px-3 py-2">
                           <button
                             type="button"
                             onClick={(event) => {
@@ -618,30 +846,44 @@ export function NeedsAttention({ decisions }: { decisions: Decision[] }) {
                             aria-current={isSelected ? "true" : undefined}
                             className="block max-w-[28rem] min-w-40 rounded-md text-left outline-none focus-visible:ring-[3px] focus-visible:ring-sidebar-ring/40"
                           >
-                            <span className="line-clamp-1 text-[15px] text-foreground">
+                            <span className="line-clamp-1 text-[15px] leading-5 text-foreground">
                               {decision.title}
                             </span>
-                            <span className="line-clamp-1 text-sm text-neutral-500 dark:text-neutral-400">
+                            <span className="line-clamp-1 text-sm leading-5 text-neutral-500 dark:text-neutral-400">
                               {decision.project_name}
                             </span>
                           </button>
                         </td>
-                        <td className="hidden px-3 py-3 @3xl:table-cell">
+                        <td className="hidden px-3 py-2 @3xl:table-cell">
                           <SeverityChip severity={decision.severity} />
                         </td>
-                        <td className="px-3 py-3">
+                        <td className="px-3 py-2">
                           <ReasonPill reason={decision.reason} />
                         </td>
-                        <td className="hidden px-3 py-3 text-[15px] whitespace-nowrap tabular-nums @4xl:table-cell">
+                        <td className="hidden px-3 py-2 text-[15px] whitespace-nowrap tabular-nums @4xl:table-cell">
                           {formatDate(decision.updated_at)}
                         </td>
-                        <td className="hidden px-3 py-3 @5xl:table-cell">
+                        <td className="hidden px-3 py-2 @5xl:table-cell">
                           <span className="inline-flex rounded-md bg-sidebar px-2 py-1 font-mono text-xs whitespace-nowrap text-foreground dark:bg-sidebar-accent">
                             {decision.decision_code}
                           </span>
                         </td>
-                        <td className="py-3 pr-4 pl-3">
+                        <td className="py-2 pr-4 pl-3">
                           <div className="flex justify-end gap-2">
+                            <button
+                              type="button"
+                              aria-label={`Delete ${decision.title}`}
+                              className={cn(
+                                iconButton,
+                                "hover:text-rose-600 dark:hover:text-rose-300",
+                              )}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                setDeleteTargets([decision]);
+                              }}
+                            >
+                              <Trash2 aria-hidden className="size-4" />
+                            </button>
                             <button
                               type="button"
                               aria-label={`Review ${decision.title}`}
@@ -669,6 +911,11 @@ export function NeedsAttention({ decisions }: { decisions: Decision[] }) {
         </section>
       </div>
 
+      <DeleteDialog
+        targets={deleteTargets}
+        onCancel={() => setDeleteTargets([])}
+        onDeleted={onDeleted}
+      />
       {selected && (
         <>
           <div
