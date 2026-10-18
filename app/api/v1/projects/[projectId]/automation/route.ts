@@ -6,6 +6,7 @@ import { adminDb } from "@/lib/db/admin";
 import { policySchema, peopleSchema } from "@/lib/schemas/onboarding";
 import { readPhotonHistory } from "@/lib/photon/message-history";
 import { runAutomationBatch } from "@/lib/assistant/run-batch";
+import { historyAnnotations } from "@/lib/automation/history-annotations";
 export const maxDuration = 60;
 type Context = { params: Promise<{ projectId: string }> };
 export async function GET(request: Request, context: Context) {
@@ -61,14 +62,30 @@ export async function GET(request: Request, context: Context) {
         .order("updated_at", { ascending: false })
         .limit(50),
     );
-    const scope=checked(await client.from("scope_versions").select("*").eq("project_id",id).eq("version",project.scope_version));
+    const scope = checked(
+      await client
+        .from("scope_versions")
+        .select("*")
+        .eq("project_id", id)
+        .eq("version", project.scope_version),
+    );
     const accounting = checked(
       await client.rpc("automation_accounting", { p_project: id }),
     );
-    const requests=checked(values[tables.indexOf("automation_requests")])??[];
-    const rounds=checked(values[tables.indexOf("automation_rounds")])??[];
-    const annotations=checked(await client.rpc("automation_history_annotations",{p_project:id,p_requests:requests.map((r:{id:string})=>r.id),p_rounds:rounds.map((r:{id:string})=>r.id)}));
-    const roundPage=annotations.openRound&&!rounds.some((r:{id:string})=>r.id===annotations.openRound.id)?[annotations.openRound,...rounds]:rounds;
+    const requests =
+      checked(values[tables.indexOf("automation_requests")]) ?? [];
+    const rounds = checked(values[tables.indexOf("automation_rounds")]) ?? [];
+    const annotations = await historyAnnotations(
+      client,
+      id,
+      requests.map((r: { id: string }) => r.id),
+      rounds.map((r: { id: string }) => r.id),
+    );
+    const roundPage =
+      annotations.openRound &&
+      !rounds.some((r: { id: string }) => r.id === annotations.openRound.id)
+        ? [annotations.openRound, ...rounds]
+        : rounds;
     return {
       project,
       page,
@@ -77,8 +94,11 @@ export async function GET(request: Request, context: Context) {
       scope,
       fetchedAt: new Date().toISOString(),
       ...Object.fromEntries(tables.map((t, i) => [t, checked(values[i])])),
-      automation_rounds:roundPage,roundCounts:annotations.roundCounts,
-      automation_round_members:annotations.members,automation_revision_refunds:annotations.requestRefunds,automation_round_refunds:annotations.roundRefunds,
+      automation_rounds: roundPage,
+      roundCounts: annotations.roundCounts,
+      automation_round_members: annotations.members,
+      automation_revision_refunds: annotations.requestRefunds,
+      automation_round_refunds: annotations.roundRefunds,
     };
   });
 }
