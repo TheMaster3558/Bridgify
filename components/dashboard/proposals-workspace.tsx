@@ -435,7 +435,17 @@ export function ProposalsWorkspace({
   proposals,
   clientPhotos = {},
   serverManaged = false,
+  title = "Proposals",
+  description = "Private commercial records. Discuss changes with clients through iMessage.",
+  action,
+  toolbar,
 }: {
+  /** Server-side search and pagination, shown under the header. */
+  toolbar?: React.ReactNode;
+  title?: string;
+  description?: string;
+  /** Extra header control, such as a "New proposal" button. */
+  action?: React.ReactNode;
   proposals: Proposal[];
   clientPhotos?: Record<string, string>;
   serverManaged?: boolean;
@@ -546,12 +556,11 @@ export function ProposalsWorkspace({
       <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-5">
         <header className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h1 className="font-display text-2xl font-semibold">Proposals</h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Private commercial records. Discuss changes with clients through
-              iMessage.
-            </p>
+            <h1 className="font-display text-2xl font-semibold">{title}</h1>
+            <p className="mt-1 text-sm text-muted-foreground">{description}</p>
           </div>
+          <div className="flex items-center gap-2">
+          {action}
           <div
             role="group"
             aria-label="Choose proposal view"
@@ -579,7 +588,9 @@ export function ProposalsWorkspace({
               </button>
             ))}
           </div>
+          </div>
         </header>
+        {toolbar}
 
         {!serverManaged && <>
         <section

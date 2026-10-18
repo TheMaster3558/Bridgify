@@ -398,7 +398,14 @@ export function TasksWorkspace({
   creationForm,
   initialTaskId,
   serverManaged = false,
+  title = "Actionable Tasks",
+  description = "Confirmed work across projects. Same records as each project’s Work tab.",
+  toolbar,
 }: {
+  /** Server-side search and pagination, shown under the header. */
+  toolbar?: React.ReactNode;
+  title?: string;
+  description?: string;
   tasks: Task[];
   creationForm?: React.ReactNode;
   initialTaskId?: string;
@@ -561,13 +568,8 @@ export function TasksWorkspace({
       <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-5">
         <header className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h1 className="font-display text-2xl font-semibold">
-              Actionable Tasks
-            </h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Confirmed work across projects. Same records as each project’s
-              Work tab.
-            </p>
+            <h1 className="font-display text-2xl font-semibold">{title}</h1>
+            <p className="mt-1 text-sm text-muted-foreground">{description}</p>
           </div>
           <div className="flex items-center gap-2">
             <div
@@ -601,6 +603,7 @@ export function TasksWorkspace({
           </div>
         </header>
 
+        {toolbar}
         {creationForm}
         {!serverManaged && <>
         <section

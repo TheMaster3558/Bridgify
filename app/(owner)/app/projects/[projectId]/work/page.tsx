@@ -20,26 +20,29 @@ export default async function Page({
   const input = listInput({ ...(await searchParams), project: projectId });
   const result = await queryList(client, "tasks", input);
   return (
-    <>
-      <ListControls
-        taskFilters
-        input={input}
-        total={result.total}
-        statuses={[
-          "all",
-          "ready",
-          "in_progress",
-          "blocked",
-          "done",
-          "cancelled",
-        ]}
-      />
-      <TasksWorkspace
-        key={JSON.stringify(input)}
-        tasks={result.items as unknown as DashboardTask[]}
-        serverManaged
-        creationForm={<TaskEditor projectId={projectId} />}
-      />
-    </>
+    <TasksWorkspace
+      key={JSON.stringify(input)}
+      tasks={result.items as unknown as DashboardTask[]}
+      serverManaged
+      title="Work"
+      description="Tasks for this project. Status changes here are used in Bridgify’s client status replies."
+      toolbar={
+        <ListControls
+          embedded
+          taskFilters
+          input={input}
+          total={result.total}
+          statuses={[
+            "all",
+            "ready",
+            "in_progress",
+            "blocked",
+            "done",
+            "cancelled",
+          ]}
+        />
+      }
+      creationForm={<TaskEditor projectId={projectId} />}
+    />
   );
 }
