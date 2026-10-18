@@ -1,14 +1,13 @@
+import { queryList, listInput } from "@/lib/dashboard/list-query";
 import { readJson } from "@/lib/body";
 import { api, checked, idempotency } from "@/lib/api";
 import { basicsSchema } from "@/lib/schemas/onboarding";
 export async function GET(request: Request) {
   return api(request, async (client) =>
-    checked(
-      await client
-        .from("projects")
-        .select("*")
-        .order("updated_at", { ascending: false })
-        .limit(25),
+    queryList(
+      client,
+      "projects",
+      listInput(Object.fromEntries(new URL(request.url).searchParams)),
     ),
   );
 }

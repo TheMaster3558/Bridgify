@@ -13,6 +13,7 @@ export function LifecycleControls({
   status: string;
   mode: string;
 }) {
+  const [disclosed,setDisclosed]=useState(false);
   const [pending, setPending] = useState(false),
     [error, setError] = useState("");
   const options =
@@ -59,7 +60,7 @@ export function LifecycleControls({
               payload: {
                 status: next,
                 reason: form.get("reason"),
-                disclosed: false,
+                disclosed,
               },
             }),
           });
@@ -92,6 +93,7 @@ export function LifecycleControls({
         earlier messages require owner review. Completion and archive cannot be
         undone through this setup flow.
       </p>
+      {status === "paused" && <label className="flex gap-2 text-sm"><input type="checkbox" checked={disclosed} onChange={e=>setDisclosed(e.target.checked)}/>I verified the client identity and their consent to assistant processing before resuming.</label>}
       <Button disabled={pending}>
         {pending ? "Saving…" : "Update project state"}
       </Button>

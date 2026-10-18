@@ -1,3 +1,5 @@
+> Historical planning reference. Use [Current Product Completion](Product_Completion.md) for this version’s scope, implemented workflows and release handoff.
+
 > Historical planning/reference: the [owner-only specification](Bridgify_Technical_Build_Specification.md) supersedes any client website, invitation or web approval flow described below. Clients now interact only through iMessage.
 
 # Bridgify finish list

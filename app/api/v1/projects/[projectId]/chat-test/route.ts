@@ -72,6 +72,7 @@ export async function POST(
       p_expected: expectedVersion,
       p_participants: participants,
       p_hash: membershipHash(participants),
+      p_introduction:introduction,
     });
     if (
       begin.error?.code === "23505" &&

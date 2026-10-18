@@ -1130,3 +1130,158 @@ test("project deletion cascades new round accounting and runtime records",async(
  await asOwner(()=>pg.query("select delete_project($1,'Website')",[project]));
  for(const table of ['projects','automation_requests','automation_outbox','automation_rounds','automation_round_members','automation_round_refunds','automation_runtime_health'])assert.equal(await count(table),0);
 });
+
+test("manual task commands are idempotent, versioned, owner-only and never spend revisions", async () => {
+ const details={title:"Implement footer",instructions:"Use the agreed footer wording",acceptance_criteria:"Matches confirmed text",priority:"normal",internal_due_date:"2026-11-01",internal_note:"PRIVATE context"};
+ const key=randomUUID();
+ const run=(id:string|null,expected:string|null,action:string,payload:unknown,k=randomUUID())=>asOwner(()=>pg.query<{result:{id:string;updated_at:string;status:string}}>("select owner_task_command($1,$2,$3,$4,$5,$6) result",[project,id,expected,action,JSON.stringify(payload),k]));
+ const created=(await run(null,null,"create",details,key)).rows[0].result;
+ assert.deepEqual((await run(null,null,"create",details,key)).rows[0].result,created);
+ await assert.rejects(run(null,null,"create",{...details,title:"Different"},key),/different input/);
+ const edited=(await run(created.id,created.updated_at,"edit",{...details,title:"Updated footer"})).rows[0].result;
+ await assert.rejects(run(created.id,created.updated_at,"edit",details),/changed/);
+ await run(edited.id,edited.updated_at,"status",{status:"cancelled",note:"No longer required"});
+ assert.equal(await count("project_tasks"),1);assert.equal(await count("automation_revision_uses"),0);
+ await pg.query("select set_config('request.jwt.claim.sub',$1,false)",[randomUUID()]);
+ await assert.rejects(pg.query("select owner_task_command($1,null,null,'create',$2,$3)",[project,JSON.stringify(details),randomUUID()]),/insufficient_privilege/);
+});
+
+test("owner clarification keeps its request and stale review actions cannot create work",async()=>{
+ await changePolicy({mode:"review_only"});await message();await processor().once();
+ const d=(await pg.query<{id:string;updated_at:string}>("select id,updated_at::text from owner_decisions")).rows[0];
+ const run=(action:string,reply:string,key=randomUUID())=>asOwner(()=>pg.query("select owner_review_command($1,$2,$3,'',$4,null,false,$5)",[d.id,d.updated_at,action,reply,key]));
+ const key=randomUUID();const first=await run("clarify","Which exact heading text do you want?",key);
+ assert.deepEqual(await run("clarify","Which exact heading text do you want?",key),first);
+ assert.equal(await count("automation_requests","state='awaiting_details'"),1);
+ assert.equal(await count("automation_outbox","purpose like 'owner-clarification:%'"),1);
+ await assert.rejects(run("approve",""),/changed/);assert.equal(await count("project_tasks"),0);
+});
+test("commercial exceptions cannot be accepted as routine included work",async()=>{
+ await message();await processor(c=>({intents:[intent(c,{scopeAssessment:"excluded"})]})).once();
+ const d=(await pg.query<{id:string;updated_at:string}>("select id,updated_at::text from owner_decisions")).rows[0];
+ await assert.rejects(asOwner(()=>pg.query("select owner_review_command($1,$2,'approve','','',null,false,$3)",[d.id,d.updated_at,randomUUID()])),/proposal/);
+ assert.equal(await count("project_tasks"),0);assert.equal(await count("automation_revision_uses"),0);
+});
+
+test("connection recovery is owner/version guarded and only accepts a matching actual receipt",async()=>{
+ await pg.query("update projects set status='paused' where id=$1",[project]);
+ await pg.query("update chat_bindings set hold_reason='Check identity',introduction_text='Assistant disclosure',introduction_attempted_at=now(),test_state='unknown' where project_id=$1",[project]);
+ await assert.rejects(asOwner(()=>pg.query("select reset_chat_verification($1,1,false,'Checked conversation',$2)",[project,randomUUID()])),/non-delivery/);
+ await assert.rejects(pg.query("select confirm_chat_receipt($1,1,$2,'intro-real','WRONG',now(),$3,$4)",[project,owner,instance,chat]),/match/);
+ await pg.query("select confirm_chat_receipt($1,1,$2,'intro-real','Assistant disclosure',now(),$3,$4)",[project,owner,instance,chat]);
+ assert.equal(await count("chat_bindings","test_state='sent' and hold_reason is null"),1);
+ await assert.rejects(asOwner(()=>pg.query("select reset_chat_verification($1,1,true,'Checked conversation',$2)",[project,randomUUID()])),/changed/);
+});
+test("resume creates a fresh cutoff and holds old queued work for owner review",async()=>{
+ await message();
+ await pg.query("update projects set status='paused' where id=$1",[project]);
+ const payload={status:'active',disclosed:true,reason:'Verified client and resumed'};
+ await assert.rejects(asOwner(()=>pg.query("select onboarding_command($1,1,'lifecycle',$2,$3)",[project,JSON.stringify({...payload,disclosed:false}),randomUUID()])),/consent/);
+ await asOwner(()=>pg.query("select onboarding_command($1,1,'lifecycle',$2,$3)",[project,JSON.stringify(payload),randomUUID()]));
+ assert.equal(await count("automation_jobs","state='queued'"),0);assert.equal(await count("owner_decisions"),1);
+ assert.equal(await count("project_tasks"),0);
+});
+
+const proposalTerms={title:"Additional landing page",explanation:"Add the agreed campaign page",lines:[{key:"landing",title:"Campaign landing page",acceptance_criteria:"Matches the supplied wording"}],exclusions:["No checkout"],amount_cents:12500,change_due_date:false,new_due_date:null,allowance_delta:0,expires_at:null};
+async function proposalCommand(action:string,terms:unknown=proposalTerms,id:string|null=null,revision:number|null=null,version:number|null=null,key=randomUUID()){
+ return asOwner(()=>pg.query<{result:{proposal_id:string;revision:number;version:number;terms_hash:string;frozen_text:string;status:string}}>("select owner_proposal_command($1,$2,$3,$4,$5,$6,$7) result",[project,id,revision,version,action,JSON.stringify(terms),key]));
+}
+test("proposal sending freezes exact terms, queues once and never creates work before approval",async()=>{
+ const draft=(await proposalCommand("create")).rows[0].result;
+ const key=randomUUID();const sent=(await proposalCommand("send",{},draft.proposal_id,1,1,key)).rows[0].result;
+ assert.equal(sent.status,"awaiting_client");assert.match(sent.terms_hash,/^[a-f0-9]{64}$/);assert.match(sent.frozen_text,/USD 125.00/);
+ assert.deepEqual((await proposalCommand("send",{},draft.proposal_id,1,1,key)).rows[0].result,sent);
+ assert.equal(await count("automation_outbox","purpose like 'proposal:%'"),1);assert.equal(await count("project_tasks"),0);
+ await assert.rejects(proposalCommand("draft",{...proposalTerms,amount_cents:0},draft.proposal_id,1,sent.version),/immutable/);
+ const next=(await proposalCommand("replace",{},sent.proposal_id,1,sent.version)).rows[0].result;
+ assert.equal(next.revision,2);assert.equal(next.status,"draft");assert.equal(await count("proposal_revisions","status='superseded'"),1);
+ assert.equal(await count("automation_outbox","state='cancelled' and purpose like 'proposal:%'"),1);
+ await assert.rejects(proposalCommand("send",{},sent.proposal_id,1,sent.version),/changed/);
+});
+test("proposal mutations reject another owner and stale drafts",async()=>{
+ const draft=(await proposalCommand("create")).rows[0].result;
+ await proposalCommand("draft",proposalTerms,draft.proposal_id,1,1);
+ await assert.rejects(proposalCommand("draft",proposalTerms,draft.proposal_id,1,1),/changed/);
+ await pg.query("select set_config('request.jwt.claim.sub',$1,false)",[randomUUID()]);
+ await assert.rejects(pg.query("select owner_proposal_command($1,$2,1,2,'withdraw','{}',$3)",[project,draft.proposal_id,randomUUID()]),/insufficient_privilege/);
+});
+
+async function sentProposal(terms:unknown=proposalTerms){
+ const d=(await proposalCommand('create',terms)).rows[0].result;
+ const sent=(await proposalCommand('send',{},d.proposal_id,1,1)).rows[0].result;
+ await createAutomationDelivery(database,async()=>({state:'sent',messageId:'proposal-provider-'+randomUUID()}),instance).once(project);
+ const incoming=await message('I approve proposal '+d.proposal_id+' revision 1 and its exact terms.');
+ const m=(await pg.query<{id:string}>('select id from automation_messages where event_id=$1',[incoming.inboxEventId])).rows[0];
+ return {sent,evidence:m.id};
+}
+async function recordApproval(sent:{proposal_id:string;revision:number;version:number;terms_hash:string},evidence:string,outcome='approved',key=randomUUID(),projectVersion=1){
+ return asOwner(()=>pg.query("select record_proposal_response($1,$2,$3,$4,$5,$6,$7,$8,true,'Verified the exact client response',$9) result",[project,sent.proposal_id,sent.revision,sent.version,projectVersion,sent.terms_hash,outcome,[evidence],key]));
+}
+test('recorded commercial approval atomically creates scope/tasks/value once and preserves usage',async()=>{
+ const {sent,evidence}=await sentProposal({...proposalTerms,change_due_date:true,new_due_date:'2026-12-01',allowance_delta:2});
+ const key=randomUUID();const first=await recordApproval(sent,evidence,'approved',key);
+ assert.deepEqual(await recordApproval(sent,evidence,'approved',key),first);
+ await recordApproval(sent,evidence);
+ assert.equal(await count('proposal_responses'),1);assert.equal(await count('project_tasks',"origin='proposal'"),1);
+ assert.equal(await count('scope_versions'),2);assert.equal(await count('projects',"approved_additions_cents=12500 and scope_version=2 and (policy->>'allowance')::int=5 and agreed_due_date='2026-12-01'"),1);
+ assert.equal(await count('automation_revision_uses'),0);assert.equal(await count('automation_outbox',"purpose like 'proposal-approved:%'"),1);
+ assert.equal(await count('automation_jobs',"state='queued'"),0);
+ await asOwner(()=>pg.query("select delete_project($1,'Website')",[project]));assert.equal(await count('proposal_responses'),0);
+});
+test('approval rejects incorrect evidence and rolls all effects back on a failed confirmation write',async()=>{
+ const {sent,evidence}=await sentProposal();
+ await assert.rejects(recordApproval({...sent,terms_hash:'0'.repeat(64)},evidence),/changed/);
+ await assert.rejects(recordApproval(sent,randomUUID()),/Evidence/);
+ await pg.exec("create function reject_proposal_confirmation() returns trigger language plpgsql as $$begin if new.purpose like 'proposal-approved:%' then raise exception 'Synthetic confirmation failure';end if;return new;end$$;create trigger fail_proposal_confirmation before insert on automation_outbox for each row execute function reject_proposal_confirmation();");
+ try{await assert.rejects(recordApproval(sent,evidence),/Synthetic confirmation/);}finally{await pg.exec('drop trigger fail_proposal_confirmation on automation_outbox;drop function reject_proposal_confirmation()');}
+ assert.equal(await count('proposal_responses'),0);assert.equal(await count('project_tasks'),0);assert.equal(await count('scope_versions'),1);assert.equal(await count('projects','approved_additions_cents=0'),1);
+
+});
+test('superseded and expired proposals cannot authorize amendments; decline creates no work',async()=>{
+ const {sent,evidence}=await sentProposal();
+ await pg.query('update proposal_revisions set expires_at=now()-interval \'1 second\' where proposal_id=$1',[sent.proposal_id]);
+ await assert.rejects(recordApproval(sent,evidence),/expired/);
+ await pg.query('update proposal_revisions set expires_at=null where proposal_id=$1',[sent.proposal_id]);
+ await recordApproval(sent,evidence,'declined');assert.equal(await count('project_tasks'),0);assert.equal(await count('scope_versions'),1);
+});
+test('amendments replace only owner-selected terms included in the frozen message',async()=>{
+ const original='Heading text and color changes are included.';
+ const {sent,evidence}=await sentProposal({...proposalTerms,amount_cents:0,superseded_terms:[original]});
+ assert.match(sent.frozen_text,/Current agreement terms replaced/);
+ const outbox=(await pg.query<{text:string}>("select text from automation_outbox where purpose like 'proposal:%'")).rows[0];assert.equal(outbox.text,sent.frozen_text);
+ await recordApproval(sent,evidence);
+ const scope=(await pg.query<{terms:{text:string}[]}>("select terms from scope_versions where version=2")).rows[0];assert.equal(scope.terms.some(t=>t.text===original),false);
+ assert.equal(await count('projects','approved_additions_cents=0'),1);
+});
+
+test('competing proposal approvals cannot both apply against the same scope version',async()=>{
+ const one=await sentProposal();const two=await sentProposal({...proposalTerms,title:'Second addition'});
+ await recordApproval(one.sent,one.evidence);
+ await assert.rejects(recordApproval(two.sent,two.evidence),/changed/);
+ assert.equal(await count('proposal_responses'),1);assert.equal(await count('project_tasks'),1);
+});
+test('edited approval evidence and other owners cannot change commercial commitments',async()=>{
+ const {sent,evidence}=await sentProposal();
+ const m=(await pg.query<{provider_guid:string}>('select provider_guid from automation_messages where id=$1',[evidence])).rows[0];
+ await message('Changed approval',{kind:'edit',messageGuid:m.provider_guid});
+ await assert.rejects(recordApproval(sent,evidence),/Evidence/);
+ await pg.query("select set_config('request.jwt.claim.sub',$1,false)",[randomUUID()]);
+ await assert.rejects(pg.query("select record_proposal_response($1,$2,1,2,1,$3,'approved',$4,true,'Verified response',$5)",[project,sent.proposal_id,sent.terms_hash,[evidence],randomUUID()]),/insufficient_privilege/);
+ assert.equal(await count('project_tasks'),0);assert.equal(await count('proposal_responses'),0);
+});
+
+test('expired proposals cancel queued commercial messages and cannot authorize work',async()=>{
+ const d=(await proposalCommand('create',{...proposalTerms,expires_at:new Date(Date.now()+60000).toISOString()})).rows[0].result;
+ await proposalCommand('send',{},d.proposal_id,1,1);
+ await pg.query("update proposal_revisions set expires_at=now()-interval '1 second' where proposal_id=$1",[d.proposal_id]);
+ await pg.query('select expire_pending_proposals()');
+ assert.equal(await count('proposal_revisions',"status='expired'"),1);assert.equal(await count('automation_outbox',"state='cancelled'"),1);assert.equal(await count('project_tasks'),0);
+});
+test('round history annotations include full membership counts beyond one page',async()=>{
+ await changePolicy({mode:'review_only',allowance_mode:'manual_rounds',allowance:200});await message();await processor().once();
+ const d=(await pg.query<{id:string}>('select id from owner_decisions')).rows[0];await asOwner(()=>pg.query("select resolve_automation_review($1,'approve','','',$2,null)",[d.id,randomUUID()]));
+ const request=(await pg.query<{id:string}>('select id from automation_requests')).rows[0];
+ const round=(await ownerCommand('round_open',{})).rows[0].result.id;await ownerCommand('round_add',{id:round,requestId:request.id});
+ const annotations=await asOwner(()=>pg.query<{result:{roundCounts:Record<string,number>;openRound:{id:string};members:unknown[]}}>('select automation_history_annotations($1,$2,$3) result',[project,[request.id],[]]));
+ assert.equal(annotations.rows[0].result.openRound.id,round);assert.equal(annotations.rows[0].result.roundCounts[round],1);assert.equal(annotations.rows[0].result.members.length,1);
+});

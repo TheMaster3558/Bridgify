@@ -24,8 +24,7 @@ export async function listDashboardTasks(client: Client) {
   const rows = checked(
     await client
       .from("project_tasks")
-      .select("id,project_id,task_code,title,status,priority,assignee,agreed_due_date,origin,origin_text,request_code,blocked_reason,operation,target_id,value,acceptance_criteria,source_text,source_meta,authorized_by,revision_unit,internal_note,history,created_at,updated_at")
-      .neq("status", "cancelled")
+      .select("id,project_id,task_code,title,status,priority,assignee,internal_due_date,agreed_due_date,origin,origin_text,request_code,blocked_reason,operation,target_id,value,acceptance_criteria,source_text,source_meta,authorized_by,revision_unit,internal_note,history,created_at,updated_at")
       .order("updated_at", { ascending: false }),
   ) as Omit<DashboardTask, "project_name" | "client_name">[];
   const projects = await projectsById(client, [...new Set(rows.map((row) => row.project_id))]);

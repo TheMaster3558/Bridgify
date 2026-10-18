@@ -14,6 +14,7 @@ export type DashboardTask = {
   status: "ready" | "in_progress" | "blocked" | "done" | "cancelled";
   priority: "high" | "normal" | "low";
   assignee: string;
+  internal_due_date?: string | null;
   agreed_due_date: string | null;
   origin: "auto" | "agreement" | "manual" | "proposal";
   origin_text: string;

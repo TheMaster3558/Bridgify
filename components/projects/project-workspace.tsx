@@ -30,7 +30,7 @@ export function ProjectWorkspace({
   );
   const mode = project.policy?.mode;
   return (
-    <div className="project-workspace min-h-screen bg-background text-foreground">
+    <div className="project-workspace min-w-0 max-w-full min-h-screen overflow-hidden bg-background text-foreground">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b px-5 py-4 text-sm text-muted-foreground lg:px-8">
         <p>
           <Link className="hover:text-foreground" href="/app/projects">

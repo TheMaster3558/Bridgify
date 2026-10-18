@@ -1,3 +1,4 @@
+import type { WorkSummary } from "@/lib/dashboard/summary";
 import { DeleteProject } from "./delete-project";
 import Link from "next/link";
 import type { Bundle } from "@/lib/domain/types";
@@ -38,9 +39,13 @@ function Row({
 export function ProjectOverview({
   bundle,
   owner,
+  summary,
+  accounting,
 }: {
   bundle: Bundle;
   owner: string;
+  summary?:WorkSummary;
+  accounting?:{requestsUsed:number;roundsUsed:number;grossRequests:number;requestRefunds:number};
 }) {
   const p = bundle.project,
     root = `/app/projects/${p.id}`;
@@ -88,16 +93,15 @@ export function ProjectOverview({
             </div>
             <div className="flex justify-between gap-4">
               <dt className="text-muted-foreground">Approved additions</dt>
-              <dd className="text-muted-foreground">Not tracked</dd>
+              <dd>{new Intl.NumberFormat("en-US",{style:"currency",currency:p.currency}).format((p.approved_additions_cents??0)/100)}</dd>
             </div>
             <div className="flex justify-between gap-4 border-t pt-3 font-semibold">
               <dt>Approved total</dt>
-              <dd className="text-muted-foreground">—</dd>
+              <dd>{new Intl.NumberFormat("en-US",{style:"currency",currency:p.currency}).format((p.original_amount_cents+(p.approved_additions_cents??0))/100)}</dd>
             </div>
           </dl>
           <p className="mt-6 text-xs leading-relaxed text-muted-foreground">
-            The original agreed price is saved. Approved additions and total
-            value are not connected yet.
+            Approved additions include only recorded client approvals. Pending proposals do not change this total.
           </p>
           <p className="mt-4 text-xs text-muted-foreground">
             Agreed work value. Not an invoice or payment.
@@ -113,9 +117,10 @@ export function ProjectOverview({
             </span>
           }
         >
+          {accounting && <p className="mb-3">{p.policy?.allowance ?? 0} included {p.policy?.allowance_mode === "manual_rounds" ? "rounds" : "requests"} · {p.policy?.allowance_mode === "manual_rounds" ? accounting.roundsUsed : accounting.requestsUsed} used · {Math.max(0,(p.policy?.allowance??0)-(p.policy?.allowance_mode === "manual_rounds"?accounting.roundsUsed:accounting.requestsUsed))} remaining · {accounting.requestRefunds} request refunds</p>}
           <p className="text-sm text-muted-foreground">
-            {revisions?.allowance != null
-              ? "Allowance from the owner-confirmed agreement. Revision consumption and reservations are not connected yet."
+            {accounting ? "Acceptance uses a revision. Cancellation preserves usage unless explicitly refunded." : revisions?.allowance != null
+              ? "Allowance from the owner-confirmed agreement. Inspect usage and refunds in Scope & Revisions."
               : "No revision allowance is available from a confirmed agreement."}
           </p>
           <div className="mt-7 grid gap-3 border-t pt-5 text-sm">
@@ -148,26 +153,20 @@ export function ProjectOverview({
           }
         >
           <div className="flex min-h-36 flex-col items-center justify-center gap-2 text-center">
-            <p className="font-medium">Work summary not connected</p>
-            <p className="text-sm text-muted-foreground">
-              Project tasks will appear here when the work integration is
-              available.
-            </p>
+            <p className="font-medium">{summary ? `${summary.ready} ready · ${summary.inProgress} in progress · ${summary.blocked} blocked` : "No work summary available"}</p>
           </div>
         </Panel>
         <Panel
           title="Open decisions"
           action={
-            <Link className={linkClass} href="/app/decisions">
+            <Link className={linkClass} href={`/app/decisions?project=${p.id}`}>
               Review decisions
             </Link>
           }
         >
           <div className="flex min-h-36 flex-col items-center justify-center gap-2 text-center">
-            <p className="font-medium">Decision summary not connected</p>
-            <p className="text-sm text-muted-foreground">
-              No project decision data is displayed here yet.
-            </p>
+            <p className="font-medium">{summary ? `${summary.decisions} open decisions · ${summary.proposals} proposals awaiting response` : "No decision summary available"}</p>
+            {summary && <p className="text-sm">{summary.queued} replies queued · {summary.unknown + summary.failed} delivery or processing issues</p>}
           </div>
         </Panel>
       </div>
@@ -180,7 +179,7 @@ export function ProjectOverview({
         </Link>
         <Link
           className="text-primary hover:underline"
-          href={`${root}/setup?step=3`}
+          href={p.activation_cutoff ? `${root}/automation` : `${root}/setup?step=3`}
         >
           Manage client connection
         </Link>

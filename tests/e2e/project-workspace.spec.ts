@@ -82,7 +82,7 @@ test("project header, plain tab navigation and sidebar conversation link", async
   await expect(
     tabs.getByRole("link", { name: "Overview", exact: true }),
   ).toHaveAttribute("aria-current", "page");
-  await expect(page.getByText("$1,200.00", { exact: true })).toBeVisible();
+  await expect(page.getByText("$1,200.00", { exact: true }).first()).toBeVisible();
   await expect(page.getByText("Harbor & Pine Bakery")).toHaveCount(0);
   await page.screenshot({
     path: testInfo.outputPath("project-overview.png"),

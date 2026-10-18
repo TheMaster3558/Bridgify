@@ -71,6 +71,7 @@ export type WorkspaceProject = {
   status: string;
   setup_step: number;
   original_amount_cents: number;
+  approved_additions_cents?:number;
   currency: string;
   agreed_due_date: string | null;
   policy: { mode?: string } | null;
@@ -146,7 +147,7 @@ function workspaceValue(project: WorkspaceProject) {
   return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: project.currency || "USD",
-  }).format((project.original_amount_cents || 0) / 100);
+  }).format(((project.original_amount_cents || 0)+(project.approved_additions_cents??0)) / 100);
 }
 
 function StateChip({ status }: { status: ProjectListStatus }) {
@@ -362,10 +363,12 @@ function ProjectPanel({
 
 export function ProjectsList({
   workspaceProjects = [],
+  serverManaged = false,
   pendingDecisions = {},
   clientPhotos = {},
 }: {
   workspaceProjects?: WorkspaceProject[];
+  serverManaged?: boolean;
   pendingDecisions?: Record<string, number>;
   clientPhotos?: Record<string, string>;
 }) {
@@ -397,6 +400,7 @@ export function ProjectsList({
   }, [workspaceProjects]);
 
   const workspaceFiltered = useMemo(() => {
+    if (serverManaged) return workspaceProjects;
     const needle = query.trim().toLowerCase();
     const direction = sort.dir === "asc" ? 1 : -1;
     return workspaceProjects
@@ -424,7 +428,7 @@ export function ProjectsList({
           );
         return a.updated_at.localeCompare(b.updated_at) * direction;
       });
-  }, [workspaceProjects, query, filter, sort]);
+  }, [workspaceProjects, query, filter, sort, serverManaged]);
 
   const pageCount = Math.max(
     1,
@@ -458,6 +462,12 @@ export function ProjectsList({
   }
 
   function onSort(key: SortKey) {
+    if (serverManaged) {
+      const params = new URLSearchParams(window.location.search);
+      params.set("dir", params.get("sort") === key && params.get("dir") === "asc" ? "desc" : "asc");
+      params.set("sort", key); params.delete("page");
+      router.push(`?${params}`); return;
+    }
     setSort((current) =>
       current.key === key
         ? { key, dir: current.dir === "asc" ? "desc" : "asc" }
@@ -513,6 +523,7 @@ export function ProjectsList({
           </div>
         ) : (
           <>
+            {!serverManaged && <>
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div
                 role="group"
@@ -553,6 +564,7 @@ export function ProjectsList({
               </label>
             </div>
 
+            </>}
             <section aria-labelledby="projects-heading" className={tableCard}>
               <div className="flex min-h-[3.25rem] flex-wrap items-center justify-between gap-3 px-4 py-2.5">
                 <h2 id="projects-heading" className="text-[17px] font-medium">

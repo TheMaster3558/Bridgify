@@ -357,7 +357,8 @@ async function createDecision(
     `insert into owner_decisions(id,project_id,decision_code,request_code,reason,title,source_text,
     source_meta,evidence,evidence_source,explanation,missing_details,suggested_options,reply_preview,history)
     values($1,$2,$3,$4,$5,$6,$7,$8,$9,'Confirmed project agreement',$10,$11,$12,$13,$14)
-    on conflict(project_id,decision_code) do update set updated_at=now() returning id`,
+    on conflict(project_id,decision_code) do update set status='open',deleted_at=null,reason=excluded.reason,evidence=excluded.evidence,
+      missing_details=excluded.missing_details,updated_at=clock_timestamp() returning id`,
     [
       id,
       input.projectId,
@@ -647,6 +648,7 @@ async function applyAnalysis(
         "update automation_requests set state='accepted',task_id=$2 where id=$1",
         [id, taskId],
       );
+      if (previous) await sql.query("update owner_decisions set status='resolved',history=history||jsonb_build_array('Clarification resolved and request accepted'),updated_at=clock_timestamp() where automation_request_id=$1 and status in ('open','reviewing')",[id]);
       replies.push(
         `Accepted “${intent.summary.slice(0, 160)}” as ${code("TASK", taskId)} for the owner to carry out. This uses one included change request.`,
       );

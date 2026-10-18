@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
@@ -224,7 +225,7 @@ function ProposalDetail({
     { label: "Exclusions", items: textList(terms.exclusions) },
     { label: "Dependencies", items: textList(terms.dependencies) },
   ];
-  const projectProposals = `/app/projects/${proposal.project_id}/proposals`;
+  const projectProposals = `/app/projects/${proposal.project_id}/proposals/${proposal.proposal_id}?revision=${proposal.revision}`;
 
   return (
     <>
@@ -405,7 +406,7 @@ function ProposalDetail({
         </details>
 
         <p className="text-xs text-neutral-500 dark:text-neutral-400">
-          Delivery state and sent time are not stored yet.
+          Open the revision in its project to inspect delivery and recorded client decisions.
         </p>
       </div>
 
@@ -433,10 +434,13 @@ function ProposalDetail({
 export function ProposalsWorkspace({
   proposals,
   clientPhotos = {},
+  serverManaged = false,
 }: {
   proposals: Proposal[];
   clientPhotos?: Record<string, string>;
+  serverManaged?: boolean;
 }) {
+  const router = useRouter();
   const [filter, setFilter] =
     useState<(typeof statusFilters)[number]["id"]>("all");
   const [view, setView] = useState<"list" | "board">("list");
@@ -476,6 +480,7 @@ export function ProposalsWorkspace({
     return result;
   }, [scoped]);
   const visible = useMemo(() => {
+    if (serverManaged) return proposals;
     const rows = scoped.filter(
       (proposal) => filter === "all" || statusGroup(proposal.status) === filter,
     );
@@ -495,7 +500,7 @@ export function ProposalsWorkspace({
         direction
       );
     });
-  }, [scoped, filter, sort]);
+  }, [scoped, filter, sort, serverManaged, proposals]);
   const selected =
     proposals.find((proposal) => proposalKey(proposal) === selectedKey) ?? null;
   const pending = proposals.filter(
@@ -517,6 +522,12 @@ export function ProposalsWorkspace({
   }, [selected]);
 
   function onSort(key: SortKey) {
+    if (serverManaged) {
+      const params = new URLSearchParams(window.location.search);
+      params.set("dir", params.get("sort") === key && params.get("dir") === "asc" ? "desc" : "asc");
+      params.set("sort", key); params.delete("page");
+      router.push(`?${params}`); return;
+    }
     setSort((current) =>
       current.key === key
         ? { key, dir: current.dir === "asc" ? "desc" : "asc" }
@@ -570,6 +581,7 @@ export function ProposalsWorkspace({
           </div>
         </header>
 
+        {!serverManaged && <>
         <section
           aria-label="Proposal filters and view options"
           className="grid gap-3"
@@ -628,6 +640,7 @@ export function ProposalsWorkspace({
           </div>
         </section>
 
+        </>}
         {pending > 0 && (
           <button
             type="button"

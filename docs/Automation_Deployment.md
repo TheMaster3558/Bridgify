@@ -137,3 +137,14 @@ Sources: [Photon webhooks](https://photon.codes/docs/webhooks/overview),
 [Supabase scheduling](https://supabase.com/docs/guides/functions/schedule-functions),
 [pg_net queue privileges](https://supabase.com/docs/guides/troubleshooting/database-roles-can-read-request-headers-queued-by-pg_net-ad6357),
 [Vercel cron limits](https://vercel.com/docs/cron-jobs/usage-and-pricing).
+
+## Product completion upgrades
+
+Review the dependency-ordered PR stack before deploying. Run `automation:install`
+for the new task, request-resolution, connection-recovery, proposal, approval and
+product-recovery migrations after a staging upgrade check and backup. The existing
+recovery callback now also expires pending proposals, recovers interrupted
+interactive agreement analysis and retries private document deletion cleanup.
+Do not deploy new application code against the older schema. The implementation
+has not merged PRs, applied production migrations or sent test messages to clients.
+See [Product Completion](Product_Completion.md) for the required deployed journeys.

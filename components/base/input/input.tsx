@@ -3,6 +3,7 @@
 import {
   createContext,
   useContext,
+  useId,
   type ComponentType,
   type ReactNode,
   type Ref,
@@ -271,6 +272,8 @@ export function Input({
   className,
   ...textFieldProps
 }: InputProps) {
+  const generatedId=useId();
+  const inputId=textFieldProps.id ?? `input-${generatedId}`;
   return (
     <TextField
       {...textFieldProps}
@@ -286,6 +289,7 @@ export function Input({
         <>
           {label && (
             <Label
+              htmlFor={inputId}
               isRequired={isRequired}
               isInvalid={isInvalid}
               tooltip={tooltip}
@@ -294,6 +298,8 @@ export function Input({
             </Label>
           )}
           <InputBase
+            id={inputId}
+            aria-label={typeof label === "string" ? label : textFieldProps["aria-label"]}
             dir={inputDir ?? (["email", "url", "tel"].includes(textFieldProps.type ?? "") ? "ltr" : undefined)}
             ref={ref}
             groupRef={groupRef}

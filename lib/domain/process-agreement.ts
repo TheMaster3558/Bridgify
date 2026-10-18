@@ -37,6 +37,7 @@ export async function analyzeAgreementNow(
   let extraction: Awaited<ReturnType<typeof extractAgreement>> | null = null;
   let failure: AgreementAnalysisError | UnsupportedAgreement | null = null;
   try {
+    if(job.attempts>3) throw new AgreementAnalysisError("AGREEMENT_INTERRUPTED","Agreement processing was interrupted repeatedly. Retry the saved agreement after checking server health.");
     const { data: doc, error } = await client
       .from("documents")
       .select("kind,original_text,storage_path")

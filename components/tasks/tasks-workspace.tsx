@@ -17,7 +17,6 @@ import {
   MessageCircle,
   Minus,
   MoreVertical,
-  Plus,
   Search,
 } from "lucide-react";
 import { Checkbox, DropdownMenu } from "radix-ui";
@@ -52,15 +51,15 @@ import {
 } from "@/components/dashboard/table-ui";
 import {
   settingsButton,
-  settingsPrimaryButton,
 } from "@/components/settings/settings-ui";
 import { clientKey } from "@/lib/clients/photos";
 import type { DashboardTask } from "@/lib/dashboard/work-management-types";
 import { cn } from "@/lib/utils";
+import { TaskEditor } from "./task-editor";
 import { TaskStatusActions } from "./task-status-actions";
 
 type Task = DashboardTask;
-type TaskStatus = Exclude<Task["status"], "cancelled">;
+type TaskStatus = Task["status"];
 type SortKey = "title" | "priority" | "date" | "updated";
 
 function taskCriteriaLabel(value: string) {
@@ -81,6 +80,7 @@ const statusFilters: { id: "all" | TaskStatus; label: string }[] = [
   { id: "in_progress", label: "In progress" },
   { id: "blocked", label: "Blocked" },
   { id: "done", label: "Done" },
+  { id: "cancelled", label: "Cancelled" },
 ];
 
 const statusLabels: Record<Task["status"], string> = {
@@ -175,7 +175,7 @@ function SelectBox({
 async function patchStatus(task: Task, status: Task["status"]) {
   const response = await fetch(`/api/v1/tasks/${task.id}`, {
     method: "PATCH",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID() },
     body: JSON.stringify({
       status,
       note: "",
@@ -385,6 +385,8 @@ function TaskDetail({
         </PanelSection>
       </div>
 
+      {task.request_code && <Link className="px-6 py-2 text-sm underline" href={`/app/projects/${task.project_id}/requests?task=${task.id}`}>View request evidence</Link>}
+      <TaskEditor key={`edit-${task.id}-${task.updated_at}`} task={task} onSaved={onSaved} />
       <TaskStatusActions key={task.id} task={task} onSaved={onSaved} />
     </>
   );
@@ -393,9 +395,15 @@ function TaskDetail({
 export function TasksWorkspace({
   tasks,
   clientPhotos = {},
+  creationForm,
+  initialTaskId,
+  serverManaged = false,
 }: {
   tasks: Task[];
+  creationForm?: React.ReactNode;
+  initialTaskId?: string;
   clientPhotos?: Record<string, string>;
+  serverManaged?: boolean;
 }) {
   const router = useRouter();
   const [filter, setFilter] =
@@ -404,7 +412,7 @@ export function TasksWorkspace({
   const [project, setProject] = useState("all");
   const [assignee, setAssignee] = useState("all");
   const [query, setQuery] = useState("");
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(initialTaskId ?? null);
   const [checkedIds, setCheckedIds] = useState<string[]>([]);
   const [saved, setSaved] = useState<Record<string, Task>>({});
   const [bulkBusy, setBulkBusy] = useState(false);
@@ -415,7 +423,7 @@ export function TasksWorkspace({
   });
 
   const allTasks = useMemo(
-    () => tasks.map((task) => saved[task.id] ?? task),
+    () => tasks.map((task) => saved[task.id] && Date.parse(saved[task.id].updated_at)>Date.parse(task.updated_at) ? saved[task.id] : task),
     [tasks, saved],
   );
   const projects = useMemo(
@@ -448,6 +456,7 @@ export function TasksWorkspace({
     );
   }, [allTasks, project, assignee, query]);
   const visibleTasks = useMemo(() => {
+    if (serverManaged) return allTasks;
     const direction = sort.dir === "asc" ? 1 : -1;
     return scoped
       .filter((task) => filter === "all" || task.status === filter)
@@ -466,7 +475,7 @@ export function TasksWorkspace({
           );
         return a.updated_at.localeCompare(b.updated_at) * direction;
       });
-  }, [scoped, filter, sort]);
+  }, [scoped, filter, sort, serverManaged, allTasks]);
   const selected = allTasks.find((task) => task.id === selectedId);
   const checkedVisible = visibleTasks.filter((task) =>
     checkedIds.includes(task.id),
@@ -494,6 +503,12 @@ export function TasksWorkspace({
   }, [selected]);
 
   function onSort(key: SortKey) {
+    if (serverManaged) {
+      const params = new URLSearchParams(window.location.search);
+      params.set("dir", params.get("sort") === key && params.get("dir") === "asc" ? "desc" : "asc");
+      params.set("sort", key); params.delete("page");
+      router.push(`?${params}`); return;
+    }
     setSort((current) =>
       current.key === key
         ? { key, dir: current.dir === "asc" ? "desc" : "asc" }
@@ -582,18 +597,12 @@ export function TasksWorkspace({
                 </button>
               ))}
             </div>
-            <button
-              type="button"
-              disabled
-              title="Task creation will be connected with the work-management workflow"
-              className={cn(settingsPrimaryButton, "h-9 gap-1.5 px-4")}
-            >
-              <Plus aria-hidden className="size-4" />
-              New task
-            </button>
+
           </div>
         </header>
 
+        {creationForm}
+        {!serverManaged && <>
         <section
           aria-label="Task filters and view options"
           className="grid gap-3"
@@ -682,6 +691,7 @@ export function TasksWorkspace({
           </div>
         </section>
 
+        </>}
         {view === "list" ? (
           <section aria-labelledby="tasks-heading" className={tableCard}>
             <div className="flex min-h-[3.25rem] flex-wrap items-center justify-between gap-3 px-4 py-2.5">

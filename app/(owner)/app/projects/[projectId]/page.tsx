@@ -1,3 +1,4 @@
+import { workSummary,revisionSummary } from "@/lib/dashboard/summary";
 import { requireOwner } from "@/lib/auth/session";
 import { projectBundle } from "@/lib/db/project";
 import { ProjectOverview } from "@/components/projects/project-overview";
@@ -16,6 +17,8 @@ export default async function Page({
   return (
     <ProjectOverview
       bundle={bundle}
+      summary={await workSummary(client,bundle.project.id)}
+      accounting={await revisionSummary(client,bundle.project.id)}
       owner={typeof name === "string" ? name : user.email || ""}
     />
   );
