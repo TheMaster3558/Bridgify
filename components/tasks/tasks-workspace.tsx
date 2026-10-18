@@ -386,6 +386,7 @@ function TaskDetail({
         </PanelSection>
       </div>
 
+      {task.request_code && <Link className="px-6 py-2 text-sm underline" href={`/app/projects/${task.project_id}/requests?q=${encodeURIComponent(task.title)}`}>View request evidence</Link>}
       <TaskEditor key={`edit-${task.id}-${task.updated_at}`} task={task} onSaved={onSaved} />
       <TaskStatusActions key={task.id} task={task} onSaved={onSaved} />
     </>

@@ -1145,3 +1145,20 @@ test("manual task commands are idempotent, versioned, owner-only and never spend
  await pg.query("select set_config('request.jwt.claim.sub',$1,false)",[randomUUID()]);
  await assert.rejects(pg.query("select owner_task_command($1,null,null,'create',$2,$3)",[project,JSON.stringify(details),randomUUID()]),/insufficient_privilege/);
 });
+
+test("owner clarification keeps its request and stale review actions cannot create work",async()=>{
+ await changePolicy({mode:"review_only"});await message();await processor().once();
+ const d=(await pg.query<{id:string;updated_at:string}>("select id,updated_at::text from owner_decisions")).rows[0];
+ const run=(action:string,reply:string,key=randomUUID())=>asOwner(()=>pg.query("select owner_review_command($1,$2,$3,'',$4,null,false,$5)",[d.id,d.updated_at,action,reply,key]));
+ const key=randomUUID();const first=await run("clarify","Which exact heading text do you want?",key);
+ assert.deepEqual(await run("clarify","Which exact heading text do you want?",key),first);
+ assert.equal(await count("automation_requests","state='awaiting_details'"),1);
+ assert.equal(await count("automation_outbox","purpose like 'owner-clarification:%'"),1);
+ await assert.rejects(run("approve",""),/changed/);assert.equal(await count("project_tasks"),0);
+});
+test("commercial exceptions cannot be accepted as routine included work",async()=>{
+ await message();await processor(c=>({intents:[intent(c,{scopeAssessment:"excluded"})]})).once();
+ const d=(await pg.query<{id:string;updated_at:string}>("select id,updated_at::text from owner_decisions")).rows[0];
+ await assert.rejects(asOwner(()=>pg.query("select owner_review_command($1,$2,'approve','','',null,false,$3)",[d.id,d.updated_at,randomUUID()])),/proposal/);
+ assert.equal(await count("project_tasks"),0);assert.equal(await count("automation_revision_uses"),0);
+});
