@@ -47,6 +47,7 @@ export function ListToolbar({
   pageSize,
   total,
   aside,
+  compact = false,
 }: {
   /** Current URL filter values, e.g. { status: "open", q: "", project: "all" }. */
   values: Record<string, string | number>;
@@ -57,6 +58,8 @@ export function ListToolbar({
   pageSize: number;
   total: number;
   aside?: ReactNode;
+  /** Narrower search and pickers so they fit on the pill row. */
+  compact?: boolean;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -123,8 +126,18 @@ export function ListToolbar({
           );
         })}
       </div>
-      <div className="flex max-w-full min-w-0 flex-wrap items-center gap-2">
-        <label className="flex h-9 w-full items-center gap-2 rounded-full bg-sidebar-accent px-3 text-neutral-500 focus-within:ring-[3px] focus-within:ring-sidebar-ring/40 sm:w-64 dark:text-neutral-400">
+      <div
+        className={cn(
+          "flex max-w-full min-w-0 flex-wrap items-center gap-2",
+          compact && "ml-auto",
+        )}
+      >
+        <label
+          className={cn(
+            "flex h-9 w-full items-center gap-2 rounded-full bg-sidebar-accent px-3 text-neutral-500 focus-within:ring-[3px] focus-within:ring-sidebar-ring/40 dark:text-neutral-400",
+            compact ? "sm:w-40" : "sm:w-64",
+          )}
+        >
           <Search aria-hidden className="size-[18px] shrink-0" />
           <span className="sr-only">{search.placeholder}</span>
           <input
@@ -151,7 +164,10 @@ export function ListToolbar({
             value={String(values[select.param] ?? "all")}
             onValueChange={(value) => navigate({ [select.param]: value })}
           >
-            <SelectTrigger aria-label={select.label} className={selectTrigger}>
+            <SelectTrigger
+              aria-label={select.label}
+              className={cn(selectTrigger, compact && "sm:w-36")}
+            >
               <SelectValue />
             </SelectTrigger>
             <SelectContent>

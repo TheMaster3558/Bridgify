@@ -9,7 +9,6 @@ import {
   type SearchParams,
 } from "@/lib/dashboard/list-query";
 import { ListToolbar } from "@/components/dashboard/list-toolbar";
-import { checked } from "@/lib/api";
 import { TasksWorkspace } from "@/components/tasks/tasks-workspace";
 import type { DashboardTask } from "@/lib/dashboard/work-management-types";
 import { loadClientPhotos } from "@/lib/clients/photo-urls";
@@ -29,7 +28,7 @@ export default async function Page({
     ["done", "Done"],
     ["cancelled", "Cancelled"],
   ] as const;
-  const [result, projects, counts, assigneeRows] = await Promise.all([
+  const [result, projects, counts] = await Promise.all([
     queryList(client, "tasks", input),
     projectOptions(client),
     optionCounts(
@@ -39,19 +38,7 @@ export default async function Page({
       "status",
       statuses.map(([id]) => id),
     ),
-    client
-      .from("project_tasks")
-      .select("assignee")
-      .neq("assignee", "")
-      .limit(1000),
   ]);
-  const assignees = [
-    ...new Set(
-      ((checked(assigneeRows) ?? []) as { assignee: string }[]).map(
-        (row) => row.assignee,
-      ),
-    ),
-  ].sort((a, b) => a.localeCompare(b));
   const rows = result.items as unknown as DashboardTask[];
   return (
     <TasksWorkspace
@@ -78,6 +65,7 @@ export default async function Page({
             })),
           }}
           search={{ placeholder: "Search tasks" }}
+          compact
           selects={[
             {
               param: "project",
@@ -85,14 +73,6 @@ export default async function Page({
               options: [
                 { id: "all", label: "All projects" },
                 ...projects.map((p) => ({ id: p.id, label: p.name })),
-              ],
-            },
-            {
-              param: "assignee",
-              label: "Assignee filter",
-              options: [
-                { id: "all", label: "Any assignee" },
-                ...assignees.map((name) => ({ id: name, label: name })),
               ],
             },
           ]}
