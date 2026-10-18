@@ -1,3 +1,4 @@
+import { TaskEditor } from "@/components/tasks/task-editor";
 import { requireOwner } from "@/lib/auth/session";
 import {
   queryList,
@@ -39,6 +40,7 @@ export default async function Page({
       />
       <TasksWorkspace
         key={JSON.stringify(input)}
+        creationForm={<TaskEditor projects={projects.filter(p => ["active","review_only"].includes(p.status))}/>}
         tasks={rows}
         serverManaged
         clientPhotos={await loadClientPhotos(

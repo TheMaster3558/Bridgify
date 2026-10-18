@@ -1130,3 +1130,18 @@ test("project deletion cascades new round accounting and runtime records",async(
  await asOwner(()=>pg.query("select delete_project($1,'Website')",[project]));
  for(const table of ['projects','automation_requests','automation_outbox','automation_rounds','automation_round_members','automation_round_refunds','automation_runtime_health'])assert.equal(await count(table),0);
 });
+
+test("manual task commands are idempotent, versioned, owner-only and never spend revisions", async () => {
+ const details={title:"Implement footer",instructions:"Use the agreed footer wording",acceptance_criteria:"Matches confirmed text",priority:"normal",internal_due_date:"2026-11-01",internal_note:"PRIVATE context"};
+ const key=randomUUID();
+ const run=(id:string|null,expected:string|null,action:string,payload:unknown,k=randomUUID())=>asOwner(()=>pg.query<{result:{id:string;updated_at:string;status:string}}>("select owner_task_command($1,$2,$3,$4,$5,$6) result",[project,id,expected,action,JSON.stringify(payload),k]));
+ const created=(await run(null,null,"create",details,key)).rows[0].result;
+ assert.deepEqual((await run(null,null,"create",details,key)).rows[0].result,created);
+ await assert.rejects(run(null,null,"create",{...details,title:"Different"},key),/different input/);
+ const edited=(await run(created.id,created.updated_at,"edit",{...details,title:"Updated footer"})).rows[0].result;
+ await assert.rejects(run(created.id,created.updated_at,"edit",details),/changed/);
+ await run(edited.id,edited.updated_at,"status",{status:"cancelled",note:"No longer required"});
+ assert.equal(await count("project_tasks"),1);assert.equal(await count("automation_revision_uses"),0);
+ await pg.query("select set_config('request.jwt.claim.sub',$1,false)",[randomUUID()]);
+ await assert.rejects(pg.query("select owner_task_command($1,null,null,'create',$2,$3)",[project,JSON.stringify(details),randomUUID()]),/insufficient_privilege/);
+});
