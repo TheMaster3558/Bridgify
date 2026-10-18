@@ -20,5 +20,24 @@ export default async function Page() {
         .order("updated_at", { ascending: false })
         .limit(25),
     ) as WorkspaceProject[] | null) || [];
-  return <ProjectsList workspaceProjects={projects} />;
+  const ids = projects.map((project) => project.id);
+  const openDecisions = ids.length
+    ? ((checked(
+        await client
+          .from("owner_decisions")
+          .select("project_id")
+          .in("project_id", ids)
+          .in("status", ["open", "reviewing"])
+          .is("deleted_at", null),
+      ) as { project_id: string }[] | null) ?? [])
+    : [];
+  const pendingDecisions: Record<string, number> = {};
+  for (const { project_id } of openDecisions)
+    pendingDecisions[project_id] = (pendingDecisions[project_id] ?? 0) + 1;
+  return (
+    <ProjectsList
+      workspaceProjects={projects}
+      pendingDecisions={pendingDecisions}
+    />
+  );
 }

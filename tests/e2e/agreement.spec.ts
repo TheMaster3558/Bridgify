@@ -845,9 +845,15 @@ test("completed manual-approval setup redirects to overview and appears Active i
   await expect(
     row.getByRole("link", { name: "Open", exact: true }),
   ).toHaveAttribute("href", `/app/projects/${bundle.project.id}`);
-  await page.getByLabel("Filter by state").selectOption("active");
+  await page
+    .getByRole("group", { name: "Filter by state" })
+    .getByRole("button", { name: /^Active/ })
+    .click();
   await expect(row).toBeVisible();
-  await page.getByLabel("Filter by state").selectOption("draft");
+  await page
+    .getByRole("group", { name: "Filter by state" })
+    .getByRole("button", { name: /^Draft/ })
+    .click();
   await expect(row).toHaveCount(0);
 });
 
