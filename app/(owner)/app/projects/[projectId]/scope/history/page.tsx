@@ -36,8 +36,7 @@ export default async function Page({
                 <strong className="text-sm">{t.kind}</strong>
                 <p>{t.text}</p>
                 <blockquote className="mt-2 border-l-2 pl-3 text-sm text-muted-foreground">
-                  Page {b.spans.find((span) => span.id === t.span_id)?.page}: “
-                  {t.quote}”
+                  {"proposal_id" in t ? <Link className="underline" href={`/app/projects/${b.project.id}/proposals/${String(t.proposal_id)}?revision=${String((t as unknown as {proposal_revision:number}).proposal_revision)}`}>Approved amendment</Link> : `Page ${b.spans.find((span) => span.id === t.span_id)?.page ?? "—"}`} · “{t.quote}”
                 </blockquote>
               </article>
             ))}

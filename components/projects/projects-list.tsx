@@ -71,6 +71,7 @@ export type WorkspaceProject = {
   status: string;
   setup_step: number;
   original_amount_cents: number;
+  approved_additions_cents?:number;
   currency: string;
   agreed_due_date: string | null;
   policy: { mode?: string } | null;
@@ -146,7 +147,7 @@ function workspaceValue(project: WorkspaceProject) {
   return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: project.currency || "USD",
-  }).format((project.original_amount_cents || 0) / 100);
+  }).format(((project.original_amount_cents || 0)+(project.approved_additions_cents??0)) / 100);
 }
 
 function StateChip({ status }: { status: ProjectListStatus }) {
