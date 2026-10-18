@@ -1,32 +1,92 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { AlertCircle, CalendarDays, FileText, LayoutGrid, List, X } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import {
+  AlertCircle,
+  ArrowUpRight,
+  Braces,
+  ChevronRight,
+  ClipboardList,
+  Eye,
+  FileText,
+  LayoutGrid,
+  List,
+  MessageCircle,
+  MessagesSquare,
+  MoreVertical,
+  Search,
+  ScrollText,
+} from "lucide-react";
+import { DropdownMenu } from "radix-ui";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  DotChip,
+  InitialsAvatar,
+  PanelClose,
+  PanelSection,
+  SortHeader,
+  filterActive,
+  filterButton,
+  filterIdle,
+  formatShortDate,
+  headCell,
+  iconButton,
+  menuContent,
+  menuItem,
+  panelAside,
+  panelFooter,
+  panelHeader,
+  tableCard,
+  tableHead,
+  tableRow,
+  tableRowSelected,
+} from "@/components/dashboard/table-ui";
+import {
+  settingsButton,
+  settingsPrimaryButton,
+} from "@/components/settings/settings-ui";
+import { clientKey } from "@/lib/clients/photos";
 import type { ProposalRevisionRecord } from "@/lib/dashboard/work-management-types";
 import { cn } from "@/lib/utils";
+
+type Proposal = ProposalRevisionRecord;
+type SortKey = "title" | "price" | "expires" | "default";
 
 function proposalCode(id: string) {
   return `P-${id.slice(0, 8).toUpperCase()}`;
 }
 
-function proposalKey(proposal: ProposalRevisionRecord) {
+function proposalKey(proposal: Proposal) {
   return `${proposal.proposal_id}-r${proposal.revision}`;
 }
 
 function objectValue(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
 }
 
 function stringField(record: Record<string, unknown>, ...keys: string[]) {
-  for (const key of keys) if (typeof record[key] === "string" && record[key]) return record[key] as string;
+  for (const key of keys)
+    if (typeof record[key] === "string" && record[key])
+      return record[key] as string;
   return "";
 }
 
 function priceCents(terms: Record<string, unknown>) {
-  for (const key of ["amount_cents", "price_cents", "additional_price_cents", "total_cents"]) {
+  for (const key of [
+    "amount_cents",
+    "price_cents",
+    "additional_price_cents",
+    "total_cents",
+  ]) {
     const value = terms[key];
     if (typeof value === "number" && Number.isFinite(value)) return value;
   }
@@ -35,8 +95,15 @@ function priceCents(terms: Record<string, unknown>) {
 
 function money(cents: number | null, currency = "USD") {
   if (cents === null) return "—";
-  try { return new Intl.NumberFormat("en-US", { style: "currency", currency, maximumFractionDigits: 2 }).format(cents / 100); }
-  catch { return `${(cents / 100).toFixed(2)} ${currency}`; }
+  try {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency,
+      maximumFractionDigits: 2,
+    }).format(cents / 100);
+  } catch {
+    return `${(cents / 100).toFixed(2)} ${currency}`;
+  }
 }
 
 function readableStatus(status: string) {
@@ -56,141 +123,819 @@ const statusFilters: { id: "all" | StatusGroup; label: string }[] = [
 function statusGroup(status: string): StatusGroup {
   if (["awaiting_client", "sent"].includes(status)) return "awaiting";
   if (status === "approved") return "approved";
-  if (["superseded", "withdrawn", "expired", "rejected", "declined"].includes(status)) return "closed";
+  if (
+    ["superseded", "withdrawn", "expired", "rejected", "declined"].includes(
+      status,
+    )
+  )
+    return "closed";
   return "draft";
 }
 
-const statusClass: Record<StatusGroup, string> = {
-  draft: "border-info/20 bg-info-soft text-info",
-  awaiting: "border-warn/20 bg-warn-soft text-warn",
-  approved: "border-ok/20 bg-ok-soft text-ok",
-  closed: "border-border bg-muted text-muted-foreground",
+const statusDot: Record<StatusGroup, string> = {
+  draft: "bg-blue-500",
+  awaiting: "bg-yellow-400",
+  approved: "bg-lime-500",
+  closed: "bg-neutral-400",
 };
 
-function proposalTitle(proposal: ProposalRevisionRecord) {
+function proposalTitle(proposal: Proposal) {
   const terms = objectValue(proposal.shared_terms);
   return stringField(terms, "title", "name", "summary") || "Proposal terms";
 }
 
 function proposalLines(terms: Record<string, unknown>) {
-  const raw = Array.isArray(terms.lines) ? terms.lines : Array.isArray(terms.deliverables) ? terms.deliverables : [];
+  const raw = Array.isArray(terms.lines)
+    ? terms.lines
+    : Array.isArray(terms.deliverables)
+      ? terms.deliverables
+      : [];
   return raw.map((item, index) => {
-    if (typeof item === "string") return { key: `line-${index + 1}`, title: item, price: null as number | null };
+    if (typeof item === "string")
+      return {
+        key: `line-${index + 1}`,
+        title: item,
+        price: null as number | null,
+      };
     const line = objectValue(item);
-    const amount = typeof line.amount_cents === "number" ? line.amount_cents : typeof line.price_cents === "number" ? line.price_cents : null;
+    const amount =
+      typeof line.amount_cents === "number"
+        ? line.amount_cents
+        : typeof line.price_cents === "number"
+          ? line.price_cents
+          : null;
     return {
       key: stringField(line, "key", "id") || `line-${index + 1}`,
-      title: stringField(line, "title", "description", "deliverable", "name") || `Deliverable ${index + 1}`,
+      title:
+        stringField(line, "title", "description", "deliverable", "name") ||
+        `Deliverable ${index + 1}`,
       price: amount,
     };
   });
 }
 
 function textList(value: unknown) {
-  return Array.isArray(value) ? value.map((item) => typeof item === "string" ? item : JSON.stringify(item)) : [];
+  return Array.isArray(value)
+    ? value.map((item) =>
+        typeof item === "string" ? item : JSON.stringify(item),
+      )
+    : [];
 }
 
-function displayDate(value: string | null) {
-  return value ? new Date(value).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }) : null;
-}
-
-export function ProposalsWorkspace({ proposals }: { proposals: ProposalRevisionRecord[] }) {
-  const [filter, setFilter] = useState<(typeof statusFilters)[number]["id"]>("all");
-  const [view, setView] = useState<"list" | "board">("list");
-  const [project, setProject] = useState("all");
-  const [selectedKey, setSelectedKey] = useState<string | null>(null);
-  const projects = useMemo(() => [...new Map(proposals.map((proposal) => [proposal.project_id, proposal.project_name])).entries()], [proposals]);
-  const visible = useMemo(
-    () => proposals.filter((proposal) =>
-      (filter === "all" || statusGroup(proposal.status) === filter) &&
-      (project === "all" || proposal.project_id === project),
-    ),
-    [proposals, filter, project],
+function StatusChip({ status }: { status: string }) {
+  return (
+    <DotChip dot={statusDot[statusGroup(status)]}>
+      {readableStatus(status)}
+    </DotChip>
   );
-  const selected = proposals.find((proposal) => proposalKey(proposal) === selectedKey) ?? null;
-  const pending = proposals.filter((proposal) => statusGroup(proposal.status) === "awaiting").length;
+}
+
+function PriceChip({ proposal }: { proposal: Proposal }) {
+  const terms = objectValue(proposal.shared_terms);
+  const cents = priceCents(terms);
+  if (cents === null)
+    return <span className="text-sm text-neutral-400">—</span>;
+  return (
+    <span className="inline-flex rounded-md bg-sidebar px-2 py-1 text-sm font-medium whitespace-nowrap tabular-nums dark:bg-sidebar-accent">
+      {money(cents, stringField(terms, "currency") || "USD")}
+    </span>
+  );
+}
+
+function ProposalDetail({
+  proposal,
+  photo,
+  onClose,
+}: {
+  proposal: Proposal;
+  photo?: string | null;
+  onClose: () => void;
+}) {
+  const terms = objectValue(proposal.shared_terms);
+  const lines = proposalLines(terms);
+  const currency = stringField(terms, "currency") || "USD";
+  const explanation = stringField(
+    terms,
+    "explanation",
+    "description",
+    "client_explanation",
+  );
+  const lists = [
+    { label: "Exclusions", items: textList(terms.exclusions) },
+    { label: "Dependencies", items: textList(terms.dependencies) },
+  ];
+  const projectProposals = `/app/projects/${proposal.project_id}/proposals`;
 
   return (
     <>
-      <main className="mx-auto flex w-full max-w-[1280px] flex-col gap-5 p-5 md:p-6">
+      <header className={panelHeader}>
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-1.5 font-mono text-[11px] text-neutral-500 dark:text-neutral-400">
+            <span className="rounded-md bg-sidebar px-1.5 py-0.5 dark:bg-sidebar-accent">
+              {proposalCode(proposal.proposal_id)}
+            </span>
+            <span className="rounded-md bg-sidebar px-1.5 py-0.5 dark:bg-sidebar-accent">
+              r{proposal.revision}
+            </span>
+          </div>
+          <PanelClose label="Close proposal details" onClick={onClose} />
+        </div>
+        <h2
+          id="proposal-detail-title"
+          className="text-xl leading-snug font-semibold tracking-tight break-words"
+        >
+          {proposalTitle(proposal)}
+        </h2>
+        <div className="flex flex-wrap items-center gap-2">
+          <StatusChip status={proposal.status} />
+          <PriceChip proposal={proposal} />
+        </div>
+      </header>
+
+      <div className="grid gap-7 px-6 py-6">
+        <Link
+          href={projectProposals}
+          className="group flex items-center gap-3 rounded-2xl bg-sidebar p-3 outline-none hover:bg-sidebar-accent focus-visible:ring-[3px] focus-visible:ring-sidebar-ring/40"
+        >
+          <InitialsAvatar name={proposal.client_name} size="md" src={photo} />
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-[15px] font-medium">
+              {proposal.client_name}
+            </span>
+            <span className="block truncate text-sm text-neutral-500 dark:text-neutral-400">
+              {proposal.project_name} · Proposals
+            </span>
+          </span>
+          <ArrowUpRight
+            aria-hidden
+            className="size-4 text-neutral-400 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5"
+          />
+        </Link>
+
+        <dl className="grid grid-cols-2 gap-2">
+          {[
+            {
+              label: "Additional price",
+              value: money(priceCents(terms), currency),
+            },
+            {
+              label: "Expires",
+              value: proposal.expires_at
+                ? formatShortDate(proposal.expires_at)
+                : "No expiry",
+            },
+          ].map((stat) => (
+            <div key={stat.label} className="rounded-2xl bg-sidebar p-3.5">
+              <dt className="text-xs text-neutral-500 dark:text-neutral-400">
+                {stat.label}
+              </dt>
+              <dd className="mt-1 truncate text-[17px] font-semibold tabular-nums">
+                {stat.value}
+              </dd>
+            </div>
+          ))}
+        </dl>
+
+        <PanelSection icon={MessageCircle} title="What the client sees">
+          {explanation ? (
+            <div className="flex justify-end">
+              <div className="w-fit max-w-[90%] rounded-[20px] rounded-br-md bg-gradient-to-b from-[#4a82ff] to-[#2563eb] px-4 py-2.5 text-[15px] leading-relaxed whitespace-pre-wrap text-white">
+                {explanation}
+              </div>
+            </div>
+          ) : (
+            <p className="text-sm text-neutral-500 dark:text-neutral-400">
+              No client-facing explanation is recorded in this revision.
+            </p>
+          )}
+        </PanelSection>
+
+        <PanelSection icon={ClipboardList} title="Deliverables">
+          {lines.length ? (
+            <ul className="divide-y divide-card overflow-hidden rounded-2xl bg-sidebar dark:divide-background">
+              {lines.map((line) => (
+                <li
+                  key={line.key}
+                  className="flex items-start justify-between gap-4 px-4 py-3"
+                >
+                  <span className="flex min-w-0 items-start gap-2.5">
+                    <FileText
+                      aria-hidden
+                      className="mt-0.5 size-4 shrink-0 text-neutral-400"
+                    />
+                    <span className="text-[15px] break-words">
+                      {line.title}
+                    </span>
+                  </span>
+                  <span className="shrink-0 text-sm text-neutral-500 tabular-nums dark:text-neutral-400">
+                    {money(line.price, currency)}
+                  </span>
+                </li>
+              ))}
+              <li className="flex justify-between gap-4 bg-sidebar-accent px-4 py-3 text-[15px] font-semibold">
+                <span>Additional project price</span>
+                <span className="tabular-nums">
+                  {money(priceCents(terms), currency)}
+                </span>
+              </li>
+            </ul>
+          ) : (
+            <p className="text-sm text-neutral-500 dark:text-neutral-400">
+              No deliverable lines are present in the stored terms.
+            </p>
+          )}
+          <p className="text-xs text-neutral-500 dark:text-neutral-400">
+            Approve work from Needs Attention to turn these lines into tasks.
+          </p>
+        </PanelSection>
+
+        <PanelSection icon={ScrollText} title="Terms">
+          <dl className="divide-y divide-card overflow-hidden rounded-2xl bg-sidebar dark:divide-background">
+            {lists.map((list) => (
+              <div key={list.label} className="grid gap-1 px-4 py-3">
+                <dt className="text-xs text-neutral-500 dark:text-neutral-400">
+                  {list.label}
+                </dt>
+                <dd className="text-[15px]">
+                  {list.items.length ? (
+                    <ul className="grid gap-1">
+                      {list.items.map((item, index) => (
+                        <li key={index} className="flex gap-2">
+                          <ChevronRight
+                            aria-hidden
+                            className="mt-1 size-3.5 shrink-0 text-neutral-400"
+                          />
+                          {item}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <span className="text-neutral-500 dark:text-neutral-400">
+                      None recorded
+                    </span>
+                  )}
+                </dd>
+              </div>
+            ))}
+            <div className="grid gap-1 px-4 py-3">
+              <dt className="text-xs text-neutral-500 dark:text-neutral-400">
+                Expires
+              </dt>
+              <dd className="text-[15px]">
+                {proposal.expires_at
+                  ? new Date(proposal.expires_at).toLocaleString()
+                  : "No expiry recorded"}
+              </dd>
+            </div>
+          </dl>
+        </PanelSection>
+
+        <details className="group rounded-2xl bg-sidebar">
+          <summary className="flex cursor-pointer list-none items-center gap-2 rounded-2xl px-4 py-3 text-sm font-medium text-neutral-500 outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-sidebar-ring/40 dark:text-neutral-400">
+            <Braces aria-hidden className="size-4" />
+            Stored terms record
+            <ChevronRight
+              aria-hidden
+              className="ml-auto size-4 transition-transform group-open:rotate-90"
+            />
+          </summary>
+          <pre className="max-h-80 overflow-auto border-t border-card px-4 py-3 font-mono text-xs break-words whitespace-pre-wrap dark:border-background">
+            {JSON.stringify(proposal.shared_terms, null, 2)}
+          </pre>
+        </details>
+
+        <p className="text-xs text-neutral-500 dark:text-neutral-400">
+          Delivery state and sent time are not stored yet.
+        </p>
+      </div>
+
+      <div className={panelFooter}>
+        <div className="flex items-center gap-2">
+          <Link
+            href={projectProposals}
+            className={cn(settingsPrimaryButton, "h-9 gap-1.5 px-4")}
+          >
+            <ArrowUpRight aria-hidden className="size-4" />
+            Open in project
+          </Link>
+          <Link
+            href={`/app/projects/${proposal.project_id}/conversation`}
+            className={cn(settingsButton, "h-9 px-3.5")}
+          >
+            Conversation
+          </Link>
+        </div>
+      </div>
+    </>
+  );
+}
+
+export function ProposalsWorkspace({
+  proposals,
+  clientPhotos = {},
+}: {
+  proposals: Proposal[];
+  clientPhotos?: Record<string, string>;
+}) {
+  const [filter, setFilter] =
+    useState<(typeof statusFilters)[number]["id"]>("all");
+  const [view, setView] = useState<"list" | "board">("list");
+  const [project, setProject] = useState("all");
+  const [query, setQuery] = useState("");
+  const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  const [sort, setSort] = useState<{ key: SortKey; dir: "asc" | "desc" }>({
+    key: "default",
+    dir: "asc",
+  });
+  const photoFor = (name: string) => clientPhotos[clientKey(name)];
+
+  const projects = useMemo(
+    () => [
+      ...new Map(
+        proposals.map((proposal) => [proposal.project_id, proposal]),
+      ).values(),
+    ],
+    [proposals],
+  );
+  const scoped = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    return proposals.filter(
+      (proposal) =>
+        (project === "all" || proposal.project_id === project) &&
+        (!needle ||
+          proposalTitle(proposal).toLowerCase().includes(needle) ||
+          proposalCode(proposal.proposal_id).toLowerCase().includes(needle)),
+    );
+  }, [proposals, project, query]);
+  const counts = useMemo(() => {
+    const result: Record<string, number> = { all: scoped.length };
+    for (const proposal of scoped) {
+      const group = statusGroup(proposal.status);
+      result[group] = (result[group] ?? 0) + 1;
+    }
+    return result;
+  }, [scoped]);
+  const visible = useMemo(() => {
+    const rows = scoped.filter(
+      (proposal) => filter === "all" || statusGroup(proposal.status) === filter,
+    );
+    if (sort.key === "default") return rows;
+    const direction = sort.dir === "asc" ? 1 : -1;
+    return [...rows].sort((a, b) => {
+      if (sort.key === "title")
+        return proposalTitle(a).localeCompare(proposalTitle(b)) * direction;
+      if (sort.key === "price")
+        return (
+          ((priceCents(objectValue(a.shared_terms)) ?? -1) -
+            (priceCents(objectValue(b.shared_terms)) ?? -1)) *
+          direction
+        );
+      return (
+        (a.expires_at || "9999").localeCompare(b.expires_at || "9999") *
+        direction
+      );
+    });
+  }, [scoped, filter, sort]);
+  const selected =
+    proposals.find((proposal) => proposalKey(proposal) === selectedKey) ?? null;
+  const pending = proposals.filter(
+    (proposal) => statusGroup(proposal.status) === "awaiting",
+  ).length;
+
+  useEffect(() => {
+    if (!selected) return;
+    function onKeyDown(event: KeyboardEvent) {
+      const target = event.target as Element | null;
+      if (
+        event.key === "Escape" &&
+        !target?.closest?.('[role="listbox"],[role="menu"]')
+      )
+        setSelectedKey(null);
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [selected]);
+
+  function onSort(key: SortKey) {
+    setSort((current) =>
+      current.key === key
+        ? { key, dir: current.dir === "asc" ? "desc" : "asc" }
+        : { key, dir: key === "price" ? "desc" : "asc" },
+    );
+  }
+
+  return (
+    <main
+      className={cn(
+        "mx-auto grid w-full max-w-[1280px] items-start gap-5 p-5 md:p-6",
+        selected &&
+          "xl:max-w-[1640px] xl:grid-cols-[minmax(0,1fr)_minmax(400px,460px)]",
+      )}
+    >
+      <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-5">
         <header className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <h1 className="font-display text-2xl font-semibold">Proposals</h1>
-            <p className="mt-1 text-sm text-muted-foreground">Private commercial records. Discuss changes with clients through iMessage.</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Private commercial records. Discuss changes with clients through
+              iMessage.
+            </p>
           </div>
-          <Badge variant="outline" className="border-info/20 bg-info-soft text-info">Database records · {proposals.length}</Badge>
+          <div
+            role="group"
+            aria-label="Choose proposal view"
+            className="flex items-center gap-1 rounded-full bg-sidebar-accent p-1"
+          >
+            {(
+              [
+                ["list", "List view", List],
+                ["board", "Board view", LayoutGrid],
+              ] as const
+            ).map(([id, label, Icon]) => (
+              <button
+                key={id}
+                type="button"
+                aria-label={label}
+                aria-pressed={view === id}
+                onClick={() => setView(id)}
+                className={cn(
+                  "grid size-7 place-items-center rounded-full text-neutral-500 outline-none transition-colors hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-sidebar-ring/40 dark:text-neutral-400",
+                  view === id &&
+                    "bg-card text-foreground shadow-sm dark:bg-neutral-700 dark:text-white",
+                )}
+              >
+                <Icon aria-hidden className="size-4" />
+              </button>
+            ))}
+          </div>
         </header>
 
-        <section aria-label="Proposal filters and view options">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex flex-wrap gap-1 rounded-full border bg-card p-1" aria-label="Filter by status">
-              {statusFilters.map((item) => (
-                <button key={item.id} type="button" aria-pressed={filter === item.id} onClick={() => setFilter(item.id)}
-                  className={cn("rounded-full px-3 py-1.5 text-sm font-medium transition-colors", filter === item.id ? "bg-foreground text-background" : "text-muted-foreground hover:text-foreground")}>
-                  {item.label}
-                </button>
-              ))}
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <Select value={project} onValueChange={setProject}>
-                <SelectTrigger aria-label="Project filter" className="w-[170px] bg-card"><SelectValue placeholder="All projects" /></SelectTrigger>
-                <SelectContent><SelectItem value="all">All projects</SelectItem>{projects.map(([id, name]) => <SelectItem key={id} value={id}>{name}</SelectItem>)}</SelectContent>
-              </Select>
-              <div className="inline-flex rounded-md border bg-card p-0.5" aria-label="Choose proposal view">
-                <Button type="button" variant={view === "list" ? "secondary" : "ghost"} size="icon-sm" aria-label="List view" aria-pressed={view === "list"} onClick={() => setView("list")}><List aria-hidden="true" /></Button>
-                <Button type="button" variant={view === "board" ? "secondary" : "ghost"} size="icon-sm" aria-label="Board view" aria-pressed={view === "board"} onClick={() => setView("board")}><LayoutGrid aria-hidden="true" /></Button>
-              </div>
-            </div>
+        <section
+          aria-label="Proposal filters and view options"
+          className="grid gap-3"
+        >
+          <div
+            role="group"
+            aria-label="Filter by status"
+            className="flex max-w-full min-w-0 gap-2 overflow-x-auto pb-1"
+          >
+            {statusFilters.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                aria-pressed={filter === item.id}
+                onClick={() => setFilter(item.id)}
+                className={cn(
+                  filterButton,
+                  filter === item.id ? filterActive : filterIdle,
+                )}
+              >
+                {item.label} ({counts[item.id] ?? 0})
+              </button>
+            ))}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="flex h-9 w-full items-center gap-2 rounded-full bg-sidebar-accent px-3 text-neutral-500 focus-within:ring-[3px] focus-within:ring-sidebar-ring/40 sm:w-64 dark:text-neutral-400">
+              <Search aria-hidden className="size-[18px] shrink-0" />
+              <span className="sr-only">Search proposals</span>
+              <input
+                value={query}
+                placeholder="Search proposals"
+                className="min-w-0 flex-1 bg-transparent text-[15px] text-foreground outline-none placeholder:text-neutral-500 dark:placeholder:text-neutral-400"
+                onChange={(event) => setQuery(event.target.value)}
+              />
+            </label>
+            <Select value={project} onValueChange={setProject}>
+              <SelectTrigger
+                aria-label="Project filter"
+                className="h-9 w-full max-w-64 rounded-full border-0 bg-sidebar-accent px-3.5 text-sm font-medium shadow-none sm:w-56"
+              >
+                <SelectValue placeholder="All projects" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All projects</SelectItem>
+                {projects.map((item) => (
+                  <SelectItem key={item.project_id} value={item.project_id}>
+                    <InitialsAvatar
+                      name={item.client_name}
+                      src={photoFor(item.client_name)}
+                    />
+                    <span className="truncate">{item.project_name}</span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
         </section>
 
         {pending > 0 && (
-          <p className="flex items-center gap-2 rounded-lg border border-warn/30 bg-warn-soft px-4 py-3 text-sm">
-            <AlertCircle className="size-4 shrink-0 text-warn" aria-hidden="true" />
-            <span><strong>{pending} proposal{pending === 1 ? "" : "s"} awaiting client review.</strong> Follow-ups are owner-reviewed.</span>
-          </p>
+          <button
+            type="button"
+            onClick={() => {
+              setFilter("awaiting");
+              setView("list");
+            }}
+            className="group flex items-center gap-3 rounded-2xl bg-yellow-50 p-4 text-left ring-1 ring-yellow-200 ring-inset outline-none focus-visible:ring-[3px] focus-visible:ring-sidebar-ring/40 dark:bg-yellow-400/10 dark:ring-yellow-400/25"
+          >
+            <span
+              aria-hidden
+              className="size-2 shrink-0 rounded-full bg-yellow-400"
+            />
+            <span className="flex-1 text-[15px] text-yellow-950 dark:text-yellow-50">
+              <span className="font-medium">
+                {pending} proposal{pending === 1 ? "" : "s"} awaiting client
+                review.
+              </span>{" "}
+              Follow-ups are owner-reviewed.
+            </span>
+            <ChevronRight
+              aria-hidden
+              className="size-4 text-yellow-600 transition-transform group-hover:translate-x-0.5 dark:text-yellow-300"
+            />
+          </button>
         )}
 
         {view === "list" ? (
-          <section className="overflow-hidden rounded-lg border bg-card shadow-sm" aria-label="Proposals">
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[900px] border-collapse text-sm">
-                <thead className="bg-muted text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                  <tr>{["Proposal", "Project", "Client", "Revision", "Additional price", "Status", "Expires"].map((heading) => <th key={heading} className="whitespace-nowrap border-b px-3 py-3 font-semibold">{heading}</th>)}</tr>
-                </thead>
-                <tbody>
-                  {visible.map((proposal) => {
-                    const key = proposalKey(proposal);
-                    const terms = objectValue(proposal.shared_terms);
-                    return (
-                      <tr key={key} tabIndex={0} onClick={() => setSelectedKey(key)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setSelectedKey(key); } }} className="cursor-pointer border-b last:border-0 hover:bg-muted/60 focus-visible:bg-muted/60">
-                        <td className="w-[320px] min-w-[320px] px-3 py-3"><div className="flex min-w-0 items-start gap-2"><span className="shrink-0 whitespace-nowrap font-mono text-xs text-muted-foreground">{proposalCode(proposal.proposal_id)}</span><span className="min-w-0 break-words font-medium">{proposalTitle(proposal)}</span></div></td>
-                        <td className="whitespace-nowrap px-3 py-3 text-muted-foreground">{proposal.project_name}</td>
-                        <td className="whitespace-nowrap px-3 py-3">{proposal.client_name}</td>
-                        <td className="whitespace-nowrap px-3 py-3 font-mono text-xs">r{proposal.revision}</td>
-                        <td className="whitespace-nowrap px-3 py-3 tabular-nums">{money(priceCents(terms), stringField(terms, "currency") || "USD")}</td>
-                        <td className="px-3 py-3"><Badge variant="outline" className={statusClass[statusGroup(proposal.status)]}>{readableStatus(proposal.status)}</Badge></td>
-                        <td className="whitespace-nowrap px-3 py-3 tabular-nums">{displayDate(proposal.expires_at) ?? <span className="text-muted-foreground">No expiry</span>}</td>
-                      </tr>
-                    );
-                  })}
-                  {visible.length === 0 && <tr><td colSpan={7} className="px-6 py-14 text-center"><p className="font-medium">No proposals to show</p><p className="mt-1 text-sm text-muted-foreground">Proposal revisions saved for your projects will appear here.</p></td></tr>}
-                </tbody>
-              </table>
+          <section aria-labelledby="proposals-heading" className={tableCard}>
+            <div className="flex min-h-[3.25rem] flex-wrap items-center justify-between gap-3 px-4 py-2.5">
+              <h2 id="proposals-heading" className="text-[17px] font-medium">
+                {filter === "all"
+                  ? "All proposals"
+                  : `${statusFilters.find((item) => item.id === filter)?.label} proposals`}
+              </h2>
+              <p className="text-sm text-neutral-500 dark:text-neutral-400">
+                Approved proposals become tasks in Actionable Tasks.
+              </p>
             </div>
-            <footer className="flex flex-wrap justify-between gap-2 border-t px-3 py-2.5 text-xs text-muted-foreground"><span>{visible.length} of {proposals.length} revisions</span><span>Approved proposals become tasks in Actionable Tasks</span></footer>
+            {visible.length === 0 ? (
+              <div className="grid place-items-center border-t border-sidebar-border px-4 py-14 text-center">
+                <FileText
+                  aria-hidden
+                  className="mb-2 size-6 text-neutral-400"
+                />
+                <p className="text-[15px] font-medium">No proposals to show</p>
+                <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
+                  Proposal revisions saved for your projects will appear here.
+                </p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse">
+                  <thead className={tableHead}>
+                    <tr>
+                      <th scope="col" className={cn(headCell, "pl-4")}>
+                        <SortHeader
+                          label="Proposal"
+                          sortKey="title"
+                          sort={sort}
+                          onSort={onSort}
+                        />
+                      </th>
+                      <th scope="col" className={headCell}>
+                        Project
+                      </th>
+                      <th scope="col" className={headCell}>
+                        Status
+                      </th>
+                      <th
+                        scope="col"
+                        className={cn(headCell, "hidden @3xl:table-cell")}
+                      >
+                        <SortHeader
+                          label="Additional price"
+                          sortKey="price"
+                          sort={sort}
+                          onSort={onSort}
+                        />
+                      </th>
+                      <th
+                        scope="col"
+                        className={cn(headCell, "hidden @4xl:table-cell")}
+                      >
+                        <SortHeader
+                          label="Expires"
+                          sortKey="expires"
+                          sort={sort}
+                          onSort={onSort}
+                        />
+                      </th>
+                      <th
+                        scope="col"
+                        className={cn(headCell, "pr-4 text-right")}
+                      >
+                        Actions
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {visible.map((proposal) => {
+                      const key = proposalKey(proposal);
+                      const isSelected = selectedKey === key;
+                      return (
+                        <tr
+                          key={key}
+                          onClick={() => setSelectedKey(key)}
+                          aria-selected={isSelected}
+                          className={cn(
+                            tableRow,
+                            isSelected && tableRowSelected,
+                          )}
+                        >
+                          <td className="py-2 pr-3 pl-4">
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                setSelectedKey(key);
+                              }}
+                              aria-current={isSelected ? "true" : undefined}
+                              className="block max-w-[26rem] min-w-44 rounded-md text-left outline-none focus-visible:ring-[3px] focus-visible:ring-sidebar-ring/40"
+                            >
+                              <span className="line-clamp-1 text-[15px] leading-5 font-medium text-foreground">
+                                {proposalTitle(proposal)}
+                              </span>
+                              <span className="font-mono text-xs leading-5 text-neutral-500 dark:text-neutral-400">
+                                {proposalCode(proposal.proposal_id)} · r
+                                {proposal.revision}
+                              </span>
+                            </button>
+                          </td>
+                          <td className="px-3 py-2">
+                            <div className="flex max-w-56 items-center gap-2.5">
+                              <InitialsAvatar
+                                name={proposal.client_name}
+                                src={photoFor(proposal.client_name)}
+                              />
+                              <div className="min-w-0">
+                                <p className="truncate text-[15px] leading-5">
+                                  {proposal.project_name}
+                                </p>
+                                <p className="truncate text-sm leading-5 text-neutral-500 dark:text-neutral-400">
+                                  {proposal.client_name}
+                                </p>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-3 py-2">
+                            <StatusChip status={proposal.status} />
+                          </td>
+                          <td className="hidden px-3 py-2 @3xl:table-cell">
+                            <PriceChip proposal={proposal} />
+                          </td>
+                          <td className="hidden px-3 py-2 text-[15px] whitespace-nowrap tabular-nums @4xl:table-cell">
+                            {proposal.expires_at ? (
+                              formatShortDate(proposal.expires_at)
+                            ) : (
+                              <span className="text-neutral-500 dark:text-neutral-400">
+                                No expiry
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-2 pr-4 pl-3">
+                            <div className="flex justify-end gap-2">
+                              <button
+                                type="button"
+                                aria-label={`Review ${proposalTitle(proposal)}`}
+                                className={iconButton}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  setSelectedKey(key);
+                                }}
+                              >
+                                <Eye aria-hidden className="size-4" />
+                              </button>
+                              <DropdownMenu.Root>
+                                <DropdownMenu.Trigger
+                                  aria-label={`More actions for ${proposalTitle(proposal)}`}
+                                  className={iconButton}
+                                  onClick={(event) => event.stopPropagation()}
+                                >
+                                  <MoreVertical
+                                    aria-hidden
+                                    className="size-4"
+                                  />
+                                </DropdownMenu.Trigger>
+                                <DropdownMenu.Portal>
+                                  <DropdownMenu.Content
+                                    align="end"
+                                    sideOffset={6}
+                                    className={menuContent}
+                                    onClick={(event) => event.stopPropagation()}
+                                  >
+                                    <DropdownMenu.Item
+                                      className={menuItem}
+                                      onSelect={() => setSelectedKey(key)}
+                                    >
+                                      <Eye aria-hidden className="size-4" />
+                                      Review proposal
+                                    </DropdownMenu.Item>
+                                    <DropdownMenu.Item
+                                      asChild
+                                      className={menuItem}
+                                    >
+                                      <Link
+                                        href={`/app/projects/${proposal.project_id}/proposals`}
+                                      >
+                                        <ArrowUpRight
+                                          aria-hidden
+                                          className="size-4"
+                                        />
+                                        Open in project
+                                      </Link>
+                                    </DropdownMenu.Item>
+                                    <DropdownMenu.Item
+                                      asChild
+                                      className={menuItem}
+                                    >
+                                      <Link
+                                        href={`/app/projects/${proposal.project_id}/conversation`}
+                                      >
+                                        <MessagesSquare
+                                          aria-hidden
+                                          className="size-4"
+                                        />
+                                        Open conversation
+                                      </Link>
+                                    </DropdownMenu.Item>
+                                  </DropdownMenu.Content>
+                                </DropdownMenu.Portal>
+                              </DropdownMenu.Root>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            <footer className="flex flex-wrap justify-between gap-2 border-t border-sidebar-border px-4 py-2.5 text-sm text-neutral-500 dark:text-neutral-400">
+              <span>
+                {visible.length} of {proposals.length} revisions
+              </span>
+            </footer>
           </section>
         ) : (
-          <section className="overflow-x-auto pb-1" aria-label="Proposals by status">
+          <section
+            className="overflow-x-auto pb-1"
+            aria-label="Proposals by status"
+          >
             <div className="grid min-w-[880px] grid-cols-4 gap-3">
               {statusFilters.slice(1).map((column) => {
-                const columnProposals = visible.filter((proposal) => statusGroup(proposal.status) === column.id);
+                const columnProposals = scoped.filter(
+                  (proposal) => statusGroup(proposal.status) === column.id,
+                );
                 return (
-                  <div key={column.id} className="flex min-h-48 flex-col gap-2 rounded-lg bg-muted p-2.5">
-                    <h2 className="flex items-center justify-between px-1 text-sm font-semibold">{column.label}<span className="rounded-full bg-card px-2 py-0.5 text-xs text-muted-foreground">{columnProposals.length}</span></h2>
+                  <div
+                    key={column.id}
+                    className="flex min-h-48 flex-col gap-2 rounded-2xl bg-sidebar p-2.5"
+                  >
+                    <h2 className="flex items-center gap-2 px-1.5 py-1 text-sm font-medium">
+                      <span
+                        aria-hidden
+                        className={cn(
+                          "size-2 rounded-full",
+                          statusDot[column.id as StatusGroup],
+                        )}
+                      />
+                      {column.label}
+                      <span className="ml-auto rounded-full bg-card px-2 py-0.5 text-xs text-neutral-500 dark:bg-background dark:text-neutral-400">
+                        {columnProposals.length}
+                      </span>
+                    </h2>
                     {columnProposals.map((proposal) => {
-                      const terms = objectValue(proposal.shared_terms);
-                      return <button type="button" key={proposalKey(proposal)} onClick={() => setSelectedKey(proposalKey(proposal))} className="flex min-w-0 flex-col gap-2 rounded-md border bg-card p-3 text-left text-sm shadow-sm hover:border-primary/50"><span className="min-w-0 break-words font-medium">{proposalTitle(proposal)}</span><span className="text-xs text-muted-foreground">{proposal.project_name} · {money(priceCents(terms), stringField(terms, "currency") || "USD")}</span><span className="font-mono text-[11px] text-muted-foreground">{proposalCode(proposal.proposal_id)} · r{proposal.revision}</span></button>;
+                      const key = proposalKey(proposal);
+                      return (
+                        <button
+                          type="button"
+                          key={key}
+                          onClick={() => setSelectedKey(key)}
+                          className={cn(
+                            "grid min-w-0 gap-2.5 rounded-xl bg-card p-3 text-left shadow-[0_1px_2px_rgba(0,0,0,0.06)] ring-1 ring-sidebar-border outline-none transition-shadow hover:ring-blue-300 focus-visible:ring-[3px] focus-visible:ring-sidebar-ring/40 dark:bg-background",
+                            selectedKey === key && "ring-2 ring-blue-500",
+                          )}
+                        >
+                          <span className="min-w-0 text-[15px] leading-snug font-medium break-words">
+                            {proposalTitle(proposal)}
+                          </span>
+                          <span className="flex min-w-0 items-center gap-2">
+                            <InitialsAvatar
+                              name={proposal.client_name}
+                              src={photoFor(proposal.client_name)}
+                            />
+                            <span className="truncate text-sm text-neutral-500 dark:text-neutral-400">
+                              {proposal.project_name}
+                            </span>
+                          </span>
+                          <span className="flex flex-wrap items-center gap-1.5">
+                            <PriceChip proposal={proposal} />
+                            <span className="ml-auto font-mono text-[11px] text-neutral-500 dark:text-neutral-400">
+                              {proposalCode(proposal.proposal_id)} · r
+                              {proposal.revision}
+                            </span>
+                          </span>
+                        </button>
+                      );
                     })}
                   </div>
                 );
@@ -199,69 +944,30 @@ export function ProposalsWorkspace({ proposals }: { proposals: ProposalRevisionR
           </section>
         )}
 
-        <p className="flex items-start gap-2 text-xs text-muted-foreground"><AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />Proposal data is loaded from stored revisions. Clients discuss terms through the project conversation and have no website access.</p>
-      </main>
+        <p className="flex items-start gap-2 text-xs text-neutral-500 dark:text-neutral-400">
+          <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+          Proposal data is loaded from stored revisions. Clients discuss terms
+          through the project conversation and have no website access.
+        </p>
+      </div>
 
-      {selected && <ProposalDetail proposal={selected} onClose={() => setSelectedKey(null)} />}
-    </>
-  );
-}
-
-function ProposalDetail({ proposal, onClose }: { proposal: ProposalRevisionRecord; onClose: () => void }) {
-  const terms = objectValue(proposal.shared_terms);
-  const lines = proposalLines(terms);
-  const currency = stringField(terms, "currency") || "USD";
-  const explanation = stringField(terms, "explanation", "description", "client_explanation");
-  const exclusions = textList(terms.exclusions);
-  const dependencies = textList(terms.dependencies);
-
-  return (
-    <div className="fixed inset-0 z-50 flex justify-end" role="presentation">
-      <button className="absolute inset-0 bg-foreground/35" aria-label="Close proposal details" onClick={onClose} />
-      <aside className="relative z-10 flex h-full w-full max-w-xl flex-col overflow-y-auto border-l bg-card shadow-xl" role="dialog" aria-modal="true" aria-labelledby="proposal-detail-title">
-        <div className="flex items-start justify-between gap-4 border-b p-5">
-          <div className="min-w-0">
-            <span className="font-mono text-xs text-muted-foreground">{proposalCode(proposal.proposal_id)} · r{proposal.revision}</span>
-            <h2 id="proposal-detail-title" className="mt-1 break-words font-display text-xl font-semibold">{proposalTitle(proposal)}</h2>
-            <div className="mt-3 flex flex-wrap items-center gap-2 text-sm"><Badge variant="outline" className={statusClass[statusGroup(proposal.status)]}>{readableStatus(proposal.status)}</Badge><span className="text-muted-foreground">{proposal.project_name} · {proposal.client_name}</span></div>
-          </div>
-          <Button variant="ghost" size="icon-sm" aria-label="Close proposal details" onClick={onClose}><X aria-hidden="true" /></Button>
-        </div>
-        <div className="flex flex-col gap-6 p-5">
-          <section className="grid gap-3">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">What the client sees</h3>
-            <blockquote className="rounded-r-md border-l-[3px] border-info bg-info-soft p-3 text-sm">{explanation || "No client-facing explanation is recorded in this revision."}</blockquote>
-          </section>
-
-          <section className="grid gap-3">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Deliverables</h3>
-            {lines.length ? (
-              <ul className="divide-y rounded-md border text-sm">
-                {lines.map((line) => <li key={line.key} className="flex items-start justify-between gap-4 px-3 py-2.5"><span className="flex min-w-0 items-start gap-2"><FileText className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden="true" /><span className="break-words">{line.title}</span></span><span className="shrink-0 tabular-nums text-muted-foreground">{money(line.price, currency)}</span></li>)}
-                <li className="flex justify-between gap-4 bg-muted/50 px-3 py-2.5 font-semibold"><span>Additional project price</span><span className="tabular-nums">{money(priceCents(terms), currency)}</span></li>
-              </ul>
-            ) : <p className="text-sm text-muted-foreground">No deliverable lines are present in the stored terms.</p>}
-            <p className="text-xs text-muted-foreground">Approve work from Needs Attention to turn these lines into tasks.</p>
-          </section>
-
-          <section className="grid gap-3">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Terms</h3>
-            <dl className="grid grid-cols-[max-content_minmax(0,1fr)] gap-x-5 gap-y-2 text-sm">
-              <dt className="text-muted-foreground">Exclusions</dt><dd>{exclusions.length ? <ul className="list-disc space-y-1 pl-4">{exclusions.map((item, index) => <li key={index}>{item}</li>)}</ul> : "None recorded"}</dd>
-              <dt className="text-muted-foreground">Dependencies</dt><dd>{dependencies.length ? <ul className="list-disc space-y-1 pl-4">{dependencies.map((item, index) => <li key={index}>{item}</li>)}</ul> : "None recorded"}</dd>
-              <dt className="text-muted-foreground">Expires</dt><dd>{proposal.expires_at ? new Date(proposal.expires_at).toLocaleString() : "No expiry recorded"}</dd>
-              <dt className="text-muted-foreground">Revision</dt><dd className="font-mono text-xs">r{proposal.revision}</dd>
-            </dl>
-          </section>
-
-          <details className="rounded-md border">
-            <summary className="cursor-pointer px-3 py-2.5 text-sm font-medium text-muted-foreground hover:text-foreground">Stored terms record</summary>
-            <pre className="max-h-80 overflow-auto whitespace-pre-wrap break-words border-t bg-muted/50 p-3 font-mono text-xs">{JSON.stringify(proposal.shared_terms, null, 2)}</pre>
-          </details>
-
-          <p className="flex items-center gap-2 text-xs text-muted-foreground"><CalendarDays className="size-4" aria-hidden="true" />Delivery state and sent time are not stored yet.</p>
-        </div>
-      </aside>
-    </div>
+      {selected && (
+        <>
+          <div
+            aria-hidden
+            className="fixed inset-0 z-30 bg-black/30 xl:hidden"
+            onClick={() => setSelectedKey(null)}
+          />
+          <aside aria-labelledby="proposal-detail-title" className={panelAside}>
+            <ProposalDetail
+              key={proposalKey(selected)}
+              proposal={selected}
+              photo={photoFor(selected.client_name)}
+              onClose={() => setSelectedKey(null)}
+            />
+          </aside>
+        </>
+      )}
+    </main>
   );
 }
