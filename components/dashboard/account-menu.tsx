@@ -27,6 +27,7 @@ export function AccountMenu({
 }) {
   const pathname = usePathname();
   const router = useRouter();
+  const signoutForm = useRef<HTMLFormElement>(null);
   const [menuSettings, setMenuSettings] = useState(false);
   const [hideRouteDialog, setHideRouteDialog] = useState(false);
   const [health, setHealth] = useState<HealthState>({ kind: "loading" });
@@ -96,16 +97,18 @@ export function AccountMenu({
             >
               Settings
             </DropdownMenu.Item>
-            <form action="/auth/signout" method="post">
-              <DropdownMenu.Item
-                asChild
-                className="cursor-pointer rounded-sm px-2 py-1.5 text-sm outline-none focus:bg-accent focus:text-accent-foreground"
-              >
-                <button type="submit" className="w-full text-left">
-                  Sign out
-                </button>
-              </DropdownMenu.Item>
+            <form ref={signoutForm} action="/auth/signout" method="post" className="hidden">
+              <button type="submit">Sign out</button>
             </form>
+            <DropdownMenu.Item
+              onSelect={(event) => {
+                event.preventDefault();
+                signoutForm.current?.requestSubmit();
+              }}
+              className="cursor-pointer rounded-sm px-2 py-1.5 text-sm outline-none focus:bg-accent focus:text-accent-foreground"
+            >
+              Sign out
+            </DropdownMenu.Item>
           </DropdownMenu.Content>
         </DropdownMenu.Portal>
       </DropdownMenu.Root>
