@@ -1285,3 +1285,127 @@ test('round history annotations include full membership counts beyond one page',
  const annotations=await asOwner(()=>pg.query<{result:{roundCounts:Record<string,number>;openRound:{id:string};members:unknown[]}}>('select automation_history_annotations($1,$2,$3) result',[project,[request.id],[]]));
  assert.equal(annotations.rows[0].result.openRound.id,round);assert.equal(annotations.rows[0].result.roundCounts[round],1);assert.equal(annotations.rows[0].result.members.length,1);
 });
+
+function question(c: InterpretationContext, patch: Partial<Interpretation["intents"][number]> = {}) {
+  return intent(c, {
+    intent: "project_question", operation: null, targetId: null,
+    payload: { color: null, locator: null, replacementText: null },
+    scopeEvidence: [],
+    answer: { text: "The agreement includes heading text and color changes.", basis: "grounded",
+      references: [{ kind: "agreement", id: "scope-0" }] },
+    ...patch,
+  });
+}
+
+test("project questions use public project knowledge without creating work or exposing private notes", async () => {
+  await pg.query("update projects set agreed_due_date='2026-12-01' where id=$1", [project]);
+  await pg.query("update scope_versions set terms=terms||$2::jsonb where project_id=$1", [project, JSON.stringify([
+    { kind: "responsibility", text: "Client supplies images." },
+    { kind: "revision", text: "Three individual change requests are included." },
+  ])]);
+  await pg.query("update documents set original_text=original_text||' PRIVATE original document note' where id=$1", [doc]);
+  await message(); await processor().once();
+  await pg.exec("update project_tasks set history='[\"PRIVATE blocker note\"]',source_meta='PRIVATE metadata'");
+  await message("What is included and who provides images?");
+  await processor(c => {
+    assert.equal(c.project?.name, "Website");
+    assert.equal(c.project?.confirmedAmountCents, 10000);
+    assert.equal(c.project?.currency, "USD");
+    assert.equal(String(c.project?.agreedDueDate).slice(0, 10), "2026-12-01");
+    assert.equal(c.taskCounts?.ready, 1);
+    assert.ok(c.scope.some(t => t.kind === "responsibility" && t.text === "Client supplies images."));
+    assert.ok(c.scope.some(t => t.kind === "revision"));
+    assert.doesNotMatch(JSON.stringify(c), /PRIVATE/);
+    return { intents: [question(c, { answer: {
+      text: "Heading text and color changes are included. The client supplies images.",
+      basis: "grounded", references: [{ kind: "agreement", id: "scope-0" }, { kind: "agreement", id: "scope-1" }],
+    } })] };
+  }).once();
+  assert.equal(await count("automation_jobs", "state='done'"), 2);
+  assert.equal(await count("automation_outbox", "text like '%client supplies images%'"), 1);
+  assert.equal(await count("project_tasks"), 1);
+  assert.equal(await count("automation_requests"), 1);
+  assert.equal(await count("automation_revision_uses"), 1);
+  assert.equal(await count("owner_decisions"), 0);
+});
+
+test("overall status answers use full task counts beyond the bounded task excerpt", async () => {
+  for (let i = 0; i < 25; i++) await pg.query(
+    "insert into project_tasks(project_id,task_code,title,status,origin) values($1,$2,$3,$4,'manual')",
+    [project, `TASK-${i}`, `Heading ${i}`, i < 22 ? "done" : "blocked"],
+  );
+  await message("How is the project going overall?");
+  await processor(c => {
+    assert.equal(c.tasks.length, 20);
+    assert.equal(c.taskCounts?.done, 22);
+    assert.equal(c.taskCounts?.blocked, 3);
+    return { intents: [question(c, { intent: "status_question", answer: {
+      text: "22 tasks are completed and 3 are blocked. I don't have saved reasons for the blockers.",
+      basis: "grounded", references: [{ kind: "project", id: project }],
+    } })] };
+  }).once();
+  assert.equal(await count("automation_outbox", "text like '22 tasks are completed%'"), 1);
+  assert.equal(await count("owner_decisions"), 0);
+});
+
+test("missing project information prompts a helpful follow-up without owner escalation", async () => {
+  await message("Which image format should I send?");
+  await processor(c => ({ intents: [question(c, { answer: {
+    text: "The agreement doesn't specify an image format. Which deliverable are the images for?",
+    basis: "missing_information", references: [],
+  } })] })).once();
+  assert.equal(await count("automation_outbox", "text like '%Which deliverable%'"), 1);
+  assert.equal(await count("owner_decisions"), 0);
+  assert.equal(await count("automation_requests"), 0);
+});
+
+test("informational answers coexist with accepted work and escalated deadlines in one reply", async () => {
+  await message("What is included? Make the heading green and deliver tomorrow.");
+  await processor(c => ({ intents: [question(c), intent(c), intent(c, {
+    summary: "Deliver tomorrow", requestsNewDeadline: true,
+  })] })).once();
+  assert.equal(await count("automation_outbox"), 1);
+  const reply = (await pg.query<{text:string}>("select text from automation_outbox")).rows[0].text;
+  assert.match(reply, /agreement includes/);
+  assert.match(reply, /Accepted/);
+  assert.match(reply, /review queue/);
+  assert.equal(await count("project_tasks"), 1);
+  assert.equal(await count("owner_decisions", "reason='deadline_change'"), 1);
+});
+
+test("answer text cannot bypass explicit review flags", async () => {
+  await message("Can you promise delivery tomorrow?");
+  await processor(c => ({ intents: [question(c, { requestsNewDeadline: true, answer: {
+    text: "I promise delivery tomorrow.", basis: "general_explanation", references: [],
+  } })] })).once();
+  assert.equal(await count("owner_decisions", "reason='deadline_change'"), 1);
+  assert.equal(await count("automation_outbox", "text like '%I promise%'"), 0);
+  assert.equal(await count("project_tasks"), 0);
+});
+
+test("project questions respect clarification reply controls in manual review mode", async () => {
+  await pg.query("update projects set status='review_only' where id=$1", [project]);
+  await changePolicy({ mode: "review_only" });
+  await message("What does the agreement include?");
+  await processor(c => ({ intents: [question(c)] })).once();
+  assert.equal(await count("automation_outbox"), 1);
+  await changePolicy({ replies: { status_questions: false, clarifications: false, review_acknowledgments: true } });
+  await message("Can you explain the scope again?");
+  await processor(c => ({ intents: [question(c)] })).once();
+  await message("What is the overall status?");
+  await processor(c => ({ intents: [question(c, { intent: "status_question" })] })).once();
+  assert.equal(await count("automation_outbox"), 1);
+  assert.equal(await count("owner_decisions"), 0);
+});
+
+test("task changes during generation invalidate aggregate project answers", async () => {
+  await message("What is the overall status?");
+  await processor(async c => {
+    await pg.query("insert into project_tasks(project_id,task_code,title,origin) values($1,'TASK-NEW','New task','manual')", [project]);
+    return { intents: [question(c, { intent: "status_question", answer: {
+      text: "There are no saved tasks yet.", basis: "grounded", references: [{ kind: "project", id: project }],
+    } })] };
+  }).once();
+  assert.equal(await count("automation_jobs", "state='queued' and error_code='stale_snapshot'"), 1);
+  assert.equal(await count("automation_outbox"), 0);
+});

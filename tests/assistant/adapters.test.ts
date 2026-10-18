@@ -225,3 +225,39 @@ test("configuration errors do not expose credential values", () => {
     error instanceof Error && !error.message.includes("SECRET"));
   assert.throws(() => readGeminiConfig({ GEMINI_API_KEY: "SECRET" }), /configuration_missing_or_invalid/);
 });
+
+test("project answers require scoped supporting records and cannot carry work", () => {
+  const c: InterpretationContext = {
+    ...context,
+    project: { name: "Website", timezone: "America/Los_Angeles", agreedDueDate: null },
+    scope: [...context.scope, { id: "term-1", kind: "responsibility", text: "Client supplies images." }],
+  };
+  const value = output();
+  value.intents[0] = {
+    ...value.intents[0], intent: "project_question", operation: null, targetId: null,
+    payload: { color: null, locator: null, replacementText: null },
+    answer: {
+      text: "The confirmed agreement says the client supplies the images.", basis: "grounded",
+      references: [{ kind: "agreement", id: "term-1" }],
+    },
+  };
+  assert.equal(validateInterpretation(value, c).intents[0].answer?.text, value.intents[0].answer?.text);
+  for (const mutate of [
+    (x: Interpretation) => { x.intents[0].answer!.references[0].id = "another-project-term"; },
+    (x: Interpretation) => { x.intents[0].answer!.references = []; },
+    (x: Interpretation) => { x.intents[0].answer!.references = [{ kind: "message", id: "m1:r1" }]; },
+    (x: Interpretation) => { x.intents[0].operation = "change_color"; },
+    (x: Interpretation) => { x.intents[0].payload.color = "green"; },
+    (x: Interpretation) => { x.intents[0].intent = "new_request"; },
+    (x: Interpretation) => { delete x.intents[0].answer; },
+  ]) {
+    const copy = structuredClone(value); mutate(copy);
+    assert.throws(() => validateInterpretation(copy, c));
+  }
+  value.intents[0].answer = {
+    text: "I don't have a saved reason for the blocker. Which task do you mean?",
+    basis: "missing_information", references: [],
+  };
+  assert.doesNotThrow(() => validateInterpretation(value, c));
+  assert.equal(interpretationContextSchema.safeParse({ ...c, project: { ...c.project, internalNote: "SECRET" } }).success, false);
+});

@@ -221,7 +221,7 @@ export function AutomationSetup({
           [
             [
               "status_questions",
-              "Answer status questions from saved task information",
+              "Answer status questions using saved project progress",
             ],
             [
               "progress_updates",
@@ -229,7 +229,7 @@ export function AutomationSetup({
             ],
             [
               "clarifications",
-              "Ask for missing request details (up to two follow-ups)",
+              "Answer project questions and ask for missing request details (up to two follow-ups per request)",
             ],
             [
               "review_acknowledgments",
