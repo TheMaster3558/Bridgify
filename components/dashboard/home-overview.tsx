@@ -1185,36 +1185,6 @@ export function HomeOverview({
         </div>
       )}
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.12fr)]">
-        <QueueCard
-          decisions={decisions.items}
-          decisionCount={decisions.count}
-          handled={data.handled}
-          handledThisWeek={data.handledThisWeek}
-          photos={clientPhotos}
-          now={now}
-        />
-        <ChartCard
-          title="Tasks completed"
-          unit="task"
-          data={activity.completed}
-          chart="bar"
-        />
-      </div>
-
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.04fr)_minmax(0,1fr)]">
-        <ChartCard
-          title="Handled without you"
-          unit="message"
-          data={activity.handled}
-          chart="line"
-        />
-        <ActivityCard
-          heatmap={activity.heatmap}
-          requestsAccepted={activity.requestsAccepted}
-        />
-      </div>
-
       <section
         aria-label="Summary"
         className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"
@@ -1280,6 +1250,36 @@ export function HomeOverview({
           tone={issueCount ? "red" : "green"}
         />
       </section>
+
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.12fr)]">
+        <QueueCard
+          decisions={decisions.items}
+          decisionCount={decisions.count}
+          handled={data.handled}
+          handledThisWeek={data.handledThisWeek}
+          photos={clientPhotos}
+          now={now}
+        />
+        <ChartCard
+          title="Tasks completed"
+          unit="task"
+          data={activity.completed}
+          chart="bar"
+        />
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.04fr)_minmax(0,1fr)]">
+        <ChartCard
+          title="Handled without you"
+          unit="message"
+          data={activity.handled}
+          chart="line"
+        />
+        <ActivityCard
+          heatmap={activity.heatmap}
+          requestsAccepted={activity.requestsAccepted}
+        />
+      </div>
 
       <WorkTable
         work={data.work}
