@@ -38,67 +38,66 @@ export function AppShell({
   )?.[1];
 
   return (
-    <div className="min-h-screen pl-[200px] md:pl-[236px]">
-      <aside className="fixed inset-y-0 left-0 flex w-[200px] flex-col gap-4 overflow-y-auto border-r bg-card p-3 md:w-[236px] md:p-4">
-        <Link href="/app" className="flex items-center gap-2.5 px-2">
-          <span className="grid size-8 place-items-center rounded-md bg-primary text-sm font-semibold text-primary-foreground">
-            B
-          </span>
-          <span className="font-display text-xl font-semibold">Bridgify</span>
-        </Link>
-        <nav
-          aria-label="Main"
-          className="flex flex-col gap-1"
-        >
-          {nav.map((item) => {
-            const active = isActive(pathname, item.href);
-            return (
+    <div className="grid min-h-screen grid-cols-[200px_minmax(0,1fr)] md:grid-cols-[236px_minmax(0,1fr)]">
+      <aside className="min-w-0 self-stretch border-r bg-card">
+        <div className="sticky top-0 flex h-dvh flex-col gap-4 overflow-y-auto p-3 md:p-4">
+          <Link href="/app" className="flex items-center gap-2.5 px-2">
+            <span className="grid size-8 place-items-center rounded-md bg-primary text-sm font-semibold text-primary-foreground">
+              B
+            </span>
+            <span className="font-display text-xl font-semibold">Bridgify</span>
+          </Link>
+          <nav aria-label="Main" className="flex flex-col gap-1">
+            {nav.map((item) => {
+              const active = isActive(pathname, item.href);
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  aria-current={active ? "page" : undefined}
+                  className={cn(
+                    "rounded-md px-2.5 py-2 text-sm font-medium whitespace-nowrap text-muted-foreground hover:bg-muted hover:text-foreground",
+                    active && "bg-accent text-foreground",
+                  )}
+                >
+                  {item.label}
+                </Link>
+              );
+            })}
+          </nav>
+          {projectId && (
+            <nav
+              aria-label="Project shortcuts"
+              className="grid gap-1 border-t pt-4"
+            >
+              <p className="px-2.5 pb-1 text-xs font-medium text-muted-foreground">
+                CURRENT PROJECT
+              </p>
               <Link
-                key={item.href}
-                href={item.href}
-                aria-current={active ? "page" : undefined}
+                href={`/app/projects/${projectId}/conversation`}
+                aria-current={
+                  pathname === `/app/projects/${projectId}/conversation`
+                    ? "page"
+                    : undefined
+                }
                 className={cn(
-                  "rounded-md px-2.5 py-2 text-sm font-medium whitespace-nowrap text-muted-foreground hover:bg-muted hover:text-foreground",
-                  active && "bg-accent text-foreground",
+                  "rounded-md px-2.5 py-2 text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground",
+                  pathname === `/app/projects/${projectId}/conversation` &&
+                    "bg-accent text-foreground",
                 )}
               >
-                {item.label}
+                Conversation
               </Link>
-            );
-          })}
-        </nav>
-        {projectId && (
-          <nav
-            aria-label="Project shortcuts"
-            className="grid gap-1 border-t pt-4"
-          >
-            <p className="px-2.5 pb-1 text-xs font-medium text-muted-foreground">
-              CURRENT PROJECT
-            </p>
-            <Link
-              href={`/app/projects/${projectId}/conversation`}
-              aria-current={
-                pathname === `/app/projects/${projectId}/conversation`
-                  ? "page"
-                  : undefined
-              }
-              className={cn(
-                "rounded-md px-2.5 py-2 text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground",
-                pathname === `/app/projects/${projectId}/conversation` &&
-                  "bg-accent text-foreground",
-              )}
-            >
-              Conversation
-            </Link>
-          </nav>
-        )}
-        <div className="mt-auto px-2">
-          <AccountMenu
-            email={email || ""}
-            name={name}
-            timezone={timezone}
-            organization={organization}
-          />
+            </nav>
+          )}
+          <div className="mt-auto px-2">
+            <AccountMenu
+              email={email || ""}
+              name={name}
+              timezone={timezone}
+              organization={organization}
+            />
+          </div>
         </div>
       </aside>
       <div className="min-w-0">{children}</div>
