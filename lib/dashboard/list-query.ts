@@ -129,10 +129,17 @@ export async function optionCounts(
       const result = await applyFilters(
         client
           .from(config[kind].table)
-          .select(kind === "projects" ? "id" : "id,projects!inner(id)", {
-            count: "exact",
-            head: true,
-          }),
+          // Not every table has an "id" column (proposal revisions are keyed
+          // by proposal and revision), so count on each table's own key.
+          .select(
+            kind === "projects"
+              ? config[kind].id
+              : `${config[kind].id},projects!inner(id)`,
+            {
+              count: "exact",
+              head: true,
+            },
+          ),
         kind,
         { ...input, [field]: option },
       );

@@ -656,8 +656,16 @@ export function ProposalsWorkspace({
           <button
             type="button"
             onClick={() => {
-              setFilter("awaiting");
               setView("list");
+              if (serverManaged) {
+                // The list is filtered on the server; switch the URL filter.
+                const params = new URLSearchParams(window.location.search);
+                params.set("status", "awaiting_client");
+                params.delete("page");
+                router.push(`?${params}`);
+                return;
+              }
+              setFilter("awaiting");
             }}
             className="group flex items-center gap-3 rounded-2xl bg-yellow-50 p-4 text-left ring-1 ring-yellow-200 ring-inset outline-none focus-visible:ring-[3px] focus-visible:ring-sidebar-ring/40 dark:bg-yellow-400/10 dark:ring-yellow-400/25"
           >
