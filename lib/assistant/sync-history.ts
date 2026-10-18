@@ -6,7 +6,10 @@ import { readPhotonHistory } from "../photon/message-history";
 
 // Imports real provider history, with the same authority/cutoff rules as webhooks.
 // Never invents tasks, conversations, clients, agreements or revision balances.
-export async function syncProjectAutomationHistory() {
+export async function syncProjectAutomationHistory(
+  options: { instanceId?: string; signal?: AbortSignal } = {},
+) {
+  options.signal?.throwIfAborted();
   const database = getDatabase();
   const inbox = createProjectAutomationInbox(database);
   const projects = (
@@ -15,11 +18,13 @@ export async function syncProjectAutomationHistory() {
       people: unknown;
       activation_cutoff: string;
     }>(
-      "select id,people,activation_cutoff from projects where status in ('active','review_only') and activation_cutoff is not null order by id",
+      "select id,people,activation_cutoff from projects where status in ('active','review_only') and activation_cutoff is not null and ($1::text is null or people->>'instance_id'=$1) order by id",
+      [options.instanceId ?? null],
     )
   ).rows;
   let imported = 0;
   for (const project of projects) {
+    options.signal?.throwIfAborted();
     const p = peopleSchema.parse(project.people);
     const connection = {
       projectId: project.id,
@@ -32,7 +37,9 @@ export async function syncProjectAutomationHistory() {
     let cursor: string | undefined;
     const messages = [];
     do {
+      options.signal?.throwIfAborted();
       const page = await readPhotonHistory(connection, cursor);
+      options.signal?.throwIfAborted();
       messages.push(
         ...page.messages.filter(
           (m) =>
@@ -47,6 +54,7 @@ export async function syncProjectAutomationHistory() {
       (a, b) => a.sentAt.localeCompare(b.sentAt) || a.id.localeCompare(b.id),
     );
     for (const message of messages) {
+      options.signal?.throwIfAborted();
       const receipt = await inbox.persistVerifiedEvent({
         instanceId: p.instance_id,
         eventKey: `history:${createHash("sha256")

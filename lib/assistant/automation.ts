@@ -110,6 +110,8 @@ export function createProjectAutomationInbox(database: Database): InboxWriter {
             [event.instanceId, event.chatGuid],
           )
         ).rows[0];
+        if(project && event.eventKey.startsWith("spectrum:")) await sql.query(
+          "update chat_bindings set webhook_verified_at=now() where project_id=$1",[project.id]);
         const people = peopleSchema.safeParse(project?.people);
         let disposition = "unlinked_chat";
         let role = "unknown";
@@ -268,14 +270,18 @@ export async function loadAutomationSnapshot(
       [project.id],
     )
   ).rows;
+  const sourceText = messages.find(m => m.id === job.message_id)?.text ?? "";
+  const ignored = new Set(["the","and","you","can","please","what","when","where","that","this","done","finished","completed","status","request","task","have","has","been","could","would","with","for"]);
+  const search = [...new Set(sourceText.toLowerCase().match(/[a-z0-9]{3,}/g) ?? [])].filter(w => !ignored.has(w)).slice(0,12).join(" | ");
   const tasks = (
     await sql.query<{
       id: string;
       title: string;
       status: InterpretationContext["tasks"][number]["status"];
     }>(
-      "select id,title,status from project_tasks where project_id=$1 order by updated_at desc,id limit 20",
-      [project.id],
+      `select id,title,status,task_code as code from project_tasks where project_id=$1
+       order by case when $2<>'' then ts_rank(to_tsvector('simple',title||' '||task_code),to_tsquery('simple',nullif($2,''))) else 0 end desc,updated_at desc,id limit 20`,
+      [project.id, search],
     )
   ).rows;
   const watermark = hash({ project, pending, tasks, scope, messages });
@@ -283,10 +289,10 @@ export async function loadAutomationSnapshot(
     await sql.query<
       NonNullable<InterpretationContext["requestStatuses"]>[number]
     >(
-      `select r.id,r.summary as title,r.state,t.status as "taskStatus" from automation_requests r
+      `select r.id,'REQ-'||left(replace(r.id::text,'-',''),12) as code,r.summary as title,r.state,t.status as "taskStatus" from automation_requests r
       left join project_tasks t on t.id=r.task_id and t.project_id=r.project_id
-      where r.project_id=$1 order by r.updated_at desc,r.id limit 20`,
-      [project.id],
+      where r.project_id=$1 order by case when $2<>'' then ts_rank(to_tsvector('simple',r.summary||' '||left(replace(r.id::text,'-',''),12)),to_tsquery('simple',nullif($2,''))) else 0 end desc,r.updated_at desc,r.id limit 20`,
+      [project.id, search],
     )
   ).rows;
   return {
@@ -299,6 +305,8 @@ export async function loadAutomationSnapshot(
       policyVersion: project.policy_version,
       inputWatermark: hash({ watermark, requestStatuses }),
       policyExclusions: policy.exclusions,
+      permissionMode: policy.permission_mode,
+      acceptanceGuidance: policy.acceptance_guidance,
       messages: messages.map((m) => ({
         revisionId: m.id,
         text: m.text,
@@ -384,6 +392,14 @@ async function createDecision(
 async function queueReply(sql: Sql, job: Job, p: Project, parts: string[]) {
   if (!parts.length || !isOpen(p)) return;
   const people = peopleSchema.parse(p.people);
+  const text = parts.join("\n\n");
+  // An owner retry can reach the same review outcome. Do not repeat an already
+  // submitted (or uncertain) acknowledgment for that original message.
+  const prior = await sql.query(
+    "select id from automation_outbox where job_id=$1 and text=$2 and state in ('queued','sending','sent','unknown') limit 1",
+    [job.id, text],
+  );
+  if (prior.rows.length) return;
   await sql.query(
     `insert into automation_outbox(project_id,job_id,instance_id,chat_guid,address,text)
     values($1,$2,$3,$4,$5,$6) on conflict(job_id,purpose) do nothing`,
@@ -393,7 +409,7 @@ async function queueReply(sql: Sql, job: Job, p: Project, parts: string[]) {
       p.instance_id,
       p.chat_guid,
       people.client_sender_id,
-      parts.join("\n\n"),
+      text,
     ],
   );
 }
@@ -403,6 +419,7 @@ const fields = {
   replacement_text: "the exact replacement text",
   locator: "the existing text to replace",
   color: "the requested color",
+  instructions: "the requested result and any details needed to carry it out",
 };
 
 async function applyAnalysis(
@@ -544,21 +561,25 @@ async function applyAnalysis(
         continue;
       }
     }
+    const permittedByGuidance = policy.permission_mode === "guidance";
+    if (!reason && permittedByGuidance && intent.policyAssessment !== "allowed")
+      reason = "policy_denied";
     if (
       !reason &&
       (p.status !== "active" ||
         policy.mode !== "enabled" ||
         policy.allowance_mode !== "per_request" ||
         !intent.operation ||
-        !policy.operations.includes(intent.operation) ||
-        !intent.targetId ||
-        !policy.targets.includes(intent.targetId))
+        (!permittedByGuidance && !policy.operations.includes(intent.operation as "replace_text" | "change_color")) ||
+        (policy.targets.length > 0
+          ? !intent.targetId || !policy.targets.includes(intent.targetId)
+          : !permittedByGuidance || !intent.payload.targetDescription))
     )
       reason = "policy_denied";
     if (!reason) {
       const used = (
         await sql.query<{ n: number }>(
-          "select count(*)::int n from automation_revision_uses where project_id=$1",
+          "select count(*)::int n from automation_revision_uses u where project_id=$1 and not exists(select 1 from automation_revision_refunds f where f.request_id=u.request_id)",
           [p.id],
         )
       ).rows[0].n;
@@ -585,8 +606,8 @@ async function applyAnalysis(
         reply: acknowledgment,
       });
       await sql.query(
-        "update owner_decisions set automation_request_id=$2,source_job_id=$3 where id=$1",
-        [decision, id, job.id],
+        "update owner_decisions set automation_request_id=$2,source_job_id=$3,task_change_kind=$4 where id=$1",
+        [decision, id, job.id, ["correction", "cancellation"].includes(intent.intent) ? intent.intent : null],
       );
       await sql.query(
         "update automation_requests set state='owner_review',decision_id=$2 where id=$1",
@@ -606,8 +627,8 @@ async function applyAnalysis(
           intent.summary.slice(0, 500),
           code("REQ", id),
           intent.operation,
-          intent.targetId,
-          intent.payload.replacementText ?? intent.payload.color,
+          intent.targetId ?? intent.payload.targetDescription,
+          intent.operation === "project_change" ? intent.payload.instructions : intent.payload.replacementText ?? intent.payload.color,
           JSON.stringify(intent.payload),
           source,
           sourceIds.join(", "),
@@ -659,14 +680,14 @@ export function createAutomationProcessor(
   },
 ) {
   return {
-    async once() {
+    async once(projectId?: string) {
       const job = await database.transaction(async (sql) => {
         const row = (
-          await sql.query<Job>(`select j.* from automation_jobs j where
+          await sql.query<Job>(`select j.* from automation_jobs j where ($1::uuid is null or j.project_id=$1) and
         ((j.state='queued' and j.available_at<=now()) or (j.state='running' and j.lease_until<now()))
         and not exists(select 1 from automation_jobs earlier where earlier.project_id=j.project_id
           and earlier.state in ('queued','running') and (earlier.created_at,earlier.id)<(j.created_at,j.id))
-        order by j.created_at,j.id for update skip locked limit 1`)
+        order by j.created_at,j.id for update skip locked limit 1`, [projectId ?? null])
         ).rows[0];
         if (!row) return null;
         row.lease_token = randomUUID();
@@ -796,7 +817,7 @@ export function createAutomationDelivery(
   instanceId: string,
 ) {
   return {
-    async once() {
+    async once(projectId?: string) {
       const outbox = await database.transaction(async (sql) => {
         const expired = (
           await sql.query<{
@@ -824,19 +845,19 @@ export function createAutomationDelivery(
           }>(
             `select o.* from automation_outbox o
         join projects p on p.id=o.project_id join chat_bindings b on b.project_id=p.id
-        where o.state='queued' and o.instance_id=$1 and p.status in ('active','review_only')
+        where o.state='queued' and o.instance_id=$1 and ($2::uuid is null or o.project_id=$2) and p.status in ('active','review_only')
         and b.hold_reason is null and b.test_state='sent' and b.verified_at is not null and b.disclosed_message_guid is not null
         and b.instance_id=o.instance_id and b.chat_guid=o.chat_guid and p.people->>'client_sender_id'=o.address
         and not exists(select 1 from automation_outbox prior where prior.project_id=o.project_id
           and prior.state in ('queued','sending') and (prior.created_at,prior.id)<(o.created_at,o.id))
         order by o.created_at,o.id for update of o,p,b skip locked limit 1`,
-            [instanceId],
+            [instanceId, projectId ?? null],
           )
         ).rows[0];
         if (!row) return null;
         row.lease_token = randomUUID();
         await sql.query(
-          "update automation_outbox set state='sending',lease_token=$2,lease_until=now()+interval '90 seconds',updated_at=now() where id=$1",
+          "update automation_outbox set state='sending',lease_token=$2,lease_until=now()+interval '90 seconds',attempt_started_at=now(),updated_at=now() where id=$1",
           [row.id, row.lease_token],
         );
         return row;

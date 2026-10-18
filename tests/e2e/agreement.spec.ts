@@ -89,9 +89,7 @@ test("Basics → paste → review/edit → refresh → confirm → next step", a
         documents: [],
         spans: [],
         scope: [],
-        members: [],
         binding: null,
-        invitations: [],
       };
       return json({ data: { project: bundle.project } });
     }
@@ -349,8 +347,6 @@ function setupBundle(): Bundle {
     documents: [],
     spans: [],
     scope: [],
-    members: [],
-    invitations: [],
     binding: {
       test_state: "sent",
       verified_at: new Date().toISOString(),
@@ -569,22 +565,22 @@ test("Automation shows readable advanced settings and blocks invalid permissions
   await page
     .getByLabel("How should the assistant handle requests?")
     .selectOption("enabled");
-  await expect(save).toBeDisabled();
+  await expect(save).toBeEnabled();
   await expect(
     page.getByLabel("Pages or elements covered by these permissions"),
   ).not.toBeVisible();
   await page
-    .getByText("Advanced settings · permitted changes and limits", {
+    .getByText("Advanced settings · optional limits", {
       exact: true,
     })
     .click();
-  await page.getByLabel("Replace existing text", { exact: true }).check();
+  await expect(page.locator('input[name="operations"]')).toHaveCount(0);
   await expect(save).toBeEnabled();
   await page.getByLabel("Included change requests", { exact: true }).fill("");
   await page.getByLabel("Maximum automatic tasks open at once").fill("11");
   await page
     .getByLabel("Pages or elements covered by these permissions")
-    .fill(" ");
+    .fill("x".repeat(201));
   await page.getByLabel("What always needs your approval?").focus();
   await expect(save).toBeDisabled();
   await expect(
@@ -597,7 +593,7 @@ test("Automation shows readable advanced settings and blocks invalid permissions
   await page.getByLabel("Maximum automatic tasks open at once").fill("5");
   await page
     .getByLabel("Pages or elements covered by these permissions")
-    .fill("home.heading");
+    .fill("");
   await page
     .getByLabel("How are included changes counted?")
     .selectOption("manual_rounds");
@@ -618,7 +614,11 @@ test("Activation requires consent and completed setup", async ({ page }) => {
   const activate = page.getByRole("button", {
     name: "Activate in review-only mode",
   });
-  await expect(activate).toBeDisabled();
+  await expect(activate).toBeEnabled();
+  await activate.click();
+  await expect(page.getByRole("alert")).toContainText(
+    "Confirm that your client received the introduction",
+  );
   await page.getByRole("checkbox").check();
   await expect(activate).toBeEnabled();
   await expect(
@@ -627,7 +627,42 @@ test("Activation requires consent and completed setup", async ({ page }) => {
   bundle.project.scope_version = 0;
   await page.reload();
   await page.getByRole("checkbox").check();
-  await expect(activate).toBeDisabled();
+  await expect(activate).toBeEnabled();
+  await activate.click();
+  await expect(page.getByRole("alert")).toContainText(
+    "Review and confirm the agreement",
+  );
+});
+
+test("review identifies a missing introduction and cannot activate around it", async ({
+  page,
+}) => {
+  const bundle = setupBundle();
+  bundle.binding = null;
+  let submissions = 0;
+  await fixture(page, bundle, 5, async (route) => {
+    if (route.request().method() !== "PATCH") return false;
+    submissions++;
+    await route.fulfill({ json: { data: { project: bundle.project } } });
+    return true;
+  });
+  const fix = page.getByRole("link", {
+    name: "Send the assistant introduction for the current client connection in People & chat.",
+  });
+  await expect(fix).toHaveAttribute(
+    "href",
+    `/app/projects/${bundle.project.id}/setup?step=3`,
+  );
+  await page.getByRole("checkbox").check();
+  await page
+    .getByRole("button", { name: "Activate in review-only mode" })
+    .click();
+  await expect(page.getByRole("alert")).toContainText(
+    "Send the assistant introduction",
+  );
+  expect(submissions).toBe(0);
+  await fix.click();
+  await expect(page).toHaveURL(/step=3$/);
 });
 
 test("New automation defaults save through the header without opening advanced settings", async ({
@@ -671,9 +706,61 @@ test("New automation defaults save through the header without opening advanced s
     mode: "review_only",
     targets: [],
     allowance: 0,
-    operations: ["replace_text"],
+    operations: [],
+    permission_mode: "guidance",
     max_open_tasks: 10,
   });
+});
+
+test("automatic setup saves without advanced targets and activates with confirmed client consent", async ({
+  page,
+}) => {
+  const bundle = setupBundle();
+  bundle.project.policy = null;
+  bundle.project.policy_version = 0;
+  bundle.project.setup_step = 4;
+  const sections: string[] = [];
+  await fixture(page, bundle, 4, async (route) => {
+    if (route.request().method() !== "PATCH") return false;
+    const body = route.request().postDataJSON();
+    sections.push(body.section);
+    if (body.section === "policy") {
+      expect(body.payload).toMatchObject({
+        permission_mode: "guidance",
+        operations: [],
+        targets: [],
+        mode: "enabled",
+      });
+      bundle.project.policy = body.payload;
+      bundle.project.policy_version = 1;
+      bundle.project.setup_step = 5;
+    } else {
+      expect(body.payload).toMatchObject({ status: "active", disclosed: true });
+      bundle.project.status = "active";
+      bundle.project.activation_cutoff = new Date().toISOString();
+    }
+    bundle.project.version++;
+    await route.fulfill({ json: { data: { project: bundle.project } } });
+    return true;
+  });
+  await page
+    .getByLabel("How should the assistant handle requests?")
+    .selectOption("enabled");
+  await page.getByLabel("Included change requests", { exact: true }).fill("3");
+  await page
+    .getByRole("button", { name: "Save automation & continue" })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Activate automation", exact: true }),
+  ).toBeEnabled();
+  await page.getByRole("checkbox").check();
+  await page
+    .getByRole("button", { name: "Activate automation", exact: true })
+    .click();
+  await expect(page).toHaveURL(
+    `https://agreement.test/app/projects/${bundle.project.id}`,
+  );
+  expect(sections).toEqual(["policy", "lifecycle"]);
 });
 
 test("Forward headers track unsaved validity instead of previously completed setup steps", async ({

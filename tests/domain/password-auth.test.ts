@@ -12,10 +12,10 @@ vi.mock("@/lib/db/server", () => ({ db: async () => ({ auth: mocks }) }));
 import { POST } from "@/app/api/auth/password/route";
 import { GET } from "@/app/auth/confirm/route";
 import { passwordAuthSchema } from "@/lib/schemas/auth";
-const next = "/proposals/55555555-5555-4555-8555-555555555555?revision=7";
+const next = "/app/projects/55555555-5555-4555-8555-555555555555";
 const signup = {
   action: "signup",
-  email: "client@example.test",
+  email: "owner@example.test",
   password: "a strong password",
   password_confirmation: "a strong password",
   next,
@@ -33,7 +33,7 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllEnvs());
 describe("password authentication routes", () => {
-  it("creates an immediate signup session and preserves the exact proposal", async () => {
+  it("creates an immediate signup session and preserves the owner project", async () => {
     mocks.signUp.mockResolvedValue({
       data: { session: { access_token: "not-output" } },
       error: null,
