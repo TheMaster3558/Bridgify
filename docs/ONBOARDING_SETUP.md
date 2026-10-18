@@ -27,6 +27,31 @@ After the existing onboarding and work-management migrations, apply `supabase/mi
 
 New projects default to manual approval, text replacement as the permitted change type, no automatic-change targets, the standard approval boundaries and a limit of ten open automatic tasks. Advanced settings start collapsed and need no edits to continue with manual approval. Forward setup headers use the same validation and save/confirmation action as Continue, and cannot skip intermediate steps. Earlier steps remain available for review.
 
+### Reconnecting an existing client
+
+An existing draft can reserve a conversation even before activation. The unique
+key is the exact saved `(instance_id, chat_guid)` in `chat_bindings`; this is a
+Bridgify routing constraint, not a Photon subscription-plan error. Migration
+`202610180016_chat_connection_conflicts.sql` identifies the conflicting project
+when the caller owns it and keeps other workspaces' details private. Other unique
+constraint failures are not reported as conversation reservations.
+
+For an existing manually provisioned database, `npm run automation:install` now
+also applies the additive introduction-storage migration
+`202610170008_editable_project_introduction.sql`. Without its
+`chat_bindings.introduction_text` column, a sent introduction could fail to record
+and leave a draft marked `sending`. The route checks that storage column before
+reserving the chat or sending a message. This installer uses the private
+`DATABASE_URL` and migration checksums; it does not replay the onboarding baseline.
+
+Successful project deletion releases its chat binding transactionally. Pending
+Storage cleanup does not retain the conversation. A send marked `sending` or
+`unknown` must be investigated rather than blindly cleared or retried. Confirm an
+old draft is abandoned before releasing its reservation, preserve an audit of
+uncertain delivery, and do not delete a valid connection or Photon user to bypass
+the unique constraint. Compare the app's Supabase project reference and exact
+saved instance/chat values when a SQL Editor query appears to disagree.
+
 ## Account and recovery behavior
 
 Email and password are the authentication method. There is no email confirmation step for signup or sign-in. Passwords are handled by Supabase Auth and are never stored in application tables or logs. Authentication failures retain the exact proposal/invitation destination. Passwords are not trimmed. Signup and password updates require matching confirmation fields, a minimum of eight characters and a maximum of 72 UTF-8 bytes; existing shorter passwords can still be used to sign in.

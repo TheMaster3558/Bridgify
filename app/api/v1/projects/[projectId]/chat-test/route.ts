@@ -51,6 +51,21 @@ export async function POST(
         "SETUP_REQUIRED",
         "Choose the client from your Photon users again.",
       );
+    // Verify that the send result can be stored before reserving the chat or
+    // contacting Photon. Older manually provisioned databases omitted this
+    // additive column, so a successful send used to leave 'sending' forever.
+    const storage = await client
+      .from("chat_bindings")
+      .select("project_id,introduction_text")
+      .eq("project_id", id)
+      .maybeSingle();
+    if (storage.error?.code === "42703" || storage.error?.code === "PGRST204")
+      throw new ApiError(
+        503,
+        "MIGRATION_REQUIRED",
+        "The database is missing introduction storage. Run npm run automation:install to apply the missing setup migration before sending. No introduction was sent.",
+      );
+    checked(storage);
     const participants = [client_sender_id];
     const begin = await client.rpc("begin_chat_test", {
       p_project: id,
@@ -58,11 +73,22 @@ export async function POST(
       p_participants: participants,
       p_hash: membershipHash(participants),
     });
-    if (begin.error?.code === "23505")
+    if (
+      begin.error?.code === "23505" &&
+      begin.error.hint === "chat_binding_reserved"
+    )
+      throw new ApiError(409, "CHAT_IN_USE", begin.error.message);
+    // Older databases return a raw constraint error. Only this particular
+    // constraint means the conversation is reserved; unrelated uniqueness
+    // failures must keep their ordinary database/conflict handling.
+    if (
+      begin.error?.code === "23505" &&
+      begin.error.message.includes('"chat_bindings_instance_id_chat_guid_key"')
+    )
       throw new ApiError(
         409,
         "CHAT_IN_USE",
-        "This Photon user is already connected to another project. On the Pro plan each client has one conversation with the agent.",
+        "This conversation is reserved by another project, including drafts. Check your existing projects and any pending introduction before reconnecting. Apply the latest database migration to identify the conflicting project.",
       );
     checked(begin);
     const admin = adminDb();
