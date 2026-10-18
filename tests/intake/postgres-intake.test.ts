@@ -31,7 +31,7 @@ before(async () => {
   directory = await mkdtemp(join(tmpdir(), "bridgify-intake-"));
   pg = await PGlite.create(directory);
   await pg.exec("create role anon; create role authenticated; grant usage on schema public to anon,authenticated;");
-  await pg.exec(await readFile("supabase/migrations/202610170001_message_intake.sql", "utf8"));
+  await pg.exec(await readFile("supabase/legacy/message_intake.sql", "utf8"));
   database = {
     query: (text, params) => pg.query(text, params),
     transaction: work => pg.transaction(tx => work({ query: (text, params) => tx.query(text, params) })),

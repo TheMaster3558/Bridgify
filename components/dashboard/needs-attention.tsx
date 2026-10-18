@@ -1,9 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { AlertTriangle, ShieldAlert } from "lucide-react";
+import { ShieldAlert } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { DecisionActions } from "./decision-actions";
 import type { OwnerDecisionRecord } from "@/lib/dashboard/work-management-types";
 import { cn } from "@/lib/utils";
 
@@ -31,7 +31,7 @@ export function NeedsAttention({ decisions }: { decisions: OwnerDecisionRecord[]
     <main className="mx-auto grid w-full max-w-[1280px] gap-5 p-5 md:p-6">
       <header>
         <h1 className="font-display text-2xl font-semibold">Needs Attention</h1>
-        <p className="mt-1 text-sm text-muted-foreground">Decisions the assistant isn’t allowed to make. Routine requests never land here.</p>
+        <p className="mt-1 text-sm text-muted-foreground">Requests needing your judgment and reply delivery issues.</p>
       </header>
 
       <div className="flex flex-wrap gap-2" aria-label="Filter decisions">
@@ -68,8 +68,7 @@ export function NeedsAttention({ decisions }: { decisions: OwnerDecisionRecord[]
                 <section className="grid content-start gap-2"><h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Why it was escalated</h3><p className="text-sm leading-relaxed">{selected.explanation || "Owner review is required."}</p>{selected.missing_details.length > 0 && <div><p className="mb-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Missing details</p><ul className="list-disc space-y-1 pl-5 text-sm">{selected.missing_details.map((item) => <li key={item}>{item}</li>)}</ul></div>}</section>
               </div>
               <section className="grid gap-2"><h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Suggested options</h3>{selected.suggested_options.length ? <div className="divide-y rounded-md border">{selected.suggested_options.map((option, index) => <div key={`${option.title}-${index}`} className="px-3 py-2.5"><p className="text-sm font-medium">{option.title}{index === 0 && <Badge className="ml-2" variant="secondary">Suggested</Badge>}</p><p className="mt-0.5 text-xs text-muted-foreground">{option.description}</p></div>)}</div> : <p className="rounded-md border p-3 text-sm text-muted-foreground">No suggested options recorded.</p>}</section>
-              <section className="grid gap-3"><h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Your decision · actions pending</h3><div className="flex flex-wrap gap-2">{["Accept included work", "Allow an extra revision", "Ask client", "Prepare proposal", "Decline", "Dismiss"].map((label) => <Button key={label} variant={label === "Decline" ? "outline" : "secondary"} size="sm" disabled>{label}</Button>)}</div><label className="grid gap-1 text-xs font-medium text-muted-foreground">Override reason <span className="font-normal">Required when accepting work outside policy</span><input className="h-9 rounded-md border bg-background px-3 text-sm text-foreground" placeholder="e.g. Our typo, waived at no charge" disabled /></label></section>
-              <section className="grid gap-2"><h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Client reply preview</h3><div className="rounded-md border bg-muted/50 p-3 text-sm">{selected.reply_preview || "No reply preview recorded."}</div><p className="text-xs text-muted-foreground">A reply is sent only after the owner confirms a decision.</p></section>
+              <DecisionActions key={selected.id} decision={selected} />
               {selected.internal_note && <section className="grid gap-2 rounded-md border border-warn/30 bg-warn-soft p-3 text-sm"><h3 className="text-xs font-semibold uppercase tracking-wider text-warn">Private note · owner only</h3><p>{selected.internal_note}</p></section>}
               <section className="grid gap-2"><h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Resolution history</h3>{selected.history.length ? <div className="grid gap-1 text-xs text-muted-foreground">{selected.history.map((item, index) => <p key={`${selected.id}-history-${index}`}>{item}</p>)}</div> : <p className="text-xs text-muted-foreground">No history recorded yet.</p>}</section>
             </div>
@@ -78,7 +77,7 @@ export function NeedsAttention({ decisions }: { decisions: OwnerDecisionRecord[]
           <section className="grid min-h-64 place-items-center rounded-lg border border-dashed bg-card p-8 text-center text-sm text-muted-foreground"><div><ShieldAlert className="mx-auto mb-2 size-6" aria-hidden="true" /><p>No decisions are waiting for review.</p><p className="mt-1 text-xs">New owner-review items will appear here when stored in the workspace database.</p></div></section>
         )}
       </div>
-      <p className="flex items-center gap-2 text-xs text-muted-foreground"><AlertTriangle className="size-4" aria-hidden="true" />Decision actions are read-only until the guarded review workflow is connected.</p>
+
     </main>
   );
 }

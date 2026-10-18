@@ -19,7 +19,7 @@ export type Project = z.infer<typeof basicsSchema> & {
   scope_version: number;
   policy_version: number;
   people: z.infer<typeof peopleSchema> | null;
-  policy: z.infer<typeof policySchema> | null;
+  policy: z.input<typeof policySchema> | null;
   activation_cutoff: string | null;
   disclosure_at: string | null;
   updated_at: string;

@@ -117,6 +117,11 @@ export function policyPayload(form: FormData) {
     exclusions: String(form.get("exclusions") || "").trim(),
     max_open_tasks: Number(form.get("max_open_tasks")),
     notifications: "dashboard" as const,
+    replies: {
+      status_questions: form.get("reply_status_questions") !== "off",
+      clarifications: form.get("reply_clarifications") !== "off",
+      review_acknowledgments: form.get("reply_review_acknowledgments") !== "off",
+    },
   };
 }
 
