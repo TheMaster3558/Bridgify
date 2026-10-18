@@ -546,10 +546,12 @@ function DeleteDialog({
 export function NeedsAttention({
   decisions,
   clientPhotos = {},
+  serverManaged = false,
   activeProjects = [],
 }: {
   decisions: Decision[];
   clientPhotos?: Record<string, string>;
+  serverManaged?: boolean;
   activeProjects?: { id: string; name: string; client_name: string }[];
 }) {
   const [photoOverrides, setPhotoOverrides] = useState<
@@ -592,6 +594,7 @@ export function NeedsAttention({
     [projectDecisions],
   );
   const visible = useMemo(() => {
+    if (serverManaged) return activeDecisions;
     const rows = projectDecisions.filter(
       (decision) => filter === "all" || decision.reason === filter,
     );
@@ -605,7 +608,7 @@ export function NeedsAttention({
         );
       return a.updated_at.localeCompare(b.updated_at) * direction;
     });
-  }, [projectDecisions, filter, sort]);
+  }, [projectDecisions, filter, sort, serverManaged, activeDecisions]);
   const selected = activeDecisions.find(
     (decision) => decision.id === selectedId,
   );
@@ -647,6 +650,12 @@ export function NeedsAttention({
   }, [selected, deleteTargets.length]);
 
   function onSort(key: SortKey) {
+    if (serverManaged) {
+      const params = new URLSearchParams(window.location.search);
+      params.set("dir", params.get("sort") === key && params.get("dir") === "asc" ? "desc" : "asc");
+      params.set("sort", key); params.delete("page");
+      router.push(`?${params}`); return;
+    }
     setSort((current) =>
       current.key === key
         ? { key, dir: current.dir === "asc" ? "desc" : "asc" }
@@ -674,6 +683,7 @@ export function NeedsAttention({
           </div>
         </header>
 
+        {!serverManaged && <>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div
             role="group"
@@ -749,6 +759,7 @@ export function NeedsAttention({
           </Select>
         </div>
 
+        </>}
         <section aria-labelledby="open-decisions-heading" className={tableCard}>
           <div className="flex min-h-[3.25rem] flex-wrap items-center justify-between gap-3 px-4 py-2.5">
             <h2 id="open-decisions-heading" className="text-[17px] font-medium">

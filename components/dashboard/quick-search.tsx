@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CornerDownLeft, FolderKanban, Search } from "lucide-react";
 import { Dialog } from "radix-ui";
@@ -15,7 +15,12 @@ export type SearchPage = {
 
 type Result = SearchPage & { group: "Pages" | "Projects"; detail?: string };
 
-type Project = { id: string; name: string; client_name?: string };
+type Project = {
+  id: string;
+  name: string;
+  client_name?: string;
+  status?: string;
+};
 
 const hintKey =
   "inline-flex h-5 min-w-5 items-center justify-center rounded-md bg-black/10 px-1 font-sans text-[11px] font-semibold dark:bg-white/10";
@@ -32,7 +37,6 @@ export function QuickSearch({
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState(0);
   const [projects, setProjects] = useState<Project[] | null>(null);
-  const loading = useRef(false);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -46,18 +50,27 @@ export function QuickSearch({
   }, []);
 
   useEffect(() => {
-    if (!open || projects || loading.current) return;
-    loading.current = true;
-    fetch("/api/v1/projects", { cache: "no-store" })
-      .then(async (response) => {
-        const body = await response.json().catch(() => ({}));
-        setProjects(response.ok && Array.isArray(body.data) ? body.data : []);
+    if (!open) return;
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      fetch(`/api/v1/projects?q=${encodeURIComponent(query)}`, {
+        cache: "no-store",
+        signal: controller.signal,
       })
-      .catch(() => setProjects([]))
-      .finally(() => {
-        loading.current = false;
-      });
-  }, [open, projects]);
+        .then(async (response) => {
+          const body = await response.json();
+          if (!response.ok) throw new Error();
+          setProjects(body.data?.items ?? []);
+        })
+        .catch(() => {
+          if (!controller.signal.aborted) setProjects([]);
+        });
+    }, 200);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [open, query]);
 
   function handleOpenChange(next: boolean) {
     setOpen(next);
@@ -79,7 +92,7 @@ export function QuickSearch({
         (project) => matches(project.name) || matches(project.client_name),
       )
       .map((project) => ({
-        href: `/app/projects/${project.id}`,
+        href: `/app/projects/${project.id}${project.status === "draft" ? "/setup" : ""}`,
         label: project.name,
         detail: project.client_name,
         icon: FolderKanban,

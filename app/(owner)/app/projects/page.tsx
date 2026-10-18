@@ -1,5 +1,11 @@
 import type { Metadata } from "next";
 import { requireOwner } from "@/lib/auth/session";
+import { ListControls } from "@/components/dashboard/list-controls";
+import {
+  queryList,
+  listInput,
+  type SearchParams,
+} from "@/lib/dashboard/list-query";
 import { checked } from "@/lib/api";
 import { loadClientPhotos } from "@/lib/clients/photo-urls";
 import {
@@ -9,18 +15,15 @@ import {
 
 export const metadata: Metadata = { title: "Projects" };
 
-export default async function Page() {
+export default async function Page({
+  searchParams,
+}: {
+  searchParams: Promise<SearchParams>;
+}) {
   const { client } = await requireOwner();
-  const projects =
-    (checked(
-      await client
-        .from("projects")
-        .select(
-          "id,name,client_name,status,setup_step,original_amount_cents,currency,agreed_due_date,policy,updated_at",
-        )
-        .order("updated_at", { ascending: false })
-        .limit(25),
-    ) as WorkspaceProject[] | null) || [];
+  const input = listInput(await searchParams);
+  const result = await queryList(client, "projects", input);
+  const projects = result.items as unknown as WorkspaceProject[];
   const ids = projects.map((project) => project.id);
   const openDecisions = ids.length
     ? ((checked(
@@ -36,13 +39,22 @@ export default async function Page() {
   for (const { project_id } of openDecisions)
     pendingDecisions[project_id] = (pendingDecisions[project_id] ?? 0) + 1;
   return (
-    <ProjectsList
-      workspaceProjects={projects}
-      pendingDecisions={pendingDecisions}
-      clientPhotos={await loadClientPhotos(
-        client,
-        projects.map((project) => project.client_name),
-      )}
-    />
+    <>
+      <ListControls
+        input={input}
+        total={result.total}
+        statuses={["all", "active", "draft", "paused", "completed", "archived"]}
+      />
+      <ProjectsList
+        key={JSON.stringify(input)}
+        serverManaged
+        workspaceProjects={projects}
+        pendingDecisions={pendingDecisions}
+        clientPhotos={await loadClientPhotos(
+          client,
+          projects.map((project) => project.client_name),
+        )}
+      />
+    </>
   );
 }

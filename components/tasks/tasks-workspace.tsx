@@ -393,9 +393,11 @@ function TaskDetail({
 export function TasksWorkspace({
   tasks,
   clientPhotos = {},
+  serverManaged = false,
 }: {
   tasks: Task[];
   clientPhotos?: Record<string, string>;
+  serverManaged?: boolean;
 }) {
   const router = useRouter();
   const [filter, setFilter] =
@@ -448,6 +450,7 @@ export function TasksWorkspace({
     );
   }, [allTasks, project, assignee, query]);
   const visibleTasks = useMemo(() => {
+    if (serverManaged) return allTasks;
     const direction = sort.dir === "asc" ? 1 : -1;
     return scoped
       .filter((task) => filter === "all" || task.status === filter)
@@ -466,7 +469,7 @@ export function TasksWorkspace({
           );
         return a.updated_at.localeCompare(b.updated_at) * direction;
       });
-  }, [scoped, filter, sort]);
+  }, [scoped, filter, sort, serverManaged, allTasks]);
   const selected = allTasks.find((task) => task.id === selectedId);
   const checkedVisible = visibleTasks.filter((task) =>
     checkedIds.includes(task.id),
@@ -494,6 +497,12 @@ export function TasksWorkspace({
   }, [selected]);
 
   function onSort(key: SortKey) {
+    if (serverManaged) {
+      const params = new URLSearchParams(window.location.search);
+      params.set("dir", params.get("sort") === key && params.get("dir") === "asc" ? "desc" : "asc");
+      params.set("sort", key); params.delete("page");
+      router.push(`?${params}`); return;
+    }
     setSort((current) =>
       current.key === key
         ? { key, dir: current.dir === "asc" ? "desc" : "asc" }
@@ -594,6 +603,7 @@ export function TasksWorkspace({
           </div>
         </header>
 
+        {!serverManaged && <>
         <section
           aria-label="Task filters and view options"
           className="grid gap-3"
@@ -682,6 +692,7 @@ export function TasksWorkspace({
           </div>
         </section>
 
+        </>}
         {view === "list" ? (
           <section aria-labelledby="tasks-heading" className={tableCard}>
             <div className="flex min-h-[3.25rem] flex-wrap items-center justify-between gap-3 px-4 py-2.5">

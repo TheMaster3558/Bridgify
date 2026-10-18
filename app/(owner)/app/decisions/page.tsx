@@ -1,33 +1,44 @@
-import type { Metadata } from "next";
-import { NeedsAttention } from "@/components/dashboard/needs-attention";
 import { requireOwner } from "@/lib/auth/session";
-import { checked } from "@/lib/api";
-import { listOwnerDecisions } from "@/lib/dashboard/work-management";
+import {
+  queryList,
+  listInput,
+  projectOptions,
+  type SearchParams,
+} from "@/lib/dashboard/list-query";
+import { ListControls } from "@/components/dashboard/list-controls";
+import { NeedsAttention } from "@/components/dashboard/needs-attention";
+import type { OwnerDecisionRecord } from "@/lib/dashboard/work-management-types";
 import { loadClientPhotos } from "@/lib/clients/photo-urls";
-
-export const metadata: Metadata = { title: "Needs Attention" };
-
-export default async function Page() {
+export default async function Page({
+  searchParams,
+}: {
+  searchParams: Promise<SearchParams>;
+}) {
   const { client } = await requireOwner();
-  const decisions = await listOwnerDecisions(client);
-  // review_only projects are activated and listed as Active elsewhere.
-  const activeProjects =
-    (checked(
-      await client
-        .from("projects")
-        .select("id,name,client_name")
-        .in("status", ["active", "review_only"])
-        .order("name"),
-    ) as { id: string; name: string; client_name: string }[] | null) ?? [];
-  const clientPhotos = await loadClientPhotos(client, [
-    ...decisions.map((decision) => decision.client_name),
-    ...activeProjects.map((project) => project.client_name),
+  const raw = await searchParams;
+  const input = listInput({ status: "open", ...raw });
+  const [result, projects] = await Promise.all([
+    queryList(client, "decisions", input),
+    projectOptions(client),
   ]);
+  const rows = result.items as unknown as OwnerDecisionRecord[];
   return (
-    <NeedsAttention
-      decisions={decisions}
-      clientPhotos={clientPhotos}
-      activeProjects={activeProjects}
-    />
+    <>
+      <ListControls
+        input={input}
+        total={result.total}
+        statuses={["open", "all", "resolved", "dismissed"]}
+        projects={projects}
+      />
+      <NeedsAttention
+        key={JSON.stringify(input)}
+        decisions={rows}
+        serverManaged
+        clientPhotos={await loadClientPhotos(
+          client,
+          rows.map((r) => r.client_name),
+        )}
+      />
+    </>
   );
 }
