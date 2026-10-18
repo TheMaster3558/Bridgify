@@ -1,0 +1,498 @@
+/* Marketing pages only. Loaded by app/(marketing)/layout.tsx, so none of this reaches the owner app. */
+@import "tailwindcss" source(none);
+@source "../../components/landing";
+
+@theme inline {
+  --font-signifier: var(--font-landing-serif), "Source Serif 4", "Iowan Old Style", Palatino, Georgia, ui-serif, serif;
+  --font-sohne: var(--font-landing-sans), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+@theme {
+  --color-ink-black: #121826;
+  --color-paper-white: #ffffff;
+  --color-mist-gray: #f2f2f3;
+  --color-fog-white: #fafafb;
+  --color-slate-gray: #6b6f7a;
+  --color-ash-gray: #8b8d91;
+  --color-smoke-gray: #a3a6af;
+  --color-brand-tint: #e8f0fb;
+  --color-brand-wash: #f4f8fd;
+  --color-brand-light: #558cd1;
+  --color-brand-dark: #0046b0;
+  --color-night: #0e1a30;
+  --color-brand: #0051cb;
+  --color-line: #ececec;
+
+  --text-caption: 15px;
+  --text-caption--line-height: 1.5;
+  --text-heading: 44px;
+  --text-heading--line-height: 1.1;
+  --text-heading--letter-spacing: -0.66px;
+  --text-heading-lg: 60px;
+  --text-heading-lg--line-height: 1.05;
+  --text-heading-lg--letter-spacing: -0.96px;
+
+  --radius-elevated: 20px;
+  --radius-card: 24px;
+
+  --shadow-subtle: oklab(0 0 0 / 0.05) 0px 0px 0px 1px, rgba(0, 0, 0, 0.06) 0px 4px 24px 0px;
+  --shadow-overlay: oklab(0 0 0 / 0.05) 0px 0px 0px 1px, rgba(0, 0, 0, 0.1) 0px 8px 40px 0px;
+  --shadow-float: rgba(4, 23, 43, 0.05) 0px 0px 0px 1px, rgba(0, 0, 0, 0.1) 0px 20px 25px -5px, rgba(0, 0, 0, 0.1) 0px 8px 10px -6px;
+}
+
+/* Undo the owner app's base heading font and tracking; landing utilities still win. */
+@layer base {
+  .landing :is(h1, h2, h3) {
+    font-family: inherit;
+    letter-spacing: normal;
+  }
+}
+
+html {
+  background: #ffffff;
+  scroll-padding-top: 80px;
+}
+
+body {
+  background: #ffffff;
+}
+
+.landing {
+  color: #121826;
+  font-family: var(--font-sohne);
+  font-weight: 400;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+::selection {
+  background: #dbe7f8;
+  color: #0046b0;
+}
+
+:focus-visible {
+  outline: 2px solid #0051cb;
+  outline-offset: 3px;
+}
+
+.hero {
+  background:
+    radial-gradient(60% 50% at 85% 30%, rgba(211, 226, 246, 0.85), transparent 70%),
+    radial-gradient(50% 45% at 10% 80%, rgba(232, 240, 251, 0.9), transparent 70%),
+    linear-gradient(#f7f7f8, #ffffff);
+}
+
+.hero-noise {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  opacity: 0.5;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.91' numOctaves='2' seed='10' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3CfeComponentTransfer%3E%3CfeFuncA type='discrete' tableValues='0 1'/%3E%3C/feComponentTransfer%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+  background-size: 180px 180px;
+}
+
+/* ---------- iMessage bubbles with tails ----------
+   The tail is a bubble-colored curl (::before) trimmed by a cutout (::after)
+   painted in the chat background, set via --chat-bg on non-white containers. */
+
+.imsg {
+  position: relative;
+  background: var(--bubble);
+}
+
+.imsg-blue {
+  --bubble: #0b84fe;
+}
+
+.imsg-gray {
+  --bubble: #e9e9eb;
+}
+
+.imsg::before,
+.imsg::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  height: 20px;
+}
+
+.imsg-right::before {
+  right: -7px;
+  width: 20px;
+  background: var(--bubble);
+  border-bottom-left-radius: 16px 14px;
+}
+
+.imsg-right::after {
+  right: -26px;
+  width: 26px;
+  background: var(--chat-bg, #fff);
+  border-bottom-left-radius: 10px;
+}
+
+.imsg-left::before {
+  left: -7px;
+  width: 20px;
+  background: var(--bubble);
+  border-bottom-right-radius: 16px 14px;
+}
+
+.imsg-left::after {
+  left: -26px;
+  width: 26px;
+  background: var(--chat-bg, #fff);
+  border-bottom-right-radius: 10px;
+}
+
+/* ---------- Seat slider ---------- */
+
+.seat-range {
+  --fill: 0%;
+  appearance: none;
+  height: 6px;
+  border-radius: 9999px;
+  background: linear-gradient(90deg, #0051cb var(--fill), #dfe6f0 var(--fill));
+  cursor: pointer;
+}
+
+.seat-range::-webkit-slider-thumb {
+  appearance: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 9999px;
+  background: #fff;
+  border: 2px solid #0051cb;
+  box-shadow: 0 4px 12px -4px rgba(0, 0, 0, 0.35);
+  transition: transform 0.15s ease;
+}
+
+.seat-range::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 9999px;
+  background: #fff;
+  border: 2px solid #0051cb;
+}
+
+.seat-range:active::-webkit-slider-thumb {
+  transform: scale(1.15);
+}
+
+.seat-range:focus-visible {
+  outline: 2px solid #0051cb;
+  outline-offset: 6px;
+}
+
+.faq summary::-webkit-details-marker {
+  display: none;
+}
+
+/* ---------- Ambient color orbs ---------- */
+
+.orb {
+  position: absolute;
+  border-radius: 9999px;
+  filter: blur(60px);
+  pointer-events: none;
+}
+
+/* ---------- Mission words lit by scroll (--p set from JS) ---------- */
+
+.mission-text {
+  --p: 0;
+}
+
+.mission-word {
+  opacity: clamp(0.14, calc(var(--p) * (var(--n) + 6) - var(--i)), 1);
+  transition: opacity 0.15s linear;
+}
+
+/* ---------- Loop timeline ---------- */
+
+.loop {
+  --p: 0;
+}
+
+.loop-fill {
+  transform: scaleY(var(--p));
+}
+
+.loop-step {
+  opacity: 0.32;
+  transform: translateY(12px);
+}
+
+.loop-step.is-on {
+  opacity: 1;
+  transform: none;
+}
+
+/* ---------- Marquee ---------- */
+
+.marquee-mask {
+  mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent);
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent);
+}
+
+/* ---------- Hero chat bubbles ---------- */
+
+.chat-out {
+  opacity: 0;
+  transform: translateY(10px) scale(0.97);
+}
+
+.chat-in {
+  opacity: 1;
+  transform: none;
+}
+
+.chat-in,
+.chat-out {
+  transition:
+    opacity 0.45s ease,
+    transform 0.55s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* ---------- Guardrails spotlight ---------- */
+
+.spotlight {
+  --mx: 50%;
+  --my: 0%;
+  background:
+    radial-gradient(600px circle at var(--mx) var(--my), rgba(85, 140, 209, 0.22), transparent 60%),
+    #0e1a30;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  html {
+    scroll-behavior: smooth;
+  }
+
+  .rise {
+    animation: rise 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  .word-rise {
+    display: inline-block;
+    animation: word-rise 0.9s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  .reveal {
+    opacity: 0;
+  }
+
+  .reveal.is-in {
+    animation: reveal 0.9s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  .reveal[data-from="up"] { --rx: 0px; --ry: 28px; --rs: 1; }
+  .reveal[data-from="down"] { --rx: 0px; --ry: -28px; --rs: 1; }
+  .reveal[data-from="left"] { --rx: -40px; --ry: 0px; --rs: 1; }
+  .reveal[data-from="right"] { --rx: 40px; --ry: 0px; --rs: 1; }
+  .reveal[data-from="scale"] { --rx: 0px; --ry: 20px; --rs: 0.94; }
+
+  .reveal .seg-fill {
+    transform: scaleX(0);
+  }
+
+  .reveal.is-in .seg-fill {
+    animation: grow-x 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  .typing-dot {
+    animation: typing 1s ease-in-out infinite;
+  }
+
+  .drift {
+    animation: bob 8s ease-in-out infinite;
+  }
+
+  .parallax {
+    transform: translate3d(calc(var(--px, 0) * var(--shift)), calc(var(--py, 0) * var(--shift)), 0);
+    transition: transform 0.9s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .orb-float {
+    animation: orb 18s ease-in-out infinite alternate;
+  }
+
+  .marquee-track {
+    animation: marquee 40s linear infinite;
+  }
+
+  .marquee-reverse {
+    animation-direction: reverse;
+    animation-duration: 48s;
+  }
+
+  .marquee-mask:hover .marquee-track {
+    animation-play-state: paused;
+  }
+
+  .pill-progress {
+    animation: grow-x linear both;
+  }
+
+  .loop-step {
+    transition:
+      opacity 0.7s ease,
+      transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .lift {
+    transition:
+      transform 0.35s cubic-bezier(0.22, 1, 0.36, 1),
+      box-shadow 0.35s ease;
+  }
+
+  .lift:hover {
+    transform: translateY(-6px);
+    box-shadow: 0 24px 40px -24px rgba(0, 0, 0, 0.25);
+  }
+
+  .shine {
+    background-size: 200% auto;
+    animation: shine 6s linear infinite;
+  }
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes word-rise {
+  from {
+    opacity: 0;
+    transform: translateY(0.45em) rotate(2deg);
+    filter: blur(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+    filter: blur(0);
+  }
+}
+
+@keyframes reveal {
+  from {
+    opacity: 0;
+    transform: translate3d(var(--rx), var(--ry), 0) scale(var(--rs));
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes grow-x {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+@keyframes bob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(var(--amp));
+  }
+}
+
+@keyframes orb {
+  0% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(40px, -30px, 0) scale(1.1);
+  }
+  100% {
+    transform: translate3d(-30px, 20px, 0) scale(0.95);
+  }
+}
+
+@keyframes marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+@keyframes shine {
+  to {
+    background-position: 200% center;
+  }
+}
+
+@keyframes typing {
+  0%,
+  60%,
+  100% {
+    opacity: 0.35;
+    transform: translateY(0);
+  }
+  30% {
+    opacity: 1;
+    transform: translateY(-3px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rise,
+  .word-rise,
+  .reveal,
+  .typing-dot,
+  .drift,
+  .parallax,
+  .orb-float,
+  .marquee-track,
+  .seg-fill,
+  .loop-step,
+  .chat-in,
+  .chat-out,
+  .mission-word {
+    animation: none !important;
+    transition: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+
+  .marquee-track {
+    flex-wrap: wrap;
+    width: auto;
+    justify-content: center;
+  }
+
+  .marquee-dup {
+    display: none;
+  }
+}
+
+.link-arrow {
+  background-image: linear-gradient(currentColor, currentColor);
+  background-position: 0 100%;
+  background-repeat: no-repeat;
+  background-size: 0 1px;
+  transition: background-size 180ms ease;
+}
+
+.link-arrow:hover {
+  background-size: 100% 1px;
+}

@@ -8,5 +8,5 @@ export async function POST(request: Request) {
   const { error } = await client.auth.signOut();
   if (error)
     return new Response("Sign-out failed. Please retry.", { status: 503 });
-  return NextResponse.redirect(new URL("/login", base), 303);
+  return NextResponse.redirect(new URL("/", base), 303);
 }
