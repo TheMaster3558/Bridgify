@@ -47,6 +47,7 @@ export function ListToolbar({
   pageSize,
   total,
   aside,
+  actions,
   compact = false,
 }: {
   /** Current URL filter values, e.g. { status: "open", q: "", project: "all" }. */
@@ -58,6 +59,8 @@ export function ListToolbar({
   pageSize: number;
   total: number;
   aside?: ReactNode;
+  /** Buttons placed right after the dropdowns, e.g. "New task". */
+  actions?: ReactNode;
   /** Narrower search and pickers so they fit on the pill row. */
   compact?: boolean;
 }) {
@@ -108,7 +111,10 @@ export function ListToolbar({
       <div
         role="group"
         aria-label={pills.label}
-        className="flex max-w-full min-w-0 gap-2 overflow-x-auto pb-1"
+        className={cn(
+          "flex max-w-full min-w-0 overflow-x-auto pb-1",
+          compact ? "gap-1.5" : "gap-2",
+        )}
       >
         {pills.options.map((item) => {
           const active = String(values[pills.param] ?? "all") === item.id;
@@ -135,7 +141,7 @@ export function ListToolbar({
         <label
           className={cn(
             "flex h-9 w-full items-center gap-2 rounded-full bg-sidebar-accent px-3 text-neutral-500 focus-within:ring-[3px] focus-within:ring-sidebar-ring/40 dark:text-neutral-400",
-            compact ? "sm:w-40" : "sm:w-64",
+            compact ? "sm:w-[152px]" : "sm:w-64",
           )}
         >
           <Search aria-hidden className="size-[18px] shrink-0" />
@@ -166,7 +172,7 @@ export function ListToolbar({
           >
             <SelectTrigger
               aria-label={select.label}
-              className={cn(selectTrigger, compact && "sm:w-36")}
+              className={cn(selectTrigger, compact && "sm:w-32")}
             >
               <SelectValue />
             </SelectTrigger>
@@ -190,6 +196,7 @@ export function ListToolbar({
             </SelectContent>
           </Select>
         ))}
+        {actions}
         {total > pageSize && (
           <nav
             aria-label="Result pages"

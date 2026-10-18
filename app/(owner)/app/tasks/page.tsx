@@ -1,4 +1,4 @@
-import { TaskEditor } from "@/components/tasks/task-editor";
+import { NewTaskButton } from "@/components/tasks/new-task-button";
 import { requireOwner } from "@/lib/auth/session";
 import {
   queryList,
@@ -43,13 +43,6 @@ export default async function Page({
   return (
     <TasksWorkspace
       key={JSON.stringify(input)}
-      creationForm={
-        <TaskEditor
-          projects={projects.filter((p) =>
-            ["active", "review_only"].includes(p.status),
-          )}
-        />
-      }
       tasks={rows}
       serverManaged
       toolbar={
@@ -76,6 +69,13 @@ export default async function Page({
               ],
             },
           ]}
+          actions={
+            <NewTaskButton
+              projects={projects.filter((p) =>
+                ["active", "review_only"].includes(p.status),
+              )}
+            />
+          }
           page={input.page}
           pageSize={PAGE_SIZE}
           total={result.total}
