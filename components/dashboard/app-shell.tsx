@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef } from "react";
+import { Fragment, useRef } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -19,16 +19,45 @@ import { cn } from "@/lib/utils";
 
 import { navItem, navItemActive } from "@/components/dashboard/nav-styles";
 import { QuickSearch } from "@/components/dashboard/quick-search";
+import {
+  NavCount,
+  useSidebarCounts,
+} from "@/components/dashboard/sidebar-counts";
+import type { SidebarCounts } from "@/lib/dashboard/sidebar-counts";
 import { SettingsButton } from "@/components/dashboard/settings-button";
 import { ThemeToggle } from "@/components/dashboard/theme-toggle";
 
 const nav = [
   { href: "/app", label: "Home", icon: House },
   { href: "/app/projects", label: "Projects", icon: FolderKanban },
-  { href: "/app/tasks", label: "Actionable Tasks", icon: ListChecks },
-  { href: "/app/decisions", label: "Needs Attention", icon: CircleAlert },
-  { href: "/app/proposals", label: "Proposals", icon: FileText },
-];
+  {
+    href: "/app/tasks",
+    label: "Actionable Tasks",
+    icon: ListChecks,
+    count: "tasks",
+    unit: "open",
+  },
+  {
+    href: "/app/decisions",
+    label: "Needs Attention",
+    icon: CircleAlert,
+    count: "decisions",
+    unit: "waiting",
+  },
+  {
+    href: "/app/proposals",
+    label: "Proposals",
+    icon: FileText,
+    count: "proposals",
+    unit: "in progress",
+  },
+] satisfies {
+  href: string;
+  label: string;
+  icon: typeof House;
+  count?: keyof SidebarCounts;
+  unit?: string;
+}[];
 
 const searchPages = [
   ...nav,
@@ -117,14 +146,17 @@ export function AppShell({
   name,
   timezone,
   organization,
+  counts: initialCounts = null,
 }: {
   children: React.ReactNode;
   email?: string;
   name: string;
   timezone: string;
   organization: string;
+  counts?: SidebarCounts | null;
 }) {
   const pathname = usePathname();
+  const counts = useSidebarCounts(initialCounts, pathname);
   const projectId = pathname.match(
     /^\/app\/projects\/([0-9a-f-]{36})(?:\/|$)/i,
   )?.[1];
@@ -160,16 +192,34 @@ export function AppShell({
               {nav.map((item) => {
                 const active = isActive(pathname, item.href);
                 const Icon = item.icon;
+                const count =
+                  "count" in item && item.count
+                    ? counts?.[item.count]
+                    : undefined;
+                const countId =
+                  "count" in item ? `nav-count-${item.count}` : undefined;
                 return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    aria-current={active ? "page" : undefined}
-                    className={cn(navItem, active && navItemActive)}
-                  >
-                    <Icon aria-hidden className="size-[18px] shrink-0" />
-                    {item.label}
-                  </Link>
+                  <Fragment key={item.href}>
+                    <Link
+                      href={item.href}
+                      aria-current={active ? "page" : undefined}
+                      aria-describedby={count ? countId : undefined}
+                      className={cn(navItem, active && navItemActive)}
+                    >
+                      <Icon aria-hidden className="size-[18px] shrink-0" />
+                      {item.label}
+                      <NavCount
+                        count={count}
+                        active={active}
+                        alert={"count" in item && item.count === "decisions"}
+                      />
+                    </Link>
+                    {count ? (
+                      <span id={countId} className="sr-only">
+                        {count} {"unit" in item ? item.unit : ""}
+                      </span>
+                    ) : null}
+                  </Fragment>
                 );
               })}
             </nav>
