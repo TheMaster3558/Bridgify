@@ -333,6 +333,7 @@ export function ProjectWizard({
         {step === 3 && p && (
           <div className="grid gap-7">
             <PhotonClientPicker
+              projectId={p.id}
               people={p.people}
               error={errorTarget === "people" ? error : undefined}
               disabled={pending || locked}

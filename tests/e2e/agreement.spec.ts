@@ -379,6 +379,7 @@ async function fixture(
         contentType: "application/json",
         body: JSON.stringify(bundle),
       });
+    if (handle && (await handle(route))) return;
     if (path.endsWith("/integrations/photon/users"))
       return route.fulfill({
         contentType: "application/json",
@@ -391,7 +392,6 @@ async function fixture(
           },
         }),
       });
-    if (handle && (await handle(route))) return;
     return route.fulfill({
       contentType: "text/html",
       body: '<!doctype html><html><body><div id="root"></div><script src="/bundle.js"></script></body></html>',
@@ -867,4 +867,258 @@ test("project deletion requires the exact name, supports cancel and preserves er
   ).toBeVisible();
   await dialog.getByRole("button", { name: "Back to projects" }).click();
   await expect(page).toHaveURL("https://agreement.test/app/projects");
+});
+
+test("Add user creates in Photon, selects the returned user and persists through the existing connect action", async ({
+  page,
+}) => {
+  const bundle = setupBundle();
+  bundle.project.people = null;
+  const added = {
+    id: "new-photon-user",
+    name: "Ada Lovelace",
+    email: "ada@example.test",
+    phoneNumber: "+14155550100",
+    assignedPhoneNumber: "+14155550200",
+  };
+  let created = false,
+    creates = 0,
+    connections = 0;
+  await fixture(page, bundle, 3, async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith("/integrations/photon/users")) {
+      if (route.request().method() === "POST") {
+        creates++;
+        expect(route.request().postDataJSON()).toEqual({
+          projectId: bundle.project.id,
+          firstName: "Ada",
+          lastName: "Lovelace",
+          email: "ada@example.test",
+          phoneNumber: added.phoneNumber,
+        });
+        created = true;
+        await route.fulfill({
+          json: { data: { user: added, existing: false } },
+        });
+      } else
+        await route.fulfill({
+          json: { data: { ok: true, users: created ? [added] : [] } },
+        });
+      return true;
+    }
+    if (path.endsWith("/chat-binding")) {
+      connections++;
+      expect(route.request().postDataJSON().people).toEqual({
+        photon_user_id: added.id,
+      });
+      bundle.project.people = {
+        channel: "photon_shared",
+        photon_user_id: added.id,
+        client_name: added.name,
+        client_email: added.email,
+        client_sender_id: added.phoneNumber,
+        agent_number: added.assignedPhoneNumber,
+        instance_id: "photon-project",
+        chat_guid: `any;-;${added.phoneNumber}`,
+      };
+      await route.fulfill({ json: { data: { project: bundle.project } } });
+      return true;
+    }
+    return false;
+  });
+  await page.getByRole("button", { name: "Add user", exact: true }).click();
+  const form = page.getByRole("form", { name: "Add a Photon user" });
+  const submit = form.getByRole("button", { name: "Create Photon user" });
+  await expect(submit).toBeDisabled();
+  await form.getByLabel("First name", { exact: true }).fill("Ada");
+  await form.getByLabel("Last name (optional)").fill("Lovelace");
+  await form.getByLabel("Email", { exact: true }).fill("ada@example.test");
+  await form.getByLabel("Phone number", { exact: true }).fill("4155550100");
+  await expect(submit).toBeDisabled();
+  await form
+    .getByLabel("Phone number", { exact: true })
+    .fill("+1 (415) 555-0100");
+  await submit.click();
+  await expect(page.getByRole("radio", { name: /Ada Lovelace/ })).toBeChecked();
+  await expect(page.getByText(/Photon user added and selected/)).toBeVisible();
+  expect(creates).toBe(1);
+  expect(connections).toBe(0);
+  await page
+    .getByRole("button", { name: "Connect this client", exact: true })
+    .click();
+  await expect.poll(() => connections).toBe(1);
+  await page.reload();
+  await expect(page.getByText("Connected:", { exact: false })).toContainText(
+    "Ada Lovelace",
+  );
+});
+
+test("Add user preserves form details after failure and reuses an existing returned user without duplicates", async ({
+  page,
+}) => {
+  const bundle = setupBundle();
+  let creates = 0;
+  const existing = {
+    id: "user-1",
+    name: "Existing Profile",
+    email: "original@example.test",
+    phoneNumber: "+12065550002",
+    assignedPhoneNumber: null,
+  };
+  await fixture(page, bundle, 3, async (route) => {
+    if (
+      !new URL(route.request().url()).pathname.endsWith(
+        "/integrations/photon/users",
+      )
+    )
+      return false;
+    if (route.request().method() === "GET") {
+      await route.fulfill({ json: { data: { ok: true, users: [existing] } } });
+      return true;
+    }
+    creates++;
+    await route.fulfill(
+      creates === 1
+        ? {
+            status: 503,
+            json: {
+              error: {
+                message:
+                  "Photon did not confirm user creation. Retry with the same phone number.",
+              },
+            },
+          }
+        : { json: { data: { user: existing, existing: true } } },
+    );
+    return true;
+  });
+  await page.getByRole("button", { name: "Add user", exact: true }).click();
+  const form = page.getByRole("form", { name: "Add a Photon user" });
+  await form.getByLabel("First name", { exact: true }).fill("New name");
+  await form
+    .getByLabel("Email", { exact: true })
+    .fill("different@example.test");
+  await form
+    .getByLabel("Phone number", { exact: true })
+    .fill(existing.phoneNumber);
+  await form.getByRole("button", { name: "Create Photon user" }).click();
+  await expect(form.getByRole("alert")).toContainText("Photon did not confirm");
+  await expect(form.getByLabel("Email", { exact: true })).toHaveValue(
+    "different@example.test",
+  );
+  await form.getByRole("button", { name: "Create Photon user" }).click();
+  await expect(page.getByRole("radio")).toHaveCount(1);
+  await expect(
+    page.getByRole("radio", { name: /Existing Profile/ }),
+  ).toBeChecked();
+  await expect(
+    page.getByText(/This phone number is already in Photon/),
+  ).toBeVisible();
+  expect(creates).toBe(2);
+});
+
+test("Photon user deletion requires confirmation, handles cancel/failure and clears an unlinked selection after success", async ({
+  page,
+}) => {
+  const bundle = setupBundle();
+  bundle.project.people = null;
+  const user = {
+    id: "aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa",
+    name: "Unused Contact",
+    email: "unused@example.test",
+    phoneNumber: "+14155550800",
+    assignedPhoneNumber: "+14155550801",
+  };
+  let deleted = false,
+    calls = 0;
+  await fixture(page, bundle, 3, async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith("/integrations/photon/users")) {
+      await route.fulfill({
+        json: { data: { ok: true, users: deleted ? [] : [user] } },
+      });
+      return true;
+    }
+    if (path.endsWith(`/users/${user.id}`)) {
+      expect(route.request().method()).toBe("DELETE");
+      expect(route.request().postDataJSON()).toEqual({
+        projectId: bundle.project.id,
+        phoneNumber: user.phoneNumber,
+      });
+      calls++;
+      if (calls === 1)
+        await route.fulfill({
+          status: 503,
+          json: { error: { message: "Deletion unconfirmed. Retry." } },
+        });
+      else {
+        deleted = true;
+        await route.fulfill({
+          json: { data: { deleted: true, userId: user.id } },
+        });
+      }
+      return true;
+    }
+    return false;
+  });
+  await page.getByRole("radio", { name: /Unused Contact/ }).check();
+  const menu = page.getByRole("button", {
+    name: "User actions for Unused Contact",
+    exact: true,
+  });
+  await menu.click();
+  await page
+    .getByRole("menuitem", { name: "Delete user", exact: true })
+    .click();
+  const dialog = page.getByRole("dialog"),
+    confirm = dialog.getByRole("button", {
+      name: "Delete from Photon",
+      exact: true,
+    });
+  await expect(confirm).toBeDisabled();
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  expect(calls).toBe(0);
+  await expect(menu).toBeFocused();
+  await menu.press("Enter");
+  await page
+    .getByRole("menuitem", { name: "Delete user", exact: true })
+    .press("Enter");
+  await dialog.getByRole("textbox").fill("wrong");
+  await expect(confirm).toBeDisabled();
+  await dialog.getByRole("textbox").fill(user.phoneNumber);
+  await confirm.click();
+  await expect(dialog.getByRole("alert")).toHaveText(
+    "Deletion unconfirmed. Retry.",
+  );
+  // The modal correctly hides background roles; the selected user remains in the DOM.
+  await expect(
+    page.locator(`input[type="radio"][value="${user.id}"]`),
+  ).toBeChecked();
+  await confirm.click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByRole("radio")).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Connect this client", exact: true }),
+  ).toBeDisabled();
+  await page.reload();
+  await expect(page.getByRole("radio")).toHaveCount(0);
+  expect(calls).toBe(2);
+});
+
+test("the current connected Photon client cannot be deleted through its menu", async ({
+  page,
+}) => {
+  const bundle = setupBundle();
+  await fixture(page, bundle, 3);
+  await page
+    .getByRole("button", { name: "User actions for Client", exact: true })
+    .click();
+  await expect(
+    page.getByRole("menuitem", { name: "Delete user", exact: true }),
+  ).toHaveAttribute("aria-disabled", "true");
+  await expect(
+    page.getByText("Switch this project's client before deleting this user.", {
+      exact: true,
+    }),
+  ).toBeVisible();
 });
