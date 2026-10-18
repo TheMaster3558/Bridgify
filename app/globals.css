@@ -139,3 +139,24 @@
     letter-spacing: -0.01em;
   }
 }
+
+.settings-dialog-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--foreground) 35%, transparent) transparent;
+}
+
+.settings-dialog-scroll::-webkit-scrollbar {
+  width: 12px;
+}
+
+.settings-dialog-scroll::-webkit-scrollbar-track {
+  background: transparent;
+  margin-block: 16px;
+}
+
+.settings-dialog-scroll::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background-color: color-mix(in srgb, var(--foreground) 35%, transparent);
+  background-clip: padding-box;
+}
