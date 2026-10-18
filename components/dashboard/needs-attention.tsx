@@ -21,6 +21,13 @@ import {
 } from "lucide-react";
 import { Checkbox, Dialog, DropdownMenu } from "radix-ui";
 import { DecisionActions } from "./decision-actions";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { ClientPhotoCard } from "@/components/dashboard/client-photo";
 import { clientKey } from "@/lib/clients/photos";
 import { settingsButton } from "@/components/settings/settings-ui";
@@ -539,9 +546,11 @@ function DeleteDialog({
 export function NeedsAttention({
   decisions,
   clientPhotos = {},
+  activeProjects = [],
 }: {
   decisions: Decision[];
   clientPhotos?: Record<string, string>;
+  activeProjects?: { id: string; name: string; client_name: string }[];
 }) {
   const [photoOverrides, setPhotoOverrides] = useState<
     Record<string, string | null>
@@ -552,6 +561,7 @@ export function NeedsAttention({
   };
   const [resolvedIds, setResolvedIds] = useState<string[]>([]);
   const [filter, setFilter] = useState("all");
+  const [project, setProject] = useState("all");
   const router = useRouter();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [checkedIds, setCheckedIds] = useState<string[]>([]);
@@ -564,12 +574,25 @@ export function NeedsAttention({
     () => decisions.filter((decision) => !resolvedIds.includes(decision.id)),
     [decisions, resolvedIds],
   );
+  const openByProject = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const decision of activeDecisions)
+      counts[decision.project_id] = (counts[decision.project_id] ?? 0) + 1;
+    return counts;
+  }, [activeDecisions]);
+  const projectDecisions = useMemo(
+    () =>
+      project === "all"
+        ? activeDecisions
+        : activeDecisions.filter((decision) => decision.project_id === project),
+    [activeDecisions, project],
+  );
   const reasons = useMemo(
-    () => [...new Set(activeDecisions.map((decision) => decision.reason))],
-    [activeDecisions],
+    () => [...new Set(projectDecisions.map((decision) => decision.reason))],
+    [projectDecisions],
   );
   const visible = useMemo(() => {
-    const rows = activeDecisions.filter(
+    const rows = projectDecisions.filter(
       (decision) => filter === "all" || decision.reason === filter,
     );
     const direction = sort.dir === "asc" ? 1 : -1;
@@ -582,7 +605,7 @@ export function NeedsAttention({
         );
       return a.updated_at.localeCompare(b.updated_at) * direction;
     });
-  }, [activeDecisions, filter, sort]);
+  }, [projectDecisions, filter, sort]);
   const selected = activeDecisions.find(
     (decision) => decision.id === selectedId,
   );
@@ -639,7 +662,7 @@ export function NeedsAttention({
           "xl:max-w-[1640px] xl:grid-cols-[minmax(0,1fr)_minmax(400px,460px)]",
       )}
     >
-      <div className="grid min-w-0 gap-5">
+      <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-5">
         <header className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <h1 className="font-display text-2xl font-semibold">
@@ -651,42 +674,79 @@ export function NeedsAttention({
           </div>
         </header>
 
-        <div
-          role="group"
-          aria-label="Filter decisions"
-          className="flex gap-2 overflow-x-auto pb-1"
-        >
-          <button
-            type="button"
-            aria-pressed={filter === "all"}
-            onClick={() => {
-              setFilter("all");
-              setCheckedIds([]);
-            }}
-            className={cn(
-              filterButton,
-              filter === "all" ? filterActive : filterIdle,
-            )}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div
+            role="group"
+            aria-label="Filter decisions"
+            className="flex max-w-full min-w-0 gap-2 overflow-x-auto pb-1"
           >
-            All ({activeDecisions.length})
-          </button>
-          {reasons.map((reason) => (
             <button
-              key={reason}
               type="button"
-              aria-pressed={filter === reason}
+              aria-pressed={filter === "all"}
               onClick={() => {
-                setFilter(reason);
+                setFilter("all");
                 setCheckedIds([]);
               }}
               className={cn(
                 filterButton,
-                filter === reason ? filterActive : filterIdle,
+                filter === "all" ? filterActive : filterIdle,
               )}
             >
-              {reasonLabel(reason)}
+              All ({projectDecisions.length})
             </button>
-          ))}
+            {reasons.map((reason) => (
+              <button
+                key={reason}
+                type="button"
+                aria-pressed={filter === reason}
+                onClick={() => {
+                  setFilter(reason);
+                  setCheckedIds([]);
+                }}
+                className={cn(
+                  filterButton,
+                  filter === reason ? filterActive : filterIdle,
+                )}
+              >
+                {reasonLabel(reason)}
+              </button>
+            ))}
+          </div>
+          <Select
+            value={project}
+            onValueChange={(value) => {
+              setProject(value);
+              setFilter("all");
+              setCheckedIds([]);
+            }}
+          >
+            <SelectTrigger
+              aria-label="Project filter"
+              className="h-9 w-full max-w-64 rounded-full border-0 bg-sidebar-accent px-3.5 text-sm font-medium shadow-none sm:w-64"
+            >
+              <SelectValue placeholder="All active projects" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All active projects</SelectItem>
+              {activeProjects.map((item) => (
+                <SelectItem key={item.id} value={item.id}>
+                  <InitialsAvatar
+                    name={item.client_name}
+                    src={photoFor(item.client_name)}
+                  />
+                  <span className="truncate">{item.name}</span>
+                  <span className="text-neutral-500 tabular-nums dark:text-neutral-400">
+                    {openByProject[item.id] ?? 0}
+                  </span>
+                </SelectItem>
+              ))}
+              {activeProjects.length === 0 && (
+                <p className="px-2 py-1.5 text-sm text-neutral-500 dark:text-neutral-400">
+                  No active projects
+                </p>
+              )}
+            </SelectContent>
+          </Select>
         </div>
 
         <section aria-labelledby="open-decisions-heading" className={tableCard}>
@@ -732,9 +792,11 @@ export function NeedsAttention({
                 className="mb-2 size-6 text-neutral-400"
               />
               <p className="text-[15px] font-medium">
-                {activeDecisions.length
-                  ? "No open decisions match this filter."
-                  : "No decisions are waiting for review."}
+                {!activeDecisions.length
+                  ? "No decisions are waiting for review."
+                  : project !== "all" && !projectDecisions.length
+                    ? "No open decisions for this project."
+                    : "No open decisions match this filter."}
               </p>
               <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
                 New owner-review items will appear here when they need you.
