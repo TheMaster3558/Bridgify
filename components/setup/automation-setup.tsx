@@ -17,10 +17,12 @@ export function AutomationSetup({
   locked,
   onSave,
   onContinueState,
+  saveLabel,
 }: {
   project: Project;
-  bundle: Bundle;
+  bundle: Pick<Bundle, "scope">;
   locked: boolean;
+  saveLabel?: string;
   onSave: (payload: ReturnType<typeof policyPayload>) => Promise<void>;
   onContinueState?: ContinueStateChange;
 }) {
@@ -205,12 +207,13 @@ export function AutomationSetup({
         <p className="text-sm text-muted-foreground">These replies also work with manual approval. Accepted requests always receive a task confirmation. Casual conversation stays quiet.</p>
         {([
           ["status_questions", "Answer status questions from saved task information"],
+          ["progress_updates", "Send updates when I start, block, complete or cancel work"],
           ["clarifications", "Ask for missing request details (up to two follow-ups)"],
           ["review_acknowledgments", "Acknowledge requests waiting for my review"],
         ] as const).map(([key, label]) => (
           <label key={key} className="grid gap-1 text-sm">
             {label}
-            <select name={`reply_${key}`} defaultValue={p.policy?.replies?.[key] === false ? "off" : "on"} className="rounded border p-2">
+            <select name={`reply_${key}`} defaultValue={key === "progress_updates" ? (p.policy?.replies?.progress_updates ? "on" : "off") : p.policy?.replies?.[key] === false ? "off" : "on"} className="rounded border p-2">
               <option value="on">Enabled</option>
               <option value="off">Disabled</option>
             </select>
@@ -222,7 +225,7 @@ export function AutomationSetup({
         settings let the assistant accept work for you to do; it does not edit
         your website.
       </p>
-      <SetupSubmit>Save automation &amp; continue</SetupSubmit>
+      <SetupSubmit>{saveLabel ?? "Save automation & continue"}</SetupSubmit>
     </SetupForm>
   );
 }

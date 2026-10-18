@@ -1,7 +1,10 @@
+import { after } from "next/server";
+import { runAutomationBatch } from "@/lib/assistant/run-batch";
 import { z } from "zod";
 import { api, checked } from "@/lib/api";
 import { readJson } from "@/lib/body";
 
+export const maxDuration = 60;
 export async function PATCH(
   request: Request,
   context: { params: Promise<{ taskId: string }> },
@@ -22,7 +25,7 @@ export async function PATCH(
       })
       .strict()
       .parse(await readJson(request));
-    return checked(
+    const result = checked(
       await client.rpc("automation_task_status", {
         p_task: id,
         p_status: input.status,
@@ -30,5 +33,7 @@ export async function PATCH(
         p_note: input.note,
       }),
     );
+    after(() => runAutomationBatch(result.project_id));
+    return result;
   });
 }

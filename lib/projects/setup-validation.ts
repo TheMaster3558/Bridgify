@@ -118,6 +118,7 @@ export function policyPayload(form: FormData) {
     max_open_tasks: Number(form.get("max_open_tasks")),
     notifications: "dashboard" as const,
     replies: {
+      progress_updates: form.get("reply_progress_updates") === "on",
       status_questions: form.get("reply_status_questions") !== "off",
       clarifications: form.get("reply_clarifications") !== "off",
       review_acknowledgments: form.get("reply_review_acknowledgments") !== "off",

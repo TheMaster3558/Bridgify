@@ -78,10 +78,11 @@ export const policySchema = z
     max_open_tasks: z.number().int().min(1).max(10),
     notifications: z.literal("dashboard"),
     replies: z.object({
+      progress_updates: z.boolean().default(false),
       status_questions: z.boolean(),
       clarifications: z.boolean(),
       review_acknowledgments: z.boolean(),
-    }).default({ status_questions: true, clarifications: true, review_acknowledgments: true }),
+    }).default({ status_questions: true, clarifications: true, review_acknowledgments: true, progress_updates: false }),
   })
   .refine((v) => v.mode !== "enabled" || v.targets.length > 0, {
     message:

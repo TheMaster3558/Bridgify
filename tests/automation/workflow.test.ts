@@ -876,3 +876,142 @@ test("diagnostics distinguish provider setup from invalid AI output without leak
   );
   assert.ok(!processingErrorLabel("SECRET").includes("SECRET"));
 });
+
+async function ownerCommand(action:string,payload:Record<string,unknown>,key=randomUUID()) {
+ return asOwner(()=>pg.query<{result:{id:string}}>("select automation_owner_command($1,$2,$3,$4) result",[project,action,JSON.stringify({reason:"Owner checked the project",...payload}),key]));
+}
+test("progress updates are transactional, optional and never contain private status notes",async()=>{
+ await changePolicy({replies:{status_questions:true,clarifications:true,review_acknowledgments:true,progress_updates:true}});
+ await message();await processor().once();
+ const t=(await pg.query<{id:string;updated_at:Date}>("select id,updated_at from project_tasks")).rows[0];
+ await asOwner(()=>pg.query("select automation_task_status($1,'blocked',$2,'PRIVATE missing credentials')",[t.id,t.updated_at]));
+ assert.equal(await count("automation_outbox","purpose like 'progress:%'"),1);
+ assert.equal(await count("automation_outbox","text like '%PRIVATE%'"),0);
+ await assert.rejects(asOwner(()=>pg.query("select automation_task_status($1,'done',$2,'')",[t.id,t.updated_at])),/changed/);
+});
+test("queued reply controls reject stale edits and uncertainty requires explicit non-delivery confirmation",async()=>{
+ await message();await processor().once();
+ let o=(await pg.query<{id:string;updated_at:Date}>("select id,updated_at from automation_outbox")).rows[0];
+ await ownerCommand('outbox_edit',{id:o.id,expectedUpdatedAt:o.updated_at,text:'Owner reviewed confirmation'});
+ await assert.rejects(ownerCommand('outbox_cancel',{id:o.id,expectedUpdatedAt:o.updated_at}),/changed/);
+ const delivery=createAutomationDelivery(database,async()=>({state:'unknown'}),instance);await delivery.once();
+ o=(await pg.query<{id:string;updated_at:Date}>("select id,updated_at from automation_outbox")).rows[0];
+ await assert.rejects(ownerCommand('outbox_retry',{id:o.id,expectedUpdatedAt:o.updated_at}),/confirm non-delivery/);
+ await ownerCommand('outbox_retry',{id:o.id,expectedUpdatedAt:o.updated_at,confirmedNotDelivered:true});
+ assert.equal(await count('automation_outbox',"state='queued' and retry_of is not null"),1);
+ assert.equal(await count('automation_outbox',"state='cancelled'"),1);
+});
+test("receipt reconciliation is service-only and rejects an old or mismatched receipt",async()=>{
+ await message();await processor().once();await createAutomationDelivery(database,async()=>({state:'unknown'}),instance).once();
+ const o=(await pg.query<{id:string;text:string;attempt_started_at:Date}>('select * from automation_outbox')).rows[0];
+ await assert.rejects(asOwner(()=>pg.query("select reconcile_automation_reply($1,'receipt',$2,$3,$4,$5)",[o.id,o.text,o.attempt_started_at,instance,chat])),/permission denied/);
+ await assert.rejects(pg.query("select reconcile_automation_reply($1,'receipt','different',$2,$3,$4)",[o.id,o.attempt_started_at,instance,chat]),/does not match/);
+ await pg.query("select reconcile_automation_reply($1,'receipt',$2,$3,$4,$5)",[o.id,o.text,o.attempt_started_at,instance,chat]);
+ assert.equal(await count('automation_outbox',"state='sent' and provider_guid='receipt'"),1);
+});
+test("owner retry archives failed analysis and cannot duplicate committed work",async()=>{
+ await message();const broken=processor(()=>{throw new Error('unavailable');});
+ for(let i=0;i<3;i++){await pg.exec("update automation_jobs set available_at=now()");await broken.once();}
+ const job=(await pg.query<{id:string}>('select id from automation_jobs')).rows[0];
+ const key=randomUUID();await ownerCommand('retry_analysis',{id:job.id},key);await processor().once();
+ await ownerCommand('retry_analysis',{id:job.id},key);
+ await assert.rejects(ownerCommand('retry_analysis',{id:job.id}),/Only unresolved/);
+ assert.equal(await count('project_tasks'),1);assert.equal(await count('automation_revision_uses'),1);
+ assert.equal(await count('audit_events',"action='automation:analysis_archive'"),1);
+});
+test("client cancellation changes the existing task without another task or silent refund",async()=>{
+ await message();await processor().once();
+ const t=(await pg.query<{id:string;updated_at:Date}>('select id,updated_at from project_tasks')).rows[0];
+ await message('Cancel the heading change');await processor(c=>({intents:[intent(c,{intent:'cancellation',taskId:t.id})]})).once();
+ const r=(await pg.query<{id:string;decision_id:string}>("select id,decision_id from automation_requests where state='owner_review'")).rows[0];
+ await assert.rejects(asOwner(()=>pg.query("select resolve_automation_review($1,'approve','','',$2,null)",[r.decision_id,randomUUID()])),/existing task/);
+ await ownerCommand('apply_task_change',{requestId:r.id,taskId:t.id,expectedUpdatedAt:t.updated_at});
+ assert.equal(await count('project_tasks'),1);assert.equal(await count('project_tasks',"status='cancelled'"),1);assert.equal(await count('automation_revision_uses'),1);
+ const original=(await pg.query<{request_id:string}>('select request_id from automation_revision_uses')).rows[0];
+ await ownerCommand('refund_request',{id:original.request_id});
+ assert.equal(await count('automation_revision_refunds'),1);
+});
+test("feedback rounds are explicit batches with idempotent membership, consumption and separate refunds",async()=>{
+ await changePolicy({mode:'review_only',allowance_mode:'manual_rounds'});await message();await processor().once();
+ const r=(await pg.query<{id:string;decision_id:string}>('select id,decision_id from automation_requests')).rows[0];
+ await asOwner(()=>pg.query("select resolve_automation_review($1,'approve','','',$2,null)",[r.decision_id,randomUUID()]));
+ const round=(await ownerCommand('round_open',{})).rows[0].result.id;
+ await assert.rejects(ownerCommand('round_open',{}),/unique/);
+ const key=randomUUID();await ownerCommand('round_add',{id:round,requestId:r.id},key);await ownerCommand('round_add',{id:round,requestId:r.id},key);
+ await ownerCommand('round_close',{id:round});await ownerCommand('round_refund',{id:round});
+ assert.equal(await count('automation_round_members'),1);assert.equal(await count('automation_rounds',"state='closed'"),1);assert.equal(await count('automation_round_refunds'),1);assert.equal(await count('automation_revision_uses'),0);
+});
+test("policy amendments are versioned and preserve usage while refunds explicitly restore allowance",async()=>{
+ await message();await processor().once();
+ await ownerCommand('amend_policy',{expectedVersion:1,policy:{...policy,mode:'review_only'}});
+ assert.equal(await count('policy_versions','version=2'),1);assert.equal(await count('automation_revision_uses'),1);
+ await assert.rejects(ownerCommand('amend_policy',{expectedVersion:1,policy}),/changed/);
+ await assert.rejects(ownerCommand('amend_policy',{expectedVersion:2,policy:{...policy,mode:'review_only',allowance_mode:'manual_rounds'}}),/Accounting mode/);
+});
+test("status lookup retrieves an older matching task outside the last twenty updated tasks",async()=>{
+ await message('Change the unique albatross heading');await processor(c=>({intents:[intent(c,{summary:'Unique albatross heading'})]})).once();
+ await pg.exec("update project_tasks set status='done',updated_at=now()-interval '1 year'");
+ for(let i=0;i<25;i++) await pg.query("insert into project_tasks(project_id,task_code,title,origin) values($1,$2,$3,'manual')",[project,`OTHER-${i}`,`Recent unrelated job ${i}`]);
+ await message('Is the albatross heading finished?');
+ await processor(c=>{const t=c.tasks.find(t=>t.title==='Unique albatross heading');assert.ok(t);return {intents:[intent(c,{intent:'status_question',taskId:t.id})]};}).once();
+ assert.equal(await count('automation_outbox',"text like '%albatross%completed%'"),1);
+});
+
+test("a signed Photon event triggers processing and one reply immediately without a history poll",async()=>{
+ const {createHmac}=await import('node:crypto');
+ const {createSpectrumWebhookDecoder}=await import('../../lib/photon/webhook');
+ const {createWebhookHandler}=await import('../../lib/assistant/webhook-handler');
+ const secret='test-signing-secret';const timestamp=String(Math.floor(Date.now()/1000));
+ const text='Make the heading green';const body=JSON.stringify({event:'messages',space:{id:chat},message:{id:'pushed-provider-message',sender:{id:people.client_sender_id},direction:'inbound',timestamp:new Date().toISOString(),content:{type:'text',text}}});
+ const signature='v0='+createHmac('sha256',secret).update(`v0:${timestamp}:`).update(body).digest('hex');
+ let sends=0;const scheduled:Promise<unknown>[]=[];
+ const handler=createWebhookHandler(()=>({decoder:createSpectrumWebhookDecoder({signingSecret:secret,instanceId:instance}),inbox:createProjectAutomationInbox(database),onCommitted:()=>{
+  scheduled.push((async()=>{await processor().once(project);await createAutomationDelivery(database,async()=>{sends++;return {state:'sent',messageId:'push-response'};},instance).once(project);})());
+ }}));
+ const request=()=>new Request('https://owner.test/api/webhook',{method:'POST',headers:{'x-spectrum-timestamp':timestamp,'x-spectrum-signature':signature},body});
+ assert.equal((await handler(request())).status,200);await Promise.all(scheduled);
+ assert.equal(sends,1);assert.equal(await count('project_tasks'),1);
+ assert.equal((await handler(request())).status,200);await Promise.all(scheduled);assert.equal(sends,1);
+ assert.equal((await handler(new Request('https://owner.test/api/webhook',{method:'POST',body}))).status,401);
+ assert.equal(scheduled.length,2);
+});
+test("an owner retry that fails again re-opens its preserved review",async()=>{
+ await message();const broken=processor(()=>{throw new Error('failure');});
+ for(let i=0;i<3;i++){await pg.exec("update automation_jobs set available_at=now()");await broken.once();}
+ await createAutomationDelivery(database,async()=>({state:'sent',messageId:'initial-review-ack'}),instance).once();
+ const j=(await pg.query<{id:string}>('select id from automation_jobs')).rows[0];await ownerCommand('retry_analysis',{id:j.id});
+ for(let i=0;i<3;i++){await pg.exec("update automation_jobs set available_at=now()");await broken.once();}
+ assert.equal(await count('owner_decisions',"status='open' and automation_request_id is not null"),1);
+ assert.equal(await count('automation_outbox'),1);
+});
+test("a reviewed correction updates the existing title and value with stale-write protection",async()=>{
+ await message();await processor().once();const t=(await pg.query<{id:string;updated_at:Date}>('select id,updated_at from project_tasks')).rows[0];
+ await message('Use blue instead of green');await processor(c=>({intents:[intent(c,{intent:'correction',taskId:t.id,payload:{color:'blue',locator:null,replacementText:null}})]})).once();
+ const r=(await pg.query<{id:string}>("select id from automation_requests where state='owner_review'")).rows[0];
+ await ownerCommand('apply_task_change',{requestId:r.id,taskId:t.id,expectedUpdatedAt:t.updated_at,title:'Make heading blue',value:'blue'});
+ assert.equal(await count('project_tasks'),1);assert.equal(await count('project_tasks',"value='blue' and title='Make heading blue'"),1);assert.equal(await count('automation_revision_uses'),1);
+ await assert.rejects(ownerCommand('apply_task_change',{requestId:r.id,taskId:t.id,expectedUpdatedAt:t.updated_at,title:'Stale',value:'red'}),/unavailable/);
+});
+test("explicit refunds restore automatic allowance without deleting ledger history",async()=>{
+ await changePolicy({allowance:1});await message();await processor().once();
+ const r=(await pg.query<{request_id:string}>('select request_id from automation_revision_uses')).rows[0];
+ await ownerCommand('refund_request',{id:r.request_id});await message('Make the heading blue');await processor().once();
+ assert.equal(await count('project_tasks'),2);assert.equal(await count('automation_revision_uses'),2);assert.equal(await count('automation_revision_refunds'),1);
+});
+test("new owner commands and accounting records remain private to the project owner",async()=>{
+ await message();await processor().once();
+ await pg.query("select set_config('request.jwt.claim.sub',$1,false)",[randomUUID()]);await pg.exec('set role authenticated');
+ try {await assert.rejects(pg.query("select automation_owner_command($1,'round_open',$2,$3)",[project,JSON.stringify({reason:'Unauthorized account'}),randomUUID()]));
+ assert.equal(await count('automation_runtime_health'),0);assert.equal(await count('automation_revision_refunds'),0);
+ await assert.rejects(pg.query('select automation_accounting($1)',[project]));
+ }finally{await pg.exec('reset role');}
+});
+test("project deletion cascades new round accounting and runtime records",async()=>{
+ await changePolicy({mode:'review_only',allowance_mode:'manual_rounds'});await message();await processor().once();
+ const r=(await pg.query<{id:string;decision_id:string}>('select id,decision_id from automation_requests')).rows[0];
+ await asOwner(()=>pg.query("select resolve_automation_review($1,'approve','','',$2,null)",[r.decision_id,randomUUID()]));
+ const round=(await ownerCommand('round_open',{})).rows[0].result.id;await ownerCommand('round_add',{id:round,requestId:r.id});await ownerCommand('round_close',{id:round});await ownerCommand('round_refund',{id:round});
+ await pg.query('insert into automation_runtime_health(project_id) values($1)',[project]);
+ await asOwner(()=>pg.query("select delete_project($1,'Website')",[project]));
+ for(const table of ['projects','automation_requests','automation_outbox','automation_rounds','automation_round_members','automation_round_refunds','automation_runtime_health'])assert.equal(await count(table),0);
+});

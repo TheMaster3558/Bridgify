@@ -29,14 +29,15 @@ export async function readWebhookBody(request: Request): Promise<Uint8Array> {
   return Buffer.concat(chunks, size);
 }
 
-export function createWebhookHandler(dependencies: () => { decoder: PhotonWebhookDecoder; inbox: InboxWriter }) {
+export function createWebhookHandler(dependencies: () => { decoder: PhotonWebhookDecoder; inbox: InboxWriter; onCommitted?: (eventId: string) => void }) {
   return async function POST(request: Request): Promise<Response> {
     const requestId = randomUUID();
     const headers = { "Cache-Control": "no-store" };
     try {
-      const { decoder, inbox } = dependencies();
+      const { decoder, inbox, onCommitted } = dependencies();
       const rawBody = await readWebhookBody(request);
       const receipt = await ingestPhotonWebhook(rawBody, request.headers, { decoder, inbox });
+      onCommitted?.(receipt.inboxEventId);
       // Nothing about a project, sender or private evidence is returned to Photon.
       return Response.json({ data: { received: true, duplicate: receipt.duplicate }, requestId }, { headers });
     } catch (error) {

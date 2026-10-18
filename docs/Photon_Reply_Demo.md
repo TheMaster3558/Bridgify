@@ -19,7 +19,7 @@ AUTOMATION_WORKER_ENABLED=true npm run automation:worker
 npm run photon:demo
 ```
 
-The worker imports authenticated Photon history, interprets client requests,
+Production uses signed Photon webhooks for immediate processing. This local compatibility worker processes saved jobs; history import is used only when explicitly configured with AUTOMATION_INTAKE=history. It interprets client requests,
 saves tasks or owner review items, and delivers persisted replies. Manual approval
 settings remain manual approval. Outbound echoes cannot authorize new work.
 Status questions can report pending review, missing details, queued work, progress

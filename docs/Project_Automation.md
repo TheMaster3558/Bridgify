@@ -1,3 +1,5 @@
+> Production uses immediate signed Photon delivery. See [Automation Deployment](Automation_Deployment.md) for the current Vercel Hobby setup and owner controls. The polling commands below are explicit local/recovery tools.
+
 # Project automation
 
 The automation worker uses the same `projects`, `scope_versions`, `chat_bindings`,
@@ -62,8 +64,7 @@ must equal the Spectrum project used by the sender. Unsigned payloads are reject
   from the task detail panel. Private notes, decision explanations and proposal
   terms are excluded from model context and status replies.
 - Each accepted individual request uses one revision in an immutable accounting
-  ledger. Task cancellation does not silently refund it. Contractual rounds remain
-  under manual accounting. Owner overrides are explicit and audited.
+  ledger. Task cancellation does not silently refund it. Contractual rounds use owner-managed membership, consumption and refund records. Owner overrides are explicit and audited.
 - Owners can accept, decline, dismiss or delete review items. Approval accepts an
   editable task title and an optional private decision reason, saves a real task, accounts
   for the revision and queues a confirmation in the same transaction. An optional

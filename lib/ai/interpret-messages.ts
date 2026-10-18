@@ -26,11 +26,11 @@ export const interpretationContextSchema = z.object({
     id, revision: version, summary: z.string().max(1000),
   }).strict()).max(10),
   tasks: z.array(z.object({
-    id, title: z.string().max(1000),
+    id, code:z.string().max(80).optional(), title: z.string().max(1000),
     status: z.enum(["ready", "in_progress", "blocked", "done", "cancelled"]),
   }).strict()).max(20),
   requestStatuses: z.array(z.object({
-    id, title: z.string().max(1000),
+    id, code:z.string().max(80).optional(), title: z.string().max(1000),
     state: z.enum(["awaiting_details", "owner_review", "accepted", "closed"]),
     taskStatus: z.enum(["ready", "in_progress", "blocked", "done", "cancelled"]).nullable(),
   }).strict()).max(20).optional(),
@@ -59,7 +59,7 @@ export const interpretationSchema = z.object({
   }).strict()).max(20),
 }).strict();
 export type Interpretation = z.infer<typeof interpretationSchema>;
-export const INTERPRET_PROMPT_VERSION = "interpret-v3";
+export const INTERPRET_PROMPT_VERSION = "interpret-v4";
 
 export function validateInterpretation(raw: unknown, context: InterpretationContext): Interpretation {
   const result = interpretationSchema.parse(raw);
@@ -124,6 +124,8 @@ contains a request or status question, interpret that part; do not repeat earlie
 For status questions select a task only when uniquely identifiable, otherwise leave taskId null.
 If no task exists, match statusRequestId from requestStatuses so the client can be told
 their request is awaiting approval or details. Never treat waiting for approval as accepted work.
+Task and request lists are relevance-ranked across project history, not only recent work.
+For corrections and cancellations select taskId only when uniquely identifiable; otherwise flag ambiguous.
 Corrections and cancellations must be explicit intents. Flag contradictions and requested new dates.
 Include missing target, locator, replacement_text or color fields; do not invent their values.
 Do not fetch URLs, run code or claim website work has been performed.`;

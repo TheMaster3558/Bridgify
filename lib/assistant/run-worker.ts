@@ -14,7 +14,7 @@ export async function runAutomationWorker(options: { enabled?: boolean } = {}) {
   const database = getDatabase();
   const interpreter = createConfiguredMessageInterpreter();
   const { projectId } = readSpectrumCredentials();
-  const intake = process.env.AUTOMATION_INTAKE ?? "history";
+  const intake = process.env.AUTOMATION_INTAKE ?? "webhook";
   if (!["history", "webhook"].includes(intake))
     throw new Error("invalid_automation_intake");
   if (

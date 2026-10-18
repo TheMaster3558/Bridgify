@@ -24,6 +24,7 @@ async function main() {
         "202610170011_automation_review_recovery.sql",
         "202610170012_optional_review_notes.sql",
         "202610180014_owner_only.sql",
+        "202610180015_automation_lifecycle.sql",
       ]) {
         const sql = await readFile(`supabase/migrations/${name}`, "utf8");
         const checksum = createHash("sha256").update(sql).digest("hex");

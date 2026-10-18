@@ -1,28 +1,26 @@
-# Remaining automation work (not implemented in this change)
+# Automation implementation status
 
-- **Proactive progress messages:** optionally queue client updates when the owner
-  starts, blocks, completes or cancels a task. Current status replies are on demand;
-  acceptance and owner approval already queue confirmations.
-- **Reply outbox controls and reconciliation:** let the owner edit/cancel queued
-  messages and reconcile uncertain sends against actual provider receipts before
-  explicitly retrying. Delivery failures currently go to Needs Attention.
-- **Reprocess action:** offer an audited retry of a failed interpretation with a
-  fresh snapshot and deduplication against the existing review/task. The current
-  recovery path is owner approval of the preserved source, not automatic replay.
-- **Corrections and cancellation:** safely apply approved client corrections or
-  cancellations to an existing task, rather than treating every approved change
-  as a new task; define revision refund rules explicitly.
-- **Revision rounds:** add an owner-managed round ledger and clear reservation,
-  consumption and refund rules. Automatic acceptance supports individual requests;
-  rounds stay under manual accounting.
-- **Older request lookup:** search beyond the latest 20 tasks and request summaries
-  when answering a client status question, without sending full history to Gemini.
-- **Policy amendments:** allow the owner to change automation permissions after
-  activation with version checks and an explicit scope/policy amendment. Activated
-  setup currently remains immutable; this fix preserves manual approval settings.
-- **Operational hosting:** deploy the worker under a persistent process supervisor
-  with health checks and owner-visible availability/quota alerts. Running a local
-  command still requires keeping that process alive.
+The previously listed automation items are implemented in the owner-only workflow:
 
-The assistant coordinates work; actually editing a website remains the owner's
-responsibility and is not a missing promise of this facilitator.
+| Item | Implementation |
+|---|---|
+| Immediate inbound processing | Signed Photon webhook → durable event/job → immediate processing and outbox delivery |
+| Started/blocked/completed/cancelled updates | Optional saved `progress_updates` preference; transactional client-safe status messages |
+| Queued reply editing/cancellation | Version-checked owner commands; submitted messages cannot be edited |
+| Unknown delivery reconciliation/retry | Actual provider receipt lookup and matching; explicit non-delivery confirmation before a new audited attempt |
+| Failed-analysis retry | Eligible unresolved failures only, prior attempt archived, bounded owner retries, no replay of committed work |
+| Client corrections/cancellations | Owner selects an existing open task; version check and audit; no duplicate task or silent refund |
+| Revision rounds/refunds | One open round, accepted request membership, close/consume, separate immutable individual/round refunds |
+| Older status lookup | Project-wide relevance search supplies bounded task/request matches, including older work and request/task codes |
+| Activated policy changes | Expected-version owner amendment, appended policy version, preserved usage and unchanged commercial scope |
+| Hosted operation and monitoring | Vercel bounded event-triggered runs, authenticated Supabase recovery schedule, real health/backlog/errors |
+
+Production activation remains an operator step. Follow
+[Automation Deployment](Automation_Deployment.md) for **bridgify-two.vercel.app**.
+The operator must deploy the code, set private Vercel variables, register Photon's
+webhook and enable the recovery callback. No hosted availability is claimed until
+those steps and a real consenting-client delivery check succeed.
+
+The website is for owners only. Clients use iMessage; historical website
+invitations and shared proposal access are retired. Actual website editing and
+full commercial proposal authoring are outside routine request automation.

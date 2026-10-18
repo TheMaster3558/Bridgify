@@ -104,8 +104,9 @@ recipient authorization failures are distinct from uncertain sends.
 
 Deployment uses Vercel authenticated bounded automation batches with durable
 Postgres leases and health records, not an infinite in-function polling process.
-Cron frequency must match the Vercel plan. Signed webhook intake can persist new
-messages; scheduled history import recovers downtime. Health shows last success,
+Signed Photon webhooks persist messages and start processing immediately. Supabase
+Cron resumes saved work on Vercel Hobby; normal delivery never waits for this
+scheduler. Explicit one-time history import recovers deployment gaps. Health shows last success,
 staleness, dependency failures and backlog. Overlapping invocations cannot apply
 the same effect twice. No fake health, messages, tasks or seed customer records.
 
@@ -113,3 +114,5 @@ Every owner operation must be reachable from the UI, enforced by the backend,
 transactional and audited. Test migrations on a clean database, tenant isolation,
 stale writes, duplicate commands, ambiguous receipts, model failure, retries,
 policy changes and accounting. Verify owner browser flows and retired client URLs.
+
+Deployment: [operator steps for Vercel Hobby](Automation_Deployment.md).
