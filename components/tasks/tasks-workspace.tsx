@@ -1,23 +1,80 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { AlertCircle, CalendarDays, LayoutGrid, List, X } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import {
+  AlertCircle,
+  ArrowUpRight,
+  Check,
+  CircleDot,
+  ClipboardList,
+  Eye,
+  History,
+  LayoutGrid,
+  List,
+  Lock,
+  MessageCircle,
+  Minus,
+  MoreVertical,
+  Plus,
+  Search,
+} from "lucide-react";
+import { Checkbox, DropdownMenu } from "radix-ui";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  DotChip,
+  InitialsAvatar,
+  PanelClose,
+  PanelSection,
+  Pill,
+  SortHeader,
+  filterActive,
+  filterButton,
+  filterIdle,
+  headCell,
+  iconButton,
+  menuContent,
+  menuItem,
+  panelAside,
+  panelHeader,
+  tableCard,
+  tableHead,
+  tableRow,
+  tableRowSelected,
+  type PillTone,
+} from "@/components/dashboard/table-ui";
+import {
+  settingsButton,
+  settingsPrimaryButton,
+} from "@/components/settings/settings-ui";
+import { clientKey } from "@/lib/clients/photos";
 import type { DashboardTask } from "@/lib/dashboard/work-management-types";
 import { cn } from "@/lib/utils";
 import { TaskStatusActions } from "./task-status-actions";
 
+type Task = DashboardTask;
+type TaskStatus = Exclude<Task["status"], "cancelled">;
+type SortKey = "title" | "priority" | "date" | "updated";
+
 function taskCriteriaLabel(value: string) {
   try {
     const payload = JSON.parse(value);
-    const instructions = payload?.instructions ?? payload?.ownerReviewedCorrection?.payload?.instructions;
+    const instructions =
+      payload?.instructions ??
+      payload?.ownerReviewedCorrection?.payload?.instructions;
     return typeof instructions === "string" ? instructions : value;
-  } catch { return value; }
+  } catch {
+    return value;
+  }
 }
 
-type TaskStatus = Exclude<DashboardTask["status"], "cancelled">;
 const statusFilters: { id: "all" | TaskStatus; label: string }[] = [
   { id: "all", label: "All" },
   { id: "ready", label: "Ready" },
@@ -25,136 +82,1013 @@ const statusFilters: { id: "all" | TaskStatus; label: string }[] = [
   { id: "blocked", label: "Blocked" },
   { id: "done", label: "Done" },
 ];
-const statusLabels: Record<DashboardTask["status"], string> = {
-  ready: "Ready", in_progress: "In progress", blocked: "Blocked", done: "Done", cancelled: "Cancelled",
+
+const statusLabels: Record<Task["status"], string> = {
+  ready: "Ready",
+  in_progress: "In progress",
+  blocked: "Blocked",
+  done: "Done",
+  cancelled: "Cancelled",
 };
-const statusClass: Record<DashboardTask["status"], string> = {
-  ready: "border-info/20 bg-info-soft text-info",
-  in_progress: "border-accent/20 bg-accent text-accent-foreground",
-  blocked: "border-warn/20 bg-warn-soft text-warn",
-  done: "border-ok/20 bg-ok-soft text-ok",
-  cancelled: "border-border bg-muted text-muted-foreground",
+
+const statusDot: Record<Task["status"], string> = {
+  ready: "bg-blue-500",
+  in_progress: "bg-violet-500",
+  blocked: "bg-rose-500",
+  done: "bg-lime-500",
+  cancelled: "bg-neutral-400",
 };
+
+const priorityTone: Record<Task["priority"], PillTone> = {
+  high: "red",
+  normal: "blue",
+  low: "gray",
+};
+
+const priorityRank: Record<Task["priority"], number> = {
+  high: 0,
+  normal: 1,
+  low: 2,
+};
+
+const originTone: Record<Task["origin"], PillTone> = {
+  auto: "cyan",
+  agreement: "green",
+  proposal: "blue",
+  manual: "gray",
+};
+
+// Bulk changes are limited to statuses that don't require an internal note.
+const bulkStatuses: { id: "in_progress" | "done"; label: string }[] = [
+  { id: "in_progress", label: "Mark in progress" },
+  { id: "done", label: "Mark done" },
+];
 
 function displayDate(value: string | null) {
   if (!value) return null;
-  return new Date(`${value.slice(0, 10)}T00:00:00`).toLocaleDateString(undefined, {
-    year: "numeric", month: "short", day: "numeric",
-  });
+  return new Date(`${value.slice(0, 10)}T00:00:00`).toLocaleDateString(
+    "en-US",
+    { year: "numeric", month: "short", day: "2-digit" },
+  );
 }
 
-export function TasksWorkspace({ tasks }: { tasks: DashboardTask[] }) {
-  const [filter, setFilter] = useState<(typeof statusFilters)[number]["id"]>("all");
-  const [view, setView] = useState<"list" | "board">("list");
-  const [project, setProject] = useState("all");
-  const [assignee, setAssignee] = useState("all");
-  const [selectedTask, setSelectedTask] = useState<DashboardTask | null>(null);
-  const projects = useMemo(() => [...new Map(tasks.map((task) => [task.project_id, task.project_name])).entries()], [tasks]);
-  const assignees = useMemo(() => [...new Set(tasks.map((task) => task.assignee).filter(Boolean))], [tasks]);
-  const visibleTasks = useMemo(
-    () => tasks.filter((task) =>
-      (filter === "all" || task.status === filter) &&
-      (project === "all" || task.project_id === project) &&
-      (assignee === "all" || task.assignee === assignee),
-    ),
-    [tasks, filter, project, assignee],
+function StatusChip({ status }: { status: Task["status"] }) {
+  return <DotChip dot={statusDot[status]}>{statusLabels[status]}</DotChip>;
+}
+
+function PriorityPill({ priority }: { priority: Task["priority"] }) {
+  return (
+    <Pill tone={priorityTone[priority]}>
+      <span className="capitalize">{priority}</span>
+    </Pill>
   );
+}
+
+function SelectBox({
+  checked,
+  label,
+  onChange,
+}: {
+  checked: boolean | "indeterminate";
+  label: string;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <Checkbox.Root
+      checked={checked}
+      aria-label={label}
+      onCheckedChange={(value) => onChange(value === true)}
+      onClick={(event) => event.stopPropagation()}
+      className="grid size-[18px] shrink-0 place-items-center rounded-[5px] border border-neutral-300 bg-card text-white outline-none transition-colors hover:border-neutral-400 focus-visible:ring-[3px] focus-visible:ring-sidebar-ring/40 data-[state=checked]:border-[#2563eb] data-[state=checked]:bg-[#2563eb] data-[state=indeterminate]:border-[#2563eb] data-[state=indeterminate]:bg-[#2563eb] dark:border-neutral-600 dark:bg-background"
+    >
+      <Checkbox.Indicator>
+        {checked === "indeterminate" ? (
+          <Minus aria-hidden className="size-3.5" strokeWidth={3} />
+        ) : (
+          <Check aria-hidden className="size-3.5" strokeWidth={3} />
+        )}
+      </Checkbox.Indicator>
+    </Checkbox.Root>
+  );
+}
+
+async function patchStatus(task: Task, status: Task["status"]) {
+  const response = await fetch(`/api/v1/tasks/${task.id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      status,
+      note: "",
+      expectedUpdatedAt: task.updated_at,
+    }),
+  });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok)
+    throw new Error(result.error?.message ?? "Task could not be saved.");
+  return { ...task, ...result.data, status } as Task;
+}
+
+function TaskDetail({
+  task,
+  photo,
+  onClose,
+  onSaved,
+}: {
+  task: Task;
+  photo?: string | null;
+  onClose: () => void;
+  onSaved: (task: Task) => void;
+}) {
+  const details = [
+    task.operation && {
+      label: "Operation",
+      value:
+        task.operation === "project_change" ? "Project change" : task.operation,
+      mono: true,
+    },
+    task.target_id && { label: "Target", value: task.target_id, mono: true },
+    {
+      label: task.origin === "auto" ? "Value" : "Deliverable",
+      value: task.value ?? task.title,
+    },
+    task.acceptance_criteria && {
+      label: "Acceptance criteria",
+      value: taskCriteriaLabel(task.acceptance_criteria),
+    },
+    {
+      label: "Agreed date",
+      value: displayDate(task.agreed_due_date) ?? "No date agreed",
+    },
+  ].filter(Boolean) as { label: string; value: string; mono?: boolean }[];
+  const provenance = [
+    task.request_code && { label: "Request", value: task.request_code },
+    task.authorized_by && { label: "Authorized by", value: task.authorized_by },
+    task.revision_unit && { label: "Revision unit", value: task.revision_unit },
+  ].filter(Boolean) as { label: string; value: string }[];
 
   return (
     <>
-      <main className="mx-auto flex w-full max-w-[1280px] flex-col gap-5 p-5 md:p-6">
+      <header className={panelHeader}>
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-1.5 font-mono text-[11px] text-neutral-500 dark:text-neutral-400">
+            <span className="rounded-md bg-sidebar px-1.5 py-0.5 dark:bg-sidebar-accent">
+              {task.task_code}
+            </span>
+            {task.request_code && (
+              <span className="rounded-md bg-sidebar px-1.5 py-0.5 dark:bg-sidebar-accent">
+                {task.request_code}
+              </span>
+            )}
+          </div>
+          <PanelClose label="Close task details" onClick={onClose} />
+        </div>
+        <h2
+          id="task-detail-title"
+          className="text-xl leading-snug font-semibold tracking-tight break-words"
+        >
+          {task.title}
+        </h2>
+        <div className="flex flex-wrap items-center gap-2">
+          <StatusChip status={task.status} />
+          <PriorityPill priority={task.priority} />
+          <span className="text-sm text-neutral-500 dark:text-neutral-400">
+            {task.assignee || "Unassigned"}
+          </span>
+        </div>
+      </header>
+
+      <div className="grid gap-7 px-6 py-6">
+        <Link
+          href={`/app/projects/${task.project_id}/work`}
+          className="group flex items-center gap-3 rounded-2xl bg-sidebar p-3 outline-none hover:bg-sidebar-accent focus-visible:ring-[3px] focus-visible:ring-sidebar-ring/40"
+        >
+          <InitialsAvatar name={task.client_name} size="md" src={photo} />
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-[15px] font-medium">
+              {task.client_name}
+            </span>
+            <span className="block truncate text-sm text-neutral-500 dark:text-neutral-400">
+              {task.project_name} · Work
+            </span>
+          </span>
+          <ArrowUpRight
+            aria-hidden
+            className="size-4 text-neutral-400 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5"
+          />
+        </Link>
+
+        {task.status === "blocked" && task.blocked_reason && (
+          <div className="flex gap-3 rounded-2xl bg-rose-50 p-4 ring-1 ring-rose-200 ring-inset dark:bg-rose-500/10 dark:ring-rose-500/25">
+            <span
+              aria-hidden
+              className="mt-1.5 size-2 shrink-0 rounded-full bg-rose-500"
+            />
+            <p className="text-[15px] text-rose-900 dark:text-rose-100">
+              <span className="font-medium">Blocked:</span>{" "}
+              {task.blocked_reason}
+            </p>
+          </div>
+        )}
+
+        <PanelSection icon={ClipboardList} title="Requested change">
+          <dl className="divide-y divide-card overflow-hidden rounded-2xl bg-sidebar dark:divide-background">
+            {details.map((item) => (
+              <div key={item.label} className="grid gap-0.5 px-4 py-3">
+                <dt className="text-xs text-neutral-500 dark:text-neutral-400">
+                  {item.label}
+                </dt>
+                <dd
+                  className={cn(
+                    "text-[15px] break-words",
+                    item.mono && "font-mono text-xs",
+                  )}
+                >
+                  {item.value}
+                </dd>
+              </div>
+            ))}
+          </dl>
+        </PanelSection>
+
+        <PanelSection icon={MessageCircle} title="Why this task exists">
+          {task.source_text ? (
+            <div className="flex items-end gap-2.5">
+              <InitialsAvatar name={task.client_name} src={photo} />
+              <div className="min-w-0">
+                <div className="w-fit max-w-full rounded-[20px] rounded-bl-md bg-sidebar-accent px-4 py-2.5 text-[15px] leading-relaxed whitespace-pre-wrap">
+                  {task.source_text}
+                </div>
+                <p className="mt-1 pl-1 text-xs text-neutral-500 dark:text-neutral-400">
+                  {task.source_meta ?? task.origin_text}
+                </p>
+              </div>
+            </div>
+          ) : (
+            <p className="text-sm text-neutral-500 dark:text-neutral-400">
+              No linked source message is recorded.
+            </p>
+          )}
+          <div className="flex flex-wrap items-center gap-2">
+            <Pill tone={originTone[task.origin]}>{task.origin_text}</Pill>
+            {provenance.map((item) => (
+              <span
+                key={item.label}
+                className="inline-flex items-center gap-1 rounded-md bg-sidebar px-2 py-0.5 text-sm dark:bg-sidebar-accent"
+              >
+                <span className="text-neutral-500 dark:text-neutral-400">
+                  {item.label}
+                </span>
+                {item.value}
+              </span>
+            ))}
+          </div>
+        </PanelSection>
+
+        <div className="flex gap-3 rounded-2xl bg-yellow-50 p-4 ring-1 ring-yellow-200 ring-inset dark:bg-yellow-400/10 dark:ring-yellow-400/25">
+          <Lock
+            aria-hidden
+            className="mt-0.5 size-4 shrink-0 text-yellow-700 dark:text-yellow-300"
+          />
+          <div>
+            <p className="text-xs font-semibold tracking-wide text-yellow-800 uppercase dark:text-yellow-200">
+              Internal notes · owner only
+            </p>
+            <p className="mt-1 text-[15px] text-yellow-950 dark:text-yellow-50">
+              {task.internal_note ?? "No internal note recorded."}
+            </p>
+          </div>
+        </div>
+
+        <PanelSection icon={History} title="History">
+          <ol className="relative grid gap-3 pl-5 before:absolute before:top-1.5 before:bottom-1.5 before:left-[5px] before:w-px before:bg-sidebar-border">
+            {[
+              `Updated ${new Date(task.updated_at).toLocaleString()}`,
+              ...task.history,
+            ].map((item, index) => (
+              <li
+                key={`${task.id}-history-${index}`}
+                className="relative text-sm text-neutral-600 dark:text-neutral-300"
+              >
+                <span
+                  aria-hidden
+                  className={cn(
+                    "absolute top-1.5 -left-5 size-[11px] rounded-full border-2 border-card dark:border-background",
+                    index === 0
+                      ? "bg-blue-500"
+                      : "bg-neutral-300 dark:bg-neutral-600",
+                  )}
+                />
+                {item}
+              </li>
+            ))}
+          </ol>
+        </PanelSection>
+      </div>
+
+      <TaskStatusActions key={task.id} task={task} onSaved={onSaved} />
+    </>
+  );
+}
+
+export function TasksWorkspace({
+  tasks,
+  clientPhotos = {},
+}: {
+  tasks: Task[];
+  clientPhotos?: Record<string, string>;
+}) {
+  const router = useRouter();
+  const [filter, setFilter] =
+    useState<(typeof statusFilters)[number]["id"]>("all");
+  const [view, setView] = useState<"list" | "board">("list");
+  const [project, setProject] = useState("all");
+  const [assignee, setAssignee] = useState("all");
+  const [query, setQuery] = useState("");
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [checkedIds, setCheckedIds] = useState<string[]>([]);
+  const [saved, setSaved] = useState<Record<string, Task>>({});
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkError, setBulkError] = useState("");
+  const [sort, setSort] = useState<{ key: SortKey; dir: "asc" | "desc" }>({
+    key: "updated",
+    dir: "desc",
+  });
+
+  const allTasks = useMemo(
+    () => tasks.map((task) => saved[task.id] ?? task),
+    [tasks, saved],
+  );
+  const projects = useMemo(
+    () => [
+      ...new Map(
+        allTasks.map((task) => [task.project_id, task.project_name]),
+      ).entries(),
+    ],
+    [allTasks],
+  );
+  const assignees = useMemo(
+    () => [...new Set(allTasks.map((task) => task.assignee).filter(Boolean))],
+    [allTasks],
+  );
+  const counts = useMemo(() => {
+    const result: Record<string, number> = { all: allTasks.length };
+    for (const task of allTasks)
+      result[task.status] = (result[task.status] ?? 0) + 1;
+    return result;
+  }, [allTasks]);
+  const scoped = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    return allTasks.filter(
+      (task) =>
+        (project === "all" || task.project_id === project) &&
+        (assignee === "all" || task.assignee === assignee) &&
+        (!needle ||
+          task.title.toLowerCase().includes(needle) ||
+          task.task_code.toLowerCase().includes(needle)),
+    );
+  }, [allTasks, project, assignee, query]);
+  const visibleTasks = useMemo(() => {
+    const direction = sort.dir === "asc" ? 1 : -1;
+    return scoped
+      .filter((task) => filter === "all" || task.status === filter)
+      .sort((a, b) => {
+        if (sort.key === "title")
+          return a.title.localeCompare(b.title) * direction;
+        if (sort.key === "priority")
+          return (
+            (priorityRank[a.priority] - priorityRank[b.priority]) * direction
+          );
+        if (sort.key === "date")
+          return (
+            (a.agreed_due_date || "9999").localeCompare(
+              b.agreed_due_date || "9999",
+            ) * direction
+          );
+        return a.updated_at.localeCompare(b.updated_at) * direction;
+      });
+  }, [scoped, filter, sort]);
+  const selected = allTasks.find((task) => task.id === selectedId);
+  const checkedVisible = visibleTasks.filter((task) =>
+    checkedIds.includes(task.id),
+  );
+  const allChecked: boolean | "indeterminate" =
+    checkedVisible.length === 0
+      ? false
+      : checkedVisible.length === visibleTasks.length
+        ? true
+        : "indeterminate";
+  const photoFor = (name: string) => clientPhotos[clientKey(name)];
+
+  useEffect(() => {
+    if (!selected) return;
+    function onKeyDown(event: KeyboardEvent) {
+      const target = event.target as Element | null;
+      if (
+        event.key === "Escape" &&
+        !target?.closest?.('[role="dialog"],[role="listbox"],[role="menu"]')
+      )
+        setSelectedId(null);
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [selected]);
+
+  function onSort(key: SortKey) {
+    setSort((current) =>
+      current.key === key
+        ? { key, dir: current.dir === "asc" ? "desc" : "asc" }
+        : { key, dir: key === "updated" ? "desc" : "asc" },
+    );
+  }
+
+  function remember(task: Task) {
+    setSaved((current) => ({ ...current, [task.id]: task }));
+  }
+
+  async function bulkUpdate(status: "in_progress" | "done") {
+    const targets = checkedVisible.filter((task) => task.status !== status);
+    if (!targets.length) return;
+    setBulkBusy(true);
+    setBulkError("");
+    const results = await Promise.allSettled(
+      targets.map((task) => patchStatus(task, status)),
+    );
+    const updated = results.flatMap((result) =>
+      result.status === "fulfilled" ? [result.value] : [],
+    );
+    setSaved((current) => ({
+      ...current,
+      ...Object.fromEntries(updated.map((task) => [task.id, task])),
+    }));
+    const failed = targets.filter(
+      (_, index) => results[index].status === "rejected",
+    );
+    setCheckedIds(failed.map((task) => task.id));
+    if (failed.length)
+      setBulkError(
+        `${failed.length} of ${targets.length} tasks could not be updated. They may have changed; refresh and try again.`,
+      );
+    setBulkBusy(false);
+    router.refresh();
+  }
+
+  const selectTrigger =
+    "h-9 w-[170px] rounded-full border-0 bg-sidebar-accent px-3.5 text-sm font-medium shadow-none";
+
+  return (
+    <main
+      className={cn(
+        "mx-auto grid w-full max-w-[1280px] items-start gap-5 p-5 md:p-6",
+        selected &&
+          "xl:max-w-[1640px] xl:grid-cols-[minmax(0,1fr)_minmax(400px,460px)]",
+      )}
+    >
+      <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-5">
         <header className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h1 className="font-display text-2xl font-semibold">Actionable Tasks</h1>
-            <p className="mt-1 text-sm text-muted-foreground">Confirmed work across projects. Same records as each project’s Work tab.</p>
+            <h1 className="font-display text-2xl font-semibold">
+              Actionable Tasks
+            </h1>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Confirmed work across projects. Same records as each project’s
+              Work tab.
+            </p>
           </div>
-          <Badge variant="outline" className="border-info/20 bg-info-soft text-info">Database records · {tasks.length}</Badge>
-        </header>
-
-        <section aria-label="Task filters and view options">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex flex-wrap gap-1 rounded-full border bg-card p-1" aria-label="Filter by status">
-              {statusFilters.map((item) => (
-                <button key={item.id} type="button" aria-pressed={filter === item.id} onClick={() => setFilter(item.id)}
-                  className={cn("rounded-full px-3 py-1.5 text-sm font-medium transition-colors", filter === item.id ? "bg-foreground text-background" : "text-muted-foreground hover:text-foreground")}>
-                  {item.label}
+          <div className="flex items-center gap-2">
+            <div
+              role="group"
+              aria-label="Choose task view"
+              className="flex items-center gap-1 rounded-full bg-sidebar-accent p-1"
+            >
+              {(
+                [
+                  ["list", "List view", List],
+                  ["board", "Board view", LayoutGrid],
+                ] as const
+              ).map(([id, label, Icon]) => (
+                <button
+                  key={id}
+                  type="button"
+                  aria-label={label}
+                  aria-pressed={view === id}
+                  onClick={() => setView(id)}
+                  className={cn(
+                    "grid size-7 place-items-center rounded-full text-neutral-500 outline-none transition-colors hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-sidebar-ring/40 dark:text-neutral-400",
+                    view === id &&
+                      "bg-card text-foreground shadow-sm dark:bg-neutral-700 dark:text-white",
+                  )}
+                >
+                  <Icon aria-hidden className="size-4" />
                 </button>
               ))}
             </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <Select value={project} onValueChange={setProject}>
-                <SelectTrigger aria-label="Project filter" className="w-[170px] bg-card"><SelectValue placeholder="All projects" /></SelectTrigger>
-                <SelectContent><SelectItem value="all">All projects</SelectItem>{projects.map(([id, name]) => <SelectItem key={id} value={id}>{name}</SelectItem>)}</SelectContent>
-              </Select>
-              <Select value={assignee} onValueChange={setAssignee}>
-                <SelectTrigger aria-label="Assignee filter" className="w-[150px] bg-card"><SelectValue placeholder="Any assignee" /></SelectTrigger>
-                <SelectContent><SelectItem value="all">Any assignee</SelectItem>{assignees.map((name) => <SelectItem key={name} value={name}>{name}</SelectItem>)}</SelectContent>
-              </Select>
-              <div className="inline-flex rounded-md border bg-card p-0.5" aria-label="Choose task view">
-                <Button type="button" variant={view === "list" ? "secondary" : "ghost"} size="icon-sm" aria-label="List view" aria-pressed={view === "list"} onClick={() => setView("list")}><List aria-hidden="true" /></Button>
-                <Button type="button" variant={view === "board" ? "secondary" : "ghost"} size="icon-sm" aria-label="Board view" aria-pressed={view === "board"} onClick={() => setView("board")}><LayoutGrid aria-hidden="true" /></Button>
-              </div>
-              <Button disabled title="Task creation will be connected with the work-management workflow">New task</Button>
-            </div>
+            <button
+              type="button"
+              disabled
+              title="Task creation will be connected with the work-management workflow"
+              className={cn(settingsPrimaryButton, "h-9 gap-1.5 px-4")}
+            >
+              <Plus aria-hidden className="size-4" />
+              New task
+            </button>
+          </div>
+        </header>
+
+        <section
+          aria-label="Task filters and view options"
+          className="grid gap-3"
+        >
+          <div
+            role="group"
+            aria-label="Filter by status"
+            className="flex max-w-full min-w-0 gap-2 overflow-x-auto pb-1"
+          >
+            {statusFilters.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                aria-pressed={filter === item.id}
+                onClick={() => {
+                  setFilter(item.id);
+                  setCheckedIds([]);
+                }}
+                className={cn(
+                  filterButton,
+                  filter === item.id ? filterActive : filterIdle,
+                )}
+              >
+                {item.label} ({counts[item.id] ?? 0})
+              </button>
+            ))}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="flex h-9 w-full items-center gap-2 rounded-full bg-sidebar-accent px-3 text-neutral-500 focus-within:ring-[3px] focus-within:ring-sidebar-ring/40 sm:w-64 dark:text-neutral-400">
+              <Search aria-hidden className="size-[18px] shrink-0" />
+              <span className="sr-only">Search tasks</span>
+              <input
+                value={query}
+                placeholder="Search tasks"
+                className="min-w-0 flex-1 bg-transparent text-[15px] text-foreground outline-none placeholder:text-neutral-500 dark:placeholder:text-neutral-400"
+                onChange={(event) => {
+                  setQuery(event.target.value);
+                  setCheckedIds([]);
+                }}
+              />
+            </label>
+            <Select
+              value={project}
+              onValueChange={(value) => {
+                setProject(value);
+                setCheckedIds([]);
+              }}
+            >
+              <SelectTrigger
+                aria-label="Project filter"
+                className={selectTrigger}
+              >
+                <SelectValue placeholder="All projects" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All projects</SelectItem>
+                {projects.map(([id, name]) => (
+                  <SelectItem key={id} value={id}>
+                    {name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select
+              value={assignee}
+              onValueChange={(value) => {
+                setAssignee(value);
+                setCheckedIds([]);
+              }}
+            >
+              <SelectTrigger
+                aria-label="Assignee filter"
+                className={cn(selectTrigger, "w-[150px]")}
+              >
+                <SelectValue placeholder="Any assignee" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Any assignee</SelectItem>
+                {assignees.map((name) => (
+                  <SelectItem key={name} value={name}>
+                    {name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
         </section>
 
         {view === "list" ? (
-          <section className="overflow-hidden rounded-lg border bg-card shadow-sm" aria-label="Tasks">
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[900px] border-collapse text-sm">
-                <thead className="bg-muted text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                  <tr>{["Task", "Project", "Status", "Priority", "Assignee", "Agreed date", "Accepted via", "Updated"].map((heading) => <th key={heading} className="whitespace-nowrap border-b px-3 py-3 font-semibold">{heading}</th>)}</tr>
-                </thead>
-                <tbody>
-                  {visibleTasks.map((task) => (
-                    <tr key={task.id} tabIndex={0} onClick={() => setSelectedTask(task)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setSelectedTask(task); } }} className="cursor-pointer border-b last:border-0 hover:bg-muted/60 focus-visible:bg-muted/60">
-                      <td className="w-[320px] min-w-[320px] px-3 py-3"><div className="flex min-w-0 items-start gap-2"><span className="shrink-0 whitespace-nowrap font-mono text-xs text-muted-foreground">{task.task_code}</span><span className="min-w-0 break-words font-medium">{task.title}</span></div>{task.blocked_reason && <span className="mt-1 block text-xs text-muted-foreground">Blocked: {task.blocked_reason}</span>}</td>
-                      <td className="whitespace-nowrap px-3 py-3 text-muted-foreground">{task.project_name}</td>
-                      <td className="px-3 py-3"><Badge variant="outline" className={statusClass[task.status]}>{statusLabels[task.status]}</Badge></td>
-                      <td className="px-3 py-3"><Badge variant="outline" className={cn("border-transparent capitalize", task.priority === "high" ? "bg-foreground text-background" : "bg-muted text-muted-foreground")}>{task.priority}</Badge></td>
-                      <td className="whitespace-nowrap px-3 py-3">{task.assignee || "—"}</td>
-                      <td className="whitespace-nowrap px-3 py-3 tabular-nums">{displayDate(task.agreed_due_date) ?? <span className="text-muted-foreground">No date agreed</span>}</td>
-                      <td className="whitespace-nowrap px-3 py-3"><span className={task.origin === "auto" ? "rounded-full bg-accent px-2 py-1 text-xs text-accent-foreground" : "text-muted-foreground"}>{task.origin_text}</span></td>
-                      <td className="whitespace-nowrap px-3 py-3 text-muted-foreground tabular-nums">{new Date(task.updated_at).toLocaleString()}</td>
-                    </tr>
+          <section aria-labelledby="tasks-heading" className={tableCard}>
+            <div className="flex min-h-[3.25rem] flex-wrap items-center justify-between gap-3 px-4 py-2.5">
+              <h2 id="tasks-heading" className="text-[17px] font-medium">
+                {filter === "all"
+                  ? "All tasks"
+                  : `${statusLabels[filter]} tasks`}
+              </h2>
+              {checkedVisible.length > 0 ? (
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-sm font-medium text-blue-600 dark:text-blue-400">
+                    {checkedVisible.length} selected
+                  </span>
+                  <button
+                    type="button"
+                    className={settingsButton}
+                    disabled={bulkBusy}
+                    onClick={() => {
+                      setCheckedIds([]);
+                      setBulkError("");
+                    }}
+                  >
+                    Clear
+                  </button>
+                  {bulkStatuses.map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      className={cn(settingsButton, "gap-1.5")}
+                      disabled={bulkBusy}
+                      onClick={() => void bulkUpdate(item.id)}
+                    >
+                      <span
+                        aria-hidden
+                        className={cn(
+                          "size-2 rounded-full",
+                          statusDot[item.id],
+                        )}
+                      />
+                      {item.label}
+                    </button>
                   ))}
-                  {visibleTasks.length === 0 && <tr><td colSpan={8} className="px-6 py-14 text-center"><p className="font-medium">No tasks to show</p><p className="mt-1 text-sm text-muted-foreground">Tasks recorded for your projects will appear here.</p></td></tr>}
-                </tbody>
-              </table>
+                </div>
+              ) : (
+                <p className="text-sm text-neutral-500 dark:text-neutral-400">
+                  Proposed work appears in Proposals until approved.
+                </p>
+              )}
             </div>
-            <footer className="flex flex-wrap justify-between gap-2 border-t px-3 py-2.5 text-xs text-muted-foreground"><span>{visibleTasks.length} of {tasks.length} tasks · 25 per page</span><span>Proposed work appears in Proposals until approved</span></footer>
+            {bulkError && (
+              <p role="alert" className="px-4 pb-2.5 text-sm text-crit">
+                {bulkError}
+              </p>
+            )}
+            {visibleTasks.length === 0 ? (
+              <div className="grid place-items-center border-t border-sidebar-border px-4 py-14 text-center">
+                <ClipboardList
+                  aria-hidden
+                  className="mb-2 size-6 text-neutral-400"
+                />
+                <p className="text-[15px] font-medium">No tasks to show</p>
+                <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
+                  Tasks recorded for your projects will appear here.
+                </p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse">
+                  <thead className={tableHead}>
+                    <tr>
+                      <th scope="col" className="w-0 py-2.5 pr-1 pl-4">
+                        <SelectBox
+                          checked={allChecked}
+                          label="Select all tasks"
+                          onChange={(value) =>
+                            setCheckedIds(
+                              value ? visibleTasks.map((task) => task.id) : [],
+                            )
+                          }
+                        />
+                      </th>
+                      <th scope="col" className={cn(headCell, "pl-2")}>
+                        <SortHeader
+                          label="Task"
+                          sortKey="title"
+                          sort={sort}
+                          onSort={onSort}
+                        />
+                      </th>
+                      <th scope="col" className={headCell}>
+                        Project
+                      </th>
+                      <th scope="col" className={headCell}>
+                        Status
+                      </th>
+                      <th
+                        scope="col"
+                        className={cn(headCell, "hidden @3xl:table-cell")}
+                      >
+                        <SortHeader
+                          label="Priority"
+                          sortKey="priority"
+                          sort={sort}
+                          onSort={onSort}
+                        />
+                      </th>
+                      <th
+                        scope="col"
+                        className={cn(headCell, "hidden @5xl:table-cell")}
+                      >
+                        Assignee
+                      </th>
+                      <th
+                        scope="col"
+                        className={cn(headCell, "hidden @4xl:table-cell")}
+                      >
+                        <SortHeader
+                          label="Agreed date"
+                          sortKey="date"
+                          sort={sort}
+                          onSort={onSort}
+                        />
+                      </th>
+                      <th
+                        scope="col"
+                        className={cn(headCell, "hidden @6xl:table-cell")}
+                      >
+                        Accepted via
+                      </th>
+                      <th
+                        scope="col"
+                        className={cn(headCell, "pr-4 text-right")}
+                      >
+                        Actions
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {visibleTasks.map((task) => {
+                      const isSelected = selected?.id === task.id;
+                      const isChecked = checkedIds.includes(task.id);
+                      return (
+                        <tr
+                          key={task.id}
+                          onClick={() => setSelectedId(task.id)}
+                          aria-selected={isSelected}
+                          className={cn(
+                            tableRow,
+                            (isSelected || isChecked) && tableRowSelected,
+                          )}
+                        >
+                          <td className="py-2 pr-1 pl-4">
+                            <SelectBox
+                              checked={isChecked}
+                              label={`Select ${task.title}`}
+                              onChange={(value) =>
+                                setCheckedIds((current) =>
+                                  value
+                                    ? [...current, task.id]
+                                    : current.filter((id) => id !== task.id),
+                                )
+                              }
+                            />
+                          </td>
+                          <td className="py-2 pr-3 pl-2">
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                setSelectedId(task.id);
+                              }}
+                              aria-current={isSelected ? "true" : undefined}
+                              className="block max-w-[26rem] min-w-44 rounded-md text-left outline-none focus-visible:ring-[3px] focus-visible:ring-sidebar-ring/40"
+                            >
+                              <span className="line-clamp-1 text-[15px] leading-5 font-medium text-foreground">
+                                {task.title}
+                              </span>
+                              <span
+                                className={cn(
+                                  "line-clamp-1 text-sm leading-5",
+                                  task.status === "blocked" &&
+                                    task.blocked_reason
+                                    ? "text-rose-600 dark:text-rose-400"
+                                    : "font-mono text-xs text-neutral-500 dark:text-neutral-400",
+                                )}
+                              >
+                                {task.status === "blocked" &&
+                                task.blocked_reason
+                                  ? `Blocked: ${task.blocked_reason}`
+                                  : task.task_code}
+                              </span>
+                            </button>
+                          </td>
+                          <td className="px-3 py-2">
+                            <div className="flex max-w-56 items-center gap-2.5">
+                              <InitialsAvatar
+                                name={task.client_name}
+                                src={photoFor(task.client_name)}
+                              />
+                              <div className="min-w-0">
+                                <p className="truncate text-[15px] leading-5">
+                                  {task.project_name}
+                                </p>
+                                <p className="truncate text-sm leading-5 text-neutral-500 dark:text-neutral-400">
+                                  {task.client_name}
+                                </p>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-3 py-2">
+                            <StatusChip status={task.status} />
+                          </td>
+                          <td className="hidden px-3 py-2 @3xl:table-cell">
+                            <PriorityPill priority={task.priority} />
+                          </td>
+                          <td className="hidden px-3 py-2 text-[15px] whitespace-nowrap @5xl:table-cell">
+                            {task.assignee || (
+                              <span className="text-neutral-400">—</span>
+                            )}
+                          </td>
+                          <td className="hidden px-3 py-2 text-[15px] whitespace-nowrap tabular-nums @4xl:table-cell">
+                            {displayDate(task.agreed_due_date) ?? (
+                              <span className="text-neutral-500 dark:text-neutral-400">
+                                No date agreed
+                              </span>
+                            )}
+                          </td>
+                          <td className="hidden px-3 py-2 @6xl:table-cell">
+                            <Pill tone={originTone[task.origin]}>
+                              {task.origin_text}
+                            </Pill>
+                          </td>
+                          <td className="py-2 pr-4 pl-3">
+                            <div className="flex justify-end gap-2">
+                              <button
+                                type="button"
+                                aria-label={`Review ${task.title}`}
+                                className={iconButton}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  setSelectedId(task.id);
+                                }}
+                              >
+                                <Eye aria-hidden className="size-4" />
+                              </button>
+                              <DropdownMenu.Root>
+                                <DropdownMenu.Trigger
+                                  aria-label={`More actions for ${task.title}`}
+                                  className={iconButton}
+                                  onClick={(event) => event.stopPropagation()}
+                                >
+                                  <MoreVertical
+                                    aria-hidden
+                                    className="size-4"
+                                  />
+                                </DropdownMenu.Trigger>
+                                <DropdownMenu.Portal>
+                                  <DropdownMenu.Content
+                                    align="end"
+                                    sideOffset={6}
+                                    className={menuContent}
+                                    onClick={(event) => event.stopPropagation()}
+                                  >
+                                    <DropdownMenu.Item
+                                      className={menuItem}
+                                      onSelect={() => setSelectedId(task.id)}
+                                    >
+                                      <Eye aria-hidden className="size-4" />
+                                      Review task
+                                    </DropdownMenu.Item>
+                                    <DropdownMenu.Item
+                                      asChild
+                                      className={menuItem}
+                                    >
+                                      <Link
+                                        href={`/app/projects/${task.project_id}/work`}
+                                      >
+                                        <ArrowUpRight
+                                          aria-hidden
+                                          className="size-4"
+                                        />
+                                        Open project work
+                                      </Link>
+                                    </DropdownMenu.Item>
+                                  </DropdownMenu.Content>
+                                </DropdownMenu.Portal>
+                              </DropdownMenu.Root>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            <footer className="flex flex-wrap justify-between gap-2 border-t border-sidebar-border px-4 py-2.5 text-sm text-neutral-500 dark:text-neutral-400">
+              <span>
+                {visibleTasks.length} of {allTasks.length} tasks
+              </span>
+            </footer>
           </section>
         ) : (
-          <section className="overflow-x-auto pb-1" aria-label="Tasks by status">
+          <section
+            className="overflow-x-auto pb-1"
+            aria-label="Tasks by status"
+          >
             <div className="grid min-w-[1000px] grid-cols-5 gap-3">
               {statusFilters.slice(1).map((column) => {
-                const columnTasks = visibleTasks.filter((task) => task.status === column.id);
-                return <div key={column.id} className="flex min-h-48 flex-col gap-2 rounded-lg bg-muted p-2.5"><h2 className="flex items-center justify-between px-1 text-sm font-semibold">{column.label}<span className="rounded-full bg-card px-2 py-0.5 text-xs text-muted-foreground">{columnTasks.length}</span></h2>{columnTasks.map((task) => <button type="button" key={task.id} onClick={() => setSelectedTask(task)} className="flex min-w-0 flex-col gap-2 rounded-md border bg-card p-3 text-left text-sm shadow-sm hover:border-primary/50"><span className="min-w-0 break-words font-medium">{task.title}</span><span className="text-xs text-muted-foreground">{task.origin_text} · {displayDate(task.agreed_due_date) ?? "No date agreed"}</span><span className="font-mono text-[11px] text-muted-foreground">{task.task_code}</span></button>)}</div>;
+                const columnTasks = scoped
+                  .filter((task) => task.status === column.id)
+                  .sort((a, b) => b.updated_at.localeCompare(a.updated_at));
+                return (
+                  <div
+                    key={column.id}
+                    className="flex min-h-48 flex-col gap-2 rounded-2xl bg-sidebar p-2.5"
+                  >
+                    <h2 className="flex items-center gap-2 px-1.5 py-1 text-sm font-medium">
+                      <span
+                        aria-hidden
+                        className={cn(
+                          "size-2 rounded-full",
+                          statusDot[column.id as TaskStatus],
+                        )}
+                      />
+                      {column.label}
+                      <span className="ml-auto rounded-full bg-card px-2 py-0.5 text-xs text-neutral-500 dark:bg-background dark:text-neutral-400">
+                        {columnTasks.length}
+                      </span>
+                    </h2>
+                    {columnTasks.map((task) => (
+                      <button
+                        type="button"
+                        key={task.id}
+                        onClick={() => setSelectedId(task.id)}
+                        className={cn(
+                          "grid min-w-0 gap-2.5 rounded-xl bg-card p-3 text-left shadow-[0_1px_2px_rgba(0,0,0,0.06)] ring-1 ring-sidebar-border outline-none transition-shadow hover:ring-blue-300 focus-visible:ring-[3px] focus-visible:ring-sidebar-ring/40 dark:bg-background",
+                          selected?.id === task.id && "ring-2 ring-blue-500",
+                        )}
+                      >
+                        <span className="min-w-0 text-[15px] leading-snug font-medium break-words">
+                          {task.title}
+                        </span>
+                        <span className="flex min-w-0 items-center gap-2">
+                          <InitialsAvatar
+                            name={task.client_name}
+                            src={photoFor(task.client_name)}
+                          />
+                          <span className="truncate text-sm text-neutral-500 dark:text-neutral-400">
+                            {task.project_name}
+                          </span>
+                        </span>
+                        <span className="flex flex-wrap items-center gap-1.5">
+                          <PriorityPill priority={task.priority} />
+                          <span className="rounded-md bg-sidebar px-1.5 py-0.5 text-xs tabular-nums dark:bg-sidebar-accent">
+                            {displayDate(task.agreed_due_date) ?? "No date"}
+                          </span>
+                          <span className="ml-auto font-mono text-[11px] text-neutral-500 dark:text-neutral-400">
+                            {task.task_code}
+                          </span>
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                );
               })}
-              <div className="flex min-h-48 flex-col gap-2 rounded-lg bg-muted p-2.5"><h2 className="px-1 text-sm font-semibold">Awaiting approval</h2><p className="rounded-md border border-dashed bg-background/60 p-3 text-xs text-muted-foreground">Proposed deliverables remain in Proposals until approval creates tasks.</p></div>
+              <div className="flex min-h-48 flex-col gap-2 rounded-2xl border border-dashed border-sidebar-border p-2.5">
+                <h2 className="flex items-center gap-2 px-1.5 py-1 text-sm font-medium">
+                  <CircleDot
+                    aria-hidden
+                    className="size-3.5 text-neutral-400"
+                  />
+                  Awaiting approval
+                </h2>
+                <p className="rounded-xl bg-sidebar p-3 text-sm text-neutral-500 dark:text-neutral-400">
+                  Proposed deliverables remain in Proposals until approval
+                  creates tasks.
+                </p>
+              </div>
             </div>
           </section>
         )}
 
-        <p className="flex items-start gap-2 text-xs text-muted-foreground"><AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />Task status is saved to your workspace and used in automatic client status replies.</p>
-      </main>
+        <p className="flex items-start gap-2 text-xs text-neutral-500 dark:text-neutral-400">
+          <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+          Task status is saved to your workspace and used in automatic client
+          status replies.
+        </p>
+      </div>
 
-      {selectedTask && (
-        <div className="fixed inset-0 z-50 flex justify-end" role="presentation">
-          <button className="absolute inset-0 bg-foreground/35" aria-label="Close task details" onClick={() => setSelectedTask(null)} />
-          <aside className="relative z-10 flex h-full w-full max-w-xl flex-col overflow-y-auto border-l bg-card shadow-xl" role="dialog" aria-modal="true" aria-labelledby="task-detail-title">
-            <div className="flex items-start justify-between gap-4 border-b p-5"><div className="min-w-0"><span className="font-mono text-xs text-muted-foreground">{selectedTask.task_code}</span><h2 id="task-detail-title" className="mt-1 break-words font-display text-xl font-semibold">{selectedTask.title}</h2><div className="mt-3 flex flex-wrap items-center gap-2 text-sm"><Badge variant="outline" className={statusClass[selectedTask.status]}>{statusLabels[selectedTask.status]}</Badge><span className="capitalize text-muted-foreground">{selectedTask.priority} priority · {selectedTask.assignee || "Unassigned"}</span></div></div><Button variant="ghost" size="icon-sm" aria-label="Close task details" onClick={() => setSelectedTask(null)}><X aria-hidden="true" /></Button></div>
-            <div className="flex flex-col gap-6 p-5">
-              <TaskStatusActions key={selectedTask.id} task={selectedTask} onSaved={setSelectedTask} />
-              <section className="grid gap-3"><h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Requested change</h3><dl className="grid grid-cols-[max-content_minmax(0,1fr)] gap-x-5 gap-y-2 text-sm">{selectedTask.operation && <><dt className="text-muted-foreground">Operation</dt><dd className="font-mono text-xs">{selectedTask.operation === "project_change" ? "Project change" : selectedTask.operation}</dd></>}{selectedTask.target_id && <><dt className="text-muted-foreground">Target</dt><dd className="font-mono text-xs">{selectedTask.target_id}</dd></>}<dt className="text-muted-foreground">{selectedTask.origin === "auto" ? "Value" : "Deliverable"}</dt><dd>{selectedTask.value ?? selectedTask.title}</dd>{selectedTask.acceptance_criteria && <><dt className="text-muted-foreground">Acceptance criteria</dt><dd>{taskCriteriaLabel(selectedTask.acceptance_criteria)}</dd></>}<dt className="text-muted-foreground">Agreed date</dt><dd>{displayDate(selectedTask.agreed_due_date) ?? "No date agreed"}</dd></dl></section>
-              <section className="grid gap-3"><h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Why this task exists</h3><blockquote className="rounded-r-md border-l-[3px] border-info bg-info-soft p-3 text-sm">“{selectedTask.source_text ?? "No linked source message is recorded."}”<cite className="mt-1 block text-xs not-italic text-muted-foreground">{selectedTask.source_meta ?? selectedTask.origin_text}</cite></blockquote><dl className="grid grid-cols-[max-content_minmax(0,1fr)] gap-x-5 gap-y-2 text-sm"><dt className="text-muted-foreground">Project</dt><dd>{selectedTask.project_name} · {selectedTask.client_name}</dd>{selectedTask.request_code && <><dt className="text-muted-foreground">Request</dt><dd>{selectedTask.request_code}</dd></>}{selectedTask.authorized_by && <><dt className="text-muted-foreground">Authorized by</dt><dd>{selectedTask.authorized_by}</dd></>}{selectedTask.revision_unit && <><dt className="text-muted-foreground">Revision unit</dt><dd>{selectedTask.revision_unit}</dd></>}</dl></section>
-              <section className="grid gap-3"><h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Internal notes · owner only</h3><p className="rounded-md border border-warn/20 bg-warn-soft p-3 text-sm">{selectedTask.internal_note ?? "No internal note recorded."}</p></section>
-              <section className="grid gap-2 text-xs text-muted-foreground"><p className="flex items-center gap-2"><CalendarDays className="size-4" aria-hidden="true" />Updated {new Date(selectedTask.updated_at).toLocaleString()}</p>{selectedTask.history.map((entry, index) => <p key={`${selectedTask.id}-history-${index}`}>{entry}</p>)}</section>
-            </div>
+      {selected && (
+        <>
+          <div
+            aria-hidden
+            className="fixed inset-0 z-30 bg-black/30 xl:hidden"
+            onClick={() => setSelectedId(null)}
+          />
+          <aside aria-labelledby="task-detail-title" className={panelAside}>
+            <TaskDetail
+              task={selected}
+              photo={photoFor(selected.client_name)}
+              onClose={() => setSelectedId(null)}
+              onSaved={remember}
+            />
           </aside>
-        </div>
+        </>
       )}
-    </>
+    </main>
   );
 }
