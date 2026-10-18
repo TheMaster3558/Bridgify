@@ -93,16 +93,15 @@ export function ProjectOverview({
             </div>
             <div className="flex justify-between gap-4">
               <dt className="text-muted-foreground">Approved additions</dt>
-              <dd className="text-muted-foreground">Not tracked</dd>
+              <dd>{new Intl.NumberFormat("en-US",{style:"currency",currency:p.currency}).format((p.approved_additions_cents??0)/100)}</dd>
             </div>
             <div className="flex justify-between gap-4 border-t pt-3 font-semibold">
               <dt>Approved total</dt>
-              <dd className="text-muted-foreground">—</dd>
+              <dd>{new Intl.NumberFormat("en-US",{style:"currency",currency:p.currency}).format((p.original_amount_cents+(p.approved_additions_cents??0))/100)}</dd>
             </div>
           </dl>
           <p className="mt-6 text-xs leading-relaxed text-muted-foreground">
-            The original agreed price is saved. Approved additions and total
-            value are not connected yet.
+            Approved additions include only recorded client approvals. Pending proposals do not change this total.
           </p>
           <p className="mt-4 text-xs text-muted-foreground">
             Agreed work value. Not an invoice or payment.

@@ -14,6 +14,7 @@ export type Project = z.infer<typeof basicsSchema> & {
   id: string;
   status: string;
   current_agreement_document_id?: string | null;
+  approved_additions_cents?:number;
   version: number;
   setup_step: number;
   scope_version: number;

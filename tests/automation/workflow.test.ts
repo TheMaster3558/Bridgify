@@ -1205,3 +1205,67 @@ test("proposal mutations reject another owner and stale drafts",async()=>{
  await pg.query("select set_config('request.jwt.claim.sub',$1,false)",[randomUUID()]);
  await assert.rejects(pg.query("select owner_proposal_command($1,$2,1,2,'withdraw','{}',$3)",[project,draft.proposal_id,randomUUID()]),/insufficient_privilege/);
 });
+
+async function sentProposal(terms:unknown=proposalTerms){
+ const d=(await proposalCommand('create',terms)).rows[0].result;
+ const sent=(await proposalCommand('send',{},d.proposal_id,1,1)).rows[0].result;
+ await createAutomationDelivery(database,async()=>({state:'sent',messageId:'proposal-provider-'+randomUUID()}),instance).once(project);
+ const incoming=await message('I approve proposal '+d.proposal_id+' revision 1 and its exact terms.');
+ const m=(await pg.query<{id:string}>('select id from automation_messages where event_id=$1',[incoming.inboxEventId])).rows[0];
+ return {sent,evidence:m.id};
+}
+async function recordApproval(sent:{proposal_id:string;revision:number;version:number;terms_hash:string},evidence:string,outcome='approved',key=randomUUID(),projectVersion=1){
+ return asOwner(()=>pg.query("select record_proposal_response($1,$2,$3,$4,$5,$6,$7,$8,true,'Verified the exact client response',$9) result",[project,sent.proposal_id,sent.revision,sent.version,projectVersion,sent.terms_hash,outcome,[evidence],key]));
+}
+test('recorded commercial approval atomically creates scope/tasks/value once and preserves usage',async()=>{
+ const {sent,evidence}=await sentProposal({...proposalTerms,change_due_date:true,new_due_date:'2026-12-01',allowance_delta:2});
+ const key=randomUUID();const first=await recordApproval(sent,evidence,'approved',key);
+ assert.deepEqual(await recordApproval(sent,evidence,'approved',key),first);
+ await recordApproval(sent,evidence);
+ assert.equal(await count('proposal_responses'),1);assert.equal(await count('project_tasks',"origin='proposal'"),1);
+ assert.equal(await count('scope_versions'),2);assert.equal(await count('projects',"approved_additions_cents=12500 and scope_version=2 and (policy->>'allowance')::int=5 and agreed_due_date='2026-12-01'"),1);
+ assert.equal(await count('automation_revision_uses'),0);assert.equal(await count('automation_outbox',"purpose like 'proposal-approved:%'"),1);
+ assert.equal(await count('automation_jobs',"state='queued'"),0);
+ await asOwner(()=>pg.query("select delete_project($1,'Website')",[project]));assert.equal(await count('proposal_responses'),0);
+});
+test('approval rejects incorrect evidence and rolls all effects back on a failed confirmation write',async()=>{
+ const {sent,evidence}=await sentProposal();
+ await assert.rejects(recordApproval({...sent,terms_hash:'0'.repeat(64)},evidence),/changed/);
+ await assert.rejects(recordApproval(sent,randomUUID()),/Evidence/);
+ await pg.exec("create function reject_proposal_confirmation() returns trigger language plpgsql as $$begin if new.purpose like 'proposal-approved:%' then raise exception 'Synthetic confirmation failure';end if;return new;end$$;create trigger fail_proposal_confirmation before insert on automation_outbox for each row execute function reject_proposal_confirmation();");
+ try{await assert.rejects(recordApproval(sent,evidence),/Synthetic confirmation/);}finally{await pg.exec('drop trigger fail_proposal_confirmation on automation_outbox;drop function reject_proposal_confirmation()');}
+ assert.equal(await count('proposal_responses'),0);assert.equal(await count('project_tasks'),0);assert.equal(await count('scope_versions'),1);assert.equal(await count('projects','approved_additions_cents=0'),1);
+
+});
+test('superseded and expired proposals cannot authorize amendments; decline creates no work',async()=>{
+ const {sent,evidence}=await sentProposal();
+ await pg.query('update proposal_revisions set expires_at=now()-interval \'1 second\' where proposal_id=$1',[sent.proposal_id]);
+ await assert.rejects(recordApproval(sent,evidence),/expired/);
+ await pg.query('update proposal_revisions set expires_at=null where proposal_id=$1',[sent.proposal_id]);
+ await recordApproval(sent,evidence,'declined');assert.equal(await count('project_tasks'),0);assert.equal(await count('scope_versions'),1);
+});
+test('amendments replace only owner-selected terms included in the frozen message',async()=>{
+ const original='Heading text and color changes are included.';
+ const {sent,evidence}=await sentProposal({...proposalTerms,amount_cents:0,superseded_terms:[original]});
+ assert.match(sent.frozen_text,/Current agreement terms replaced/);
+ const outbox=(await pg.query<{text:string}>("select text from automation_outbox where purpose like 'proposal:%'")).rows[0];assert.equal(outbox.text,sent.frozen_text);
+ await recordApproval(sent,evidence);
+ const scope=(await pg.query<{terms:{text:string}[]}>("select terms from scope_versions where version=2")).rows[0];assert.equal(scope.terms.some(t=>t.text===original),false);
+ assert.equal(await count('projects','approved_additions_cents=0'),1);
+});
+
+test('competing proposal approvals cannot both apply against the same scope version',async()=>{
+ const one=await sentProposal();const two=await sentProposal({...proposalTerms,title:'Second addition'});
+ await recordApproval(one.sent,one.evidence);
+ await assert.rejects(recordApproval(two.sent,two.evidence),/changed/);
+ assert.equal(await count('proposal_responses'),1);assert.equal(await count('project_tasks'),1);
+});
+test('edited approval evidence and other owners cannot change commercial commitments',async()=>{
+ const {sent,evidence}=await sentProposal();
+ const m=(await pg.query<{provider_guid:string}>('select provider_guid from automation_messages where id=$1',[evidence])).rows[0];
+ await message('Changed approval',{kind:'edit',messageGuid:m.provider_guid});
+ await assert.rejects(recordApproval(sent,evidence),/Evidence/);
+ await pg.query("select set_config('request.jwt.claim.sub',$1,false)",[randomUUID()]);
+ await assert.rejects(pg.query("select record_proposal_response($1,$2,1,2,1,$3,'approved',$4,true,'Verified response',$5)",[project,sent.proposal_id,sent.terms_hash,[evidence],randomUUID()]),/insufficient_privilege/);
+ assert.equal(await count('project_tasks'),0);assert.equal(await count('proposal_responses'),0);
+});
