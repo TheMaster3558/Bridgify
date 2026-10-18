@@ -975,6 +975,62 @@ test("a signed Photon event triggers processing and one reply immediately withou
  assert.equal((await handler(new Request('https://owner.test/api/webhook',{method:'POST',body}))).status,401);
  assert.equal(scheduled.length,2);
 });
+test("SDK intake shares task/reply deduplication with signed webhooks and history during cutover", async () => {
+  const { normalizeSpectrumSdkMessage } = await import("../../lib/photon/sdk-listener");
+  const { createSpectrumWebhookDecoder } = await import("../../lib/photon/webhook");
+  const { createHmac } = await import("node:crypto");
+  const space = { id: chat, __platform: "imessage" };
+  const at = new Date();
+  const payload = { id: "shared-provider-guid", platform: "imessage", space,
+    sender: { id: people.client_sender_id }, direction: "inbound", timestamp: at,
+    content: { type: "text", text: "Make the heading green" } };
+  const inbox = createProjectAutomationInbox(database);
+  await inbox.persistVerifiedEvent(normalizeSpectrumSdkMessage(instance, space, payload)!);
+  await processor().once(project);
+  let sends = 0;
+  const delivery = createAutomationDelivery(database, async () => {
+    sends++; return { state: "sent", messageId: "sdk-reply-guid" };
+  }, instance);
+  await delivery.once(project);
+  assert.equal(await count("project_tasks"), 1);
+  assert.equal(await count("automation_revision_uses"), 1);
+  assert.equal(sends, 1);
+  assert.equal(await count("chat_bindings", "webhook_verified_at is not null"), 0);
+
+  const body = JSON.stringify({ event: "messages", space: { id: chat }, message: { ...payload, timestamp: at.toISOString() } });
+  const timestamp = String(Math.floor(Date.now() / 1000));
+  const secret = "test-secret";
+  const headers = new Headers({ "x-spectrum-timestamp": timestamp,
+    "x-spectrum-signature": "v0=" + createHmac("sha256", secret).update(`v0:${timestamp}:`).update(body).digest("hex") });
+  const webhook = await createSpectrumWebhookDecoder({ instanceId: instance, signingSecret: secret }).verifyAndNormalize(new TextEncoder().encode(body), headers);
+  assert.equal((await inbox.persistVerifiedEvent(webhook)).duplicate, true);
+  assert.equal((await message(payload.content.text, { messageGuid: payload.id, eventKey: "history:cutover", occurredAt: at.toISOString() })).duplicate, true);
+  assert.equal(await processor().once(project), false);
+  assert.equal(await delivery.once(project), false);
+  assert.equal(await count("project_tasks"), 1);
+  assert.equal(await count("automation_revision_uses"), 1);
+  assert.equal(await count("automation_outbox"), 1);
+  assert.equal(sends, 1);
+  assert.equal(await count("chat_bindings", "webhook_verified_at is not null"), 1);
+});
+
+test("SDK thanks stays silent and unknown participants still require owner review", async () => {
+  const { normalizeSpectrumSdkMessage } = await import("../../lib/photon/sdk-listener");
+  const space = { id: chat, __platform: "imessage" };
+  const base = { id: "sdk-thanks", platform: "imessage", space, direction: "inbound",
+    timestamp: new Date(), sender: { id: people.client_sender_id }, content: { type: "text", text: "Thanks!" } };
+  const inbox = createProjectAutomationInbox(database);
+  await inbox.persistVerifiedEvent(normalizeSpectrumSdkMessage(instance, space, base)!);
+  assert.equal(await processor().once(), false);
+  assert.equal(await count("automation_outbox"), 0);
+  await inbox.persistVerifiedEvent(normalizeSpectrumSdkMessage(instance, space, {
+    ...base, id: "sdk-unknown", sender: undefined, content: { type: "text", text: "Make the heading green" },
+  })!);
+  await processor().once();
+  assert.equal(await count("project_tasks"), 0);
+  assert.equal(await count("owner_decisions", "reason='unknown_participant'"), 1);
+});
+
 test("an owner retry that fails again re-opens its preserved review",async()=>{
  await message();const broken=processor(()=>{throw new Error('failure');});
  for(let i=0;i<3;i++){await pg.exec("update automation_jobs set available_at=now()");await broken.once();}

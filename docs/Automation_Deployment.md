@@ -3,6 +3,35 @@
 Target: **https://bridgify-two.vercel.app**. Production activation is an operator
 step; code in an unmerged branch does not change the deployed site.
 
+## Use it locally before deployment
+
+With the existing private database, Spectrum and Gemini settings in `.env.local`,
+run `AUTOMATION_WORKER_ENABLED=true npm run automation:sdk` from this repository.
+`npm run photon:demo` also selects SDK mode. You do not need Vercel environment
+access, a public URL, or webhook signing variables for this local listener.
+The computer must stay awake and online. Only connected, disclosed and activated
+project chats can authorize work; normal project settings still apply.
+
+The listener receives live SDK messages, saves them to the same inbox and wakes
+processing immediately. Startup/stream-reopen history catch-up covers downtime;
+the SDK also handles resumable stream reconnects. Failed database writes are
+retried before the next event is consumed. Normal inbound delivery does not poll
+Photon history. The local database recovery pump checks for saved work/retries
+every two seconds. This also handles owner approvals/status changes.
+
+Keep `AUTOMATION_INTAKE=webhook` available for production: the dedicated SDK
+command overrides it only for that process. This does not change Vercel variables
+or the signed webhook endpoint. Both modes share tasks, revision accounting,
+reviews, outbox leases and provider message GUID deduplication.
+
+## Time and prerequisites for switching
+
+Once you have Vercel Production environment access and the PRs are merged, budget
+roughly **15–30 minutes** for configuration, two deployments and a real-message
+check. This is an estimate, not a deployment SLA; build queues, credentials or
+provider setup can add time. No SDK-to-webhook business-logic rewrite is needed.
+The local listener can continue working until the hosted path is verified.
+
 ## Architecture
 
 Photon POSTs a signed message to `/api/v1/integrations/photon/webhook`. The route
@@ -30,8 +59,8 @@ Existing project/tenant RLS remains enforced on owner pages.
 
 ## Deployment steps for the existing project
 
-1. Merge the owner-only PR and automation lifecycle PR into `main`, or deploy the
-   automation branch containing both. Do not leave old client-invitation code
+1. Merge the owner-only, automation lifecycle and local SDK option PRs into `main`,
+   or deploy the SDK feature branch containing all three. Do not leave old client-invitation code
    deployed after applying the owner-only migration.
 2. Run `npm run automation:install` with the private `.env.local` configured.
    It checks migration receipts and applies only missing automation migrations.
@@ -64,7 +93,9 @@ Existing project/tenant RLS remains enforced on owner pages.
    `PHOTON_WEBHOOK_PROTOCOL=spectrum-cloud-v0` from that local file to Vercel
    Production and redeploy. The instance ID must equal `SPECTRUM_PROJECT_ID`.
    Photon may send events during this registration/deploy interval; retain the
-   old worker temporarily and perform the one-time catch-up below.
+   local SDK listener temporarily and perform the one-time catch-up below. The
+   SDK command still selects local SDK mode if the setup script changes the
+   saved `AUTOMATION_INTAKE` value to `webhook`.
 8. Run `npm run automation:hosting -- recovery`. It installs/uses pg_cron and
    pg_net on your existing Supabase database, validates the deployed endpoint,
    and creates/updates the named `bridgify-automation-recovery` schedule. It
@@ -78,7 +109,9 @@ Existing project/tenant RLS remains enforced on owner pages.
 10. Verify a consenting client's fresh request produces one request/task or review
     and one appropriate outbox submission. Verify “thanks” produces no reply.
     Confirm the Automation page's health and delivery state. Then stop the old
-    local history worker/demo so production no longer depends on a terminal.
+    local SDK listener (Ctrl-C) so production no longer depends on a terminal.
+    Both paths deduplicate messages during overlap, but a separate old chatbot
+    demo must remain stopped because it bypasses the shared outbox.
 
 Do not treat successful deployment or an HTTP 2xx as client device delivery.
 For a failed/unknown reply, open Automation, inspect the actual conversation, and

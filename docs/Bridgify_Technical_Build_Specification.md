@@ -106,7 +106,13 @@ Deployment uses Vercel authenticated bounded automation batches with durable
 Postgres leases and health records, not an infinite in-function polling process.
 Signed Photon webhooks persist messages and start processing immediately. Supabase
 Cron resumes saved work on Vercel Hobby; normal delivery never waits for this
-scheduler. Explicit one-time history import recovers deployment gaps. Health shows last success,
+scheduler. An optional long-running local SDK listener feeds the same durable
+inbox and wakes the same processor immediately, without a public URL or webhook
+secret. It catches up history at startup/stream reopen, reconnects on failure,
+retries uncommitted event writes and shuts down on SIGINT/SIGTERM. SDK provenance
+does not mark a binding as webhook-verified. Both modes deduplicate on the provider
+message GUID and use the shared outbox. Keep one local listener active and stop it
+after hosted delivery is verified. Explicit history import also recovers deployment gaps. Health shows last success,
 staleness, dependency failures and backlog. Overlapping invocations cannot apply
 the same effect twice. No fake health, messages, tasks or seed customer records.
 

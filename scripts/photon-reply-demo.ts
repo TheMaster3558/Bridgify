@@ -5,7 +5,7 @@ import { runAutomationWorker } from "../lib/assistant/run-worker";
 console.log(
   "Starting Bridgify project facilitator. Replies use saved project status and approval settings. Unconnected chats are not handled.",
 );
-void runAutomationWorker({ enabled: true }).catch(() => {
+void runAutomationWorker({ enabled: true, intake: "sdk" }).catch(() => {
   console.error(
     "Project facilitator could not start. Check database, Gemini and Photon configuration. No generic chatbot fallback was started.",
   );

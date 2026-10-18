@@ -9,8 +9,11 @@ import { readSpectrumCredentials, sendPhotonText } from "../photon/spectrum";
 import { processingErrorCode } from "./processing-errors";
 
 // Called by signed intake and owner actions. No history polling or detached timer.
-export async function runAutomationBatch(projectId?: string) {
-  if (process.env.AUTOMATION_WORKER_ENABLED !== "true")
+export async function runAutomationBatch(
+  projectId?: string,
+  options: { enabled?: boolean } = {},
+) {
+  if (!(options.enabled ?? process.env.AUTOMATION_WORKER_ENABLED === "true"))
     throw new Error("automation_worker_disabled");
   const deadline = Date.now() + 54_000;
   const database = getDatabase();

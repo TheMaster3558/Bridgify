@@ -13,6 +13,7 @@
     "typecheck": "tsc --noEmit",
     "worker": "tsx --env-file=.env.local workers/index.ts",
     "automation:worker": "node --env-file=.env.local --conditions=react-server --import tsx workers/automation.ts",
+    "automation:sdk": "node --env-file=.env.local --conditions=react-server --import tsx workers/automation-sdk.ts",
     "automation:sync": "node --env-file=.env.local --conditions=react-server --import tsx scripts/sync-automation.ts",
     "automation:install": "node --env-file=.env.local --import tsx scripts/install-automation.ts",
     "automation:process": "node --env-file=.env.local --conditions=react-server --import tsx scripts/process-automation.ts",

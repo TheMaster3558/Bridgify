@@ -1,4 +1,4 @@
-> Production uses immediate signed Photon delivery. See [Automation Deployment](Automation_Deployment.md) for the current Vercel Hobby setup and owner controls. The polling commands below are explicit local/recovery tools.
+> Production uses immediate signed Photon delivery. Local development can use the live SDK listener. See [Automation Deployment](Automation_Deployment.md) for Vercel Hobby setup and cutover.
 
 # Project automation
 
@@ -27,12 +27,14 @@ There are no seeded customer records or fabricated integrations.
 4. Run `npm run automation:process` to populate tasks, review records, revision
    usage and queued replies from those messages using the saved settings and real
    Gemini interpretation. This command does not submit replies.
-5. Set `AUTOMATION_WORKER_ENABLED=true` and run `npm run automation:worker` as a
-   persistent process. The worker polls authenticated history every 30 seconds,
-   processes jobs and submits queued replies through the real Spectrum adapter.
+5. Set `AUTOMATION_WORKER_ENABLED=true` and run `npm run automation:sdk` as a
+   persistent local process. It receives live SDK messages, catches up history at
+   startup/reopen, processes saved jobs and submits replies through Spectrum.
+   Normal incoming delivery does not poll history. The local database pump also
+   resumes retries and owner-queued replies without waiting for new messages.
    It needs `SPECTRUM_PROJECT_ID`, `SPECTRUM_PROJECT_SECRET`, `GEMINI_API_KEY`,
    `GEMINI_MODEL`, and `DATABASE_URL`. The agreement worker remains separate.
-   `npm run photon:demo` is now a compatibility entry point for this same project
+   `npm run photon:demo` is a compatibility entry point for this same SDK
    facilitator, rather than a separate general chatbot. Run one worker command;
    restart an existing worker after code changes.
 
@@ -40,6 +42,10 @@ For webhook deployments, set `AUTOMATION_INTAKE=webhook` and the signed Spectrum
 configuration in `.env.example`. The existing Photon webhook route verifies raw
 bytes before using the canonical project automation inbox. Its configured instance
 must equal the Spectrum project used by the sender. Unsigned payloads are rejected.
+The general `automation:worker` command reads `AUTOMATION_INTAKE`; `sdk` selects
+live intake, `webhook` only consumes saved jobs, and `history` explicitly enables
+the legacy 30-second history fallback. The dedicated `automation:sdk` command
+selects SDK mode without editing the saved webhook configuration.
 
 ## Saved authority and replies
 
@@ -81,7 +87,7 @@ must equal the Spectrum project used by the sender. Unsigned payloads are reject
 Per-project jobs run in order with leases, three bounded attempts and stale
 snapshot rejection. Model calls run outside database locks. Task, allowance,
 decision, audit and reply writes commit together. Incoming message IDs deduplicate
-authenticated history and webhook deliveries. Provider event identity conflicts
+authenticated history, SDK and webhook deliveries. Provider event identity conflicts
 are rejected. Outbound messages cannot authorize new work.
 
 The outbox records `sending` before submission. Successful sends retain the real
