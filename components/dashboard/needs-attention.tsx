@@ -8,7 +8,13 @@ import {
   ArrowUp,
   Check,
   ChevronsUpDown,
+  CircleHelp,
   Eye,
+  FileText,
+  History,
+  Lightbulb,
+  Lock,
+  MessageCircle,
   MessagesSquare,
   Minus,
   MoreVertical,
@@ -19,10 +25,7 @@ import {
 } from "lucide-react";
 import { Checkbox, Dialog, DropdownMenu } from "radix-ui";
 import { DecisionActions } from "./decision-actions";
-import {
-  SettingsGroup,
-  settingsButton,
-} from "@/components/settings/settings-ui";
+import { settingsButton } from "@/components/settings/settings-ui";
 import type { OwnerDecisionRecord } from "@/lib/dashboard/work-management-types";
 import { cn } from "@/lib/utils";
 
@@ -75,8 +78,6 @@ const avatarTones = [
 const iconButton =
   "grid size-7 shrink-0 place-items-center rounded-lg bg-card text-neutral-600 shadow-[0_1px_2px_rgba(0,0,0,0.08)] ring-1 ring-black/5 outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-sidebar-ring/40 dark:bg-background dark:text-neutral-300 dark:ring-white/10";
 
-const sectionLabel =
-  "px-3.5 text-sm font-medium text-neutral-500 dark:text-neutral-400";
 
 function reasonLabel(reason: string) {
   const label = reason.replaceAll("_", " ");
@@ -229,37 +230,101 @@ function RowMenu({
   );
 }
 
+const calloutTone: Record<Decision["severity"], string> = {
+  critical:
+    "bg-rose-50 text-rose-900 ring-rose-200 dark:bg-rose-500/10 dark:text-rose-100 dark:ring-rose-500/25",
+  warning:
+    "bg-amber-50 text-amber-950 ring-amber-200 dark:bg-amber-400/10 dark:text-amber-100 dark:ring-amber-400/25",
+  info: "bg-blue-50 text-blue-950 ring-blue-200 dark:bg-blue-500/10 dark:text-blue-100 dark:ring-blue-500/25",
+};
+
+const calloutIcon: Record<Decision["severity"], string> = {
+  critical: "bg-rose-500",
+  warning: "bg-amber-400",
+  info: "bg-blue-500",
+};
+
+function PanelSection({
+  icon: Icon,
+  title,
+  aside,
+  children,
+}: {
+  icon: React.ComponentType<{ className?: string; "aria-hidden"?: boolean }>;
+  title: string;
+  aside?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="grid gap-3">
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="flex items-center gap-2 text-sm font-medium text-neutral-500 dark:text-neutral-400">
+          <Icon aria-hidden className="size-4" />
+          {title}
+        </h3>
+        {aside}
+      </div>
+      {children}
+    </section>
+  );
+}
+
 function DecisionDetail({
   decision,
   onClose,
   onResolved,
+  onDelete,
 }: {
   decision: Decision;
   onClose: () => void;
   onResolved: (id: string) => void;
+  onDelete: () => void;
 }) {
+  const options = decision.suggested_options;
   return (
-    <div className="grid gap-6">
-      <header className="grid gap-4">
-        <div className="flex items-start justify-between gap-3">
-          <p className="pt-1 font-mono text-xs text-neutral-500 dark:text-neutral-400">
-            {decision.decision_code} · {decision.request_code}
-          </p>
-          <button
-            type="button"
-            aria-label="Close decision"
-            onClick={onClose}
-            className="grid size-7 shrink-0 place-items-center rounded-full bg-sidebar-accent text-neutral-500 outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-sidebar-ring/40"
-          >
-            <X aria-hidden className="size-4" />
-          </button>
+    <>
+      <header className="sticky top-0 z-10 grid gap-3 border-b border-sidebar-border bg-card/95 px-6 pt-5 pb-4 backdrop-blur dark:bg-background/95">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-1.5 font-mono text-[11px] text-neutral-500 dark:text-neutral-400">
+            <span className="rounded-md bg-sidebar px-1.5 py-0.5 dark:bg-sidebar-accent">
+              {decision.decision_code}
+            </span>
+            <span className="rounded-md bg-sidebar px-1.5 py-0.5 dark:bg-sidebar-accent">
+              {decision.request_code}
+            </span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <Link
+              href={`/app/projects/${decision.project_id}/conversation`}
+              aria-label="Open conversation"
+              title="Open conversation"
+              className="grid size-7 place-items-center rounded-full text-neutral-500 outline-none hover:bg-sidebar-accent hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-sidebar-ring/40"
+            >
+              <MessagesSquare aria-hidden className="size-4" />
+            </Link>
+            <button
+              type="button"
+              aria-label="Close decision"
+              onClick={onClose}
+              className="grid size-7 shrink-0 place-items-center rounded-full bg-sidebar-accent text-neutral-500 outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-sidebar-ring/40"
+            >
+              <X aria-hidden className="size-4" />
+            </button>
+          </div>
         </div>
-        <h2 className="-mt-2 text-xl leading-snug font-medium">
+        <h2 className="text-xl leading-snug font-semibold tracking-tight">
           {decision.title}
         </h2>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <SeverityChip severity={decision.severity} />
+          <ReasonPill reason={decision.reason} />
+        </div>
+      </header>
+
+      <div className="grid gap-7 px-6 py-6">
+        <div className="flex items-center gap-3 rounded-2xl bg-sidebar p-3">
           <ClientAvatar name={decision.client_name} size="md" />
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <p className="truncate text-[15px] font-medium">
               {decision.client_name}
             </p>
@@ -267,136 +332,184 @@ function DecisionDetail({
               {decision.project_name}
             </p>
           </div>
+          <div className="text-right text-xs text-neutral-500 dark:text-neutral-400">
+            <p>Updated</p>
+            <p className="font-medium text-foreground tabular-nums">
+              {formatDate(decision.updated_at)}
+            </p>
+          </div>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <SeverityChip severity={decision.severity} />
-          <ReasonPill reason={decision.reason} />
-          <span className="text-sm text-neutral-500 dark:text-neutral-400">
-            Updated {formatDate(decision.updated_at)}
-          </span>
-        </div>
-      </header>
 
-      <section className="grid gap-2">
-        <h3 className={sectionLabel}>Client request</h3>
-        <SettingsGroup>
-          <blockquote className="px-3.5 py-3 text-[15px] leading-relaxed">
-            “{decision.source_text || "No source text recorded."}”
-            <cite className="mt-1.5 block text-sm text-neutral-500 not-italic dark:text-neutral-400">
-              {decision.source_meta || decision.client_name}
-            </cite>
-          </blockquote>
-        </SettingsGroup>
-      </section>
+        <PanelSection icon={MessageCircle} title="Client request">
+          <div className="flex items-end gap-2.5">
+            <ClientAvatar name={decision.client_name} />
+            <div className="min-w-0">
+              <div className="w-fit max-w-full rounded-[20px] rounded-bl-md bg-sidebar-accent px-4 py-2.5 text-[15px] leading-relaxed whitespace-pre-wrap">
+                {decision.source_text || (
+                  <span className="text-neutral-500 italic">
+                    No source text recorded.
+                  </span>
+                )}
+              </div>
+              <p className="mt-1 pl-1 text-xs text-neutral-500 dark:text-neutral-400">
+                {decision.source_meta || decision.client_name}
+              </p>
+            </div>
+          </div>
+        </PanelSection>
 
-      <section className="grid gap-2">
-        <h3 className={sectionLabel}>Why it was escalated</h3>
-        <SettingsGroup>
-          <div className="px-3.5 py-3">
+        <PanelSection icon={ShieldAlert} title="Why it needs you">
+          <div
+            className={cn(
+              "flex gap-3 rounded-2xl p-4 ring-1 ring-inset",
+              calloutTone[decision.severity],
+            )}
+          >
+            <span
+              aria-hidden
+              className={cn(
+                "mt-1.5 size-2 shrink-0 rounded-full",
+                calloutIcon[decision.severity],
+              )}
+            />
             <p className="text-[15px] leading-relaxed">
               {decision.explanation || "Owner review is required."}
             </p>
           </div>
-          <div className="px-3.5 py-3">
-            <p className="text-[15px] font-medium">Scope evidence</p>
-            <p className="mt-0.5 text-sm leading-relaxed text-neutral-500 dark:text-neutral-400">
-              {decision.evidence || "No scope evidence recorded."}
-            </p>
-            {decision.evidence_source ? (
-              <p className="mt-1 text-xs text-neutral-400 dark:text-neutral-500">
-                {decision.evidence_source}
-              </p>
-            ) : null}
-          </div>
+          {(decision.evidence || decision.evidence_source) && (
+            <div className="flex gap-3 rounded-2xl bg-sidebar p-4">
+              <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-card text-neutral-500 shadow-[0_1px_2px_rgba(0,0,0,0.06)] dark:bg-background">
+                <FileText aria-hidden className="size-[18px]" />
+              </span>
+              <div className="min-w-0">
+                <p className="text-sm font-medium">Scope evidence</p>
+                <p className="mt-0.5 text-sm leading-relaxed text-neutral-600 dark:text-neutral-300">
+                  {decision.evidence || "No scope evidence recorded."}
+                </p>
+                {decision.evidence_source && (
+                  <p className="mt-2 inline-flex rounded-md bg-card px-2 py-0.5 text-xs text-neutral-500 dark:bg-background dark:text-neutral-400">
+                    {decision.evidence_source}
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
           {decision.missing_details.length > 0 && (
-            <div className="px-3.5 py-3">
-              <p className="text-[15px] font-medium">Missing details</p>
-              <ul className="mt-1 list-disc space-y-0.5 pl-5 text-sm text-neutral-500 dark:text-neutral-400">
+            <div className="rounded-2xl bg-sidebar p-4">
+              <p className="text-sm font-medium">Missing details</p>
+              <ul className="mt-2 grid gap-1.5">
                 {decision.missing_details.map((item) => (
-                  <li key={item}>{item}</li>
+                  <li
+                    key={item}
+                    className="flex items-start gap-2.5 text-sm text-neutral-600 dark:text-neutral-300"
+                  >
+                    <CircleHelp
+                      aria-hidden
+                      className="mt-0.5 size-4 shrink-0 text-neutral-400"
+                    />
+                    {item}
+                  </li>
                 ))}
               </ul>
             </div>
           )}
-        </SettingsGroup>
-      </section>
+        </PanelSection>
 
-      <section className="grid gap-2">
-        <h3 className={sectionLabel}>Suggested options</h3>
-        <SettingsGroup>
-          {decision.suggested_options.length ? (
-            decision.suggested_options.map((option, index) => (
-              <div key={`${option.title}-${index}`} className="px-3.5 py-3">
-                <p className="flex flex-wrap items-center gap-2 text-[15px] font-medium">
-                  {option.title}
-                  {index === 0 && (
-                    <span
-                      className={cn(
-                        "rounded-md px-2 py-0.5 text-xs font-medium",
-                        pillTone.blue,
-                      )}
-                    >
-                      Suggested
-                    </span>
+        {options.length > 0 && (
+          <PanelSection icon={Lightbulb} title="Suggested options">
+            <ol className="grid gap-2">
+              {options.map((option, index) => (
+                <li
+                  key={`${option.title}-${index}`}
+                  className={cn(
+                    "flex gap-3 rounded-2xl p-3.5 ring-1 ring-inset",
+                    index === 0
+                      ? "bg-blue-50/70 ring-blue-200 dark:bg-blue-500/10 dark:ring-blue-500/25"
+                      : "bg-card ring-sidebar-border dark:bg-background",
                   )}
-                </p>
-                <p className="mt-0.5 text-sm text-neutral-500 dark:text-neutral-400">
-                  {option.description}
-                </p>
-              </div>
-            ))
+                >
+                  <span
+                    className={cn(
+                      "grid size-6 shrink-0 place-items-center rounded-full text-xs font-semibold",
+                      index === 0
+                        ? "bg-gradient-to-b from-[#4a82ff] to-[#2563eb] text-white"
+                        : "bg-sidebar-accent text-neutral-600 dark:text-neutral-300",
+                    )}
+                  >
+                    {index + 1}
+                  </span>
+                  <div className="min-w-0">
+                    <p className="flex flex-wrap items-center gap-2 text-[15px] font-medium">
+                      {option.title}
+                      {index === 0 && (
+                        <span className="rounded-full bg-blue-600 px-2 py-0.5 text-[11px] font-semibold text-white">
+                          Recommended
+                        </span>
+                      )}
+                    </p>
+                    <p className="mt-0.5 text-sm text-neutral-500 dark:text-neutral-400">
+                      {option.description}
+                    </p>
+                  </div>
+                </li>
+              ))}
+            </ol>
+          </PanelSection>
+        )}
+
+        {decision.internal_note && (
+          <div className="flex gap-3 rounded-2xl bg-yellow-50 p-4 ring-1 ring-yellow-200 ring-inset dark:bg-yellow-400/10 dark:ring-yellow-400/25">
+            <Lock
+              aria-hidden
+              className="mt-0.5 size-4 shrink-0 text-yellow-700 dark:text-yellow-300"
+            />
+            <div>
+              <p className="text-xs font-semibold tracking-wide text-yellow-800 uppercase dark:text-yellow-200">
+                Private note · owner only
+              </p>
+              <p className="mt-1 text-[15px] text-yellow-950 dark:text-yellow-50">
+                {decision.internal_note}
+              </p>
+            </div>
+          </div>
+        )}
+
+        <PanelSection icon={History} title="History">
+          {decision.history.length ? (
+            <ol className="relative grid gap-3 pl-5 before:absolute before:top-1.5 before:bottom-1.5 before:left-[5px] before:w-px before:bg-sidebar-border">
+              {decision.history.map((item, index) => (
+                <li
+                  key={`${decision.id}-history-${index}`}
+                  className="relative text-sm text-neutral-600 dark:text-neutral-300"
+                >
+                  <span
+                    aria-hidden
+                    className={cn(
+                      "absolute top-1.5 -left-5 size-[11px] rounded-full border-2 border-card dark:border-background",
+                      index === 0
+                        ? "bg-blue-500"
+                        : "bg-neutral-300 dark:bg-neutral-600",
+                    )}
+                  />
+                  {item}
+                </li>
+              ))}
+            </ol>
           ) : (
-            <p className="px-3.5 py-3 text-sm text-neutral-500 dark:text-neutral-400">
-              No suggested options recorded.
+            <p className="text-sm text-neutral-500 dark:text-neutral-400">
+              No history recorded yet.
             </p>
           )}
-        </SettingsGroup>
-      </section>
-
-      {decision.internal_note && (
-        <section className="grid gap-2">
-          <h3 className={sectionLabel}>Private note · owner only</h3>
-          <div
-            className={cn(
-              "rounded-2xl px-3.5 py-3 text-[15px]",
-              pillTone.yellow,
-            )}
-          >
-            {decision.internal_note}
-          </div>
-        </section>
-      )}
+        </PanelSection>
+      </div>
 
       <DecisionActions
         key={decision.id}
         decision={decision}
         onResolved={onResolved}
+        onDelete={onDelete}
       />
-
-      <section className="grid gap-2">
-        <h3 className={sectionLabel}>Resolution history</h3>
-        {decision.history.length ? (
-          <ol className="grid gap-2 px-3.5">
-            {decision.history.map((item, index) => (
-              <li
-                key={`${decision.id}-history-${index}`}
-                className="flex gap-3 text-sm text-neutral-500 dark:text-neutral-400"
-              >
-                <span
-                  aria-hidden
-                  className="mt-1.5 size-2 shrink-0 rounded-full bg-neutral-300 dark:bg-neutral-600"
-                />
-                {item}
-              </li>
-            ))}
-          </ol>
-        ) : (
-          <p className="px-3.5 text-sm text-neutral-500 dark:text-neutral-400">
-            No history recorded yet.
-          </p>
-        )}
-      </section>
-    </div>
+    </>
   );
 }
 
@@ -784,7 +897,7 @@ export function NeedsAttention({ decisions }: { decisions: Decision[] }) {
                     </th>
                     <th
                       scope="col"
-                      className={cn(headCell, "hidden @4xl:table-cell")}
+                      className={cn(headCell, "hidden @5xl:table-cell")}
                     >
                       <SortHeader
                         label="Last updated"
@@ -795,7 +908,7 @@ export function NeedsAttention({ decisions }: { decisions: Decision[] }) {
                     </th>
                     <th
                       scope="col"
-                      className={cn(headCell, "hidden @5xl:table-cell")}
+                      className={cn(headCell, "hidden @6xl:table-cell")}
                     >
                       Code
                     </th>
@@ -860,10 +973,10 @@ export function NeedsAttention({ decisions }: { decisions: Decision[] }) {
                         <td className="px-3 py-2">
                           <ReasonPill reason={decision.reason} />
                         </td>
-                        <td className="hidden px-3 py-2 text-[15px] whitespace-nowrap tabular-nums @4xl:table-cell">
+                        <td className="hidden px-3 py-2 text-[15px] whitespace-nowrap tabular-nums @5xl:table-cell">
                           {formatDate(decision.updated_at)}
                         </td>
-                        <td className="hidden px-3 py-2 @5xl:table-cell">
+                        <td className="hidden px-3 py-2 @6xl:table-cell">
                           <span className="inline-flex rounded-md bg-sidebar px-2 py-1 font-mono text-xs whitespace-nowrap text-foreground dark:bg-sidebar-accent">
                             {decision.decision_code}
                           </span>
@@ -925,7 +1038,7 @@ export function NeedsAttention({ decisions }: { decisions: Decision[] }) {
           />
           <aside
             aria-label="Decision details"
-            className="settings-dialog-scroll fixed inset-y-0 right-0 z-40 w-full max-w-[480px] overflow-y-auto overscroll-contain border-l border-sidebar-border bg-card p-6 shadow-xl xl:sticky xl:top-5 xl:z-auto xl:max-h-[calc(100dvh-2.5rem)] xl:w-auto xl:max-w-none xl:rounded-[28px] xl:border xl:shadow-none"
+            className="settings-dialog-scroll fixed inset-y-0 right-0 z-40 flex w-full max-w-[480px] flex-col overflow-y-auto overscroll-contain border-l border-sidebar-border bg-card shadow-xl dark:bg-background xl:sticky xl:top-5 xl:z-auto xl:max-h-[calc(100dvh-2.5rem)] xl:w-auto xl:max-w-none xl:rounded-[28px] xl:border xl:shadow-none"
           >
             <DecisionDetail
               decision={selected}
@@ -934,6 +1047,7 @@ export function NeedsAttention({ decisions }: { decisions: Decision[] }) {
                 setResolvedIds((previous) => [...previous, id]);
                 setSelectedId(null);
               }}
+              onDelete={() => setDeleteTargets([selected])}
             />
           </aside>
         </>
