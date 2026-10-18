@@ -56,6 +56,12 @@ export async function DELETE(request: Request, context: Context) {
         "MIGRATION_REQUIRED",
         "Apply migration 202610170010_delete_projects.sql before deleting projects.",
       );
+    if (result.error?.code === "23503")
+      throw new ApiError(
+        503,
+        "DELETION_DEPENDENCIES",
+        "Related project records blocked deletion. Apply migration 202610170013_project_deletion_automation.sql, then retry. The project has not been deleted.",
+      );
     const deleted = checked(result);
     let pending = true;
     try {
