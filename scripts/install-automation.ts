@@ -20,9 +20,11 @@ async function main() {
       await client.query(`create table if not exists public.bridgify_migrations(
         name text primary key,sha256 text not null,applied_at timestamptz not null default now())`);
       for (const name of [
+        "202610170008_editable_project_introduction.sql",
         "202610170010_project_automation.sql",
         "202610170011_automation_review_recovery.sql",
         "202610170012_optional_review_notes.sql",
+        "202610180016_chat_connection_conflicts.sql",
       ]) {
         const sql = await readFile(`supabase/migrations/${name}`, "utf8");
         const checksum = createHash("sha256").update(sql).digest("hex");
