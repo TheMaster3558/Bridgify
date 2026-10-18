@@ -1,0 +1,15 @@
+/* BoardUI tokens for the auth screen only. The owner app keeps app/globals.css. */
+@import "../../../styles/globals.css";
+
+.boardui-auth {
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--font-sans);
+}
+
+/* app/globals.css gives headings the display font; the card's type tokens expect Inter. */
+@layer base {
+  .boardui-auth :is(h1, h2, h3) {
+    font-family: inherit;
+    letter-spacing: normal;
+  }
+}

@@ -4,7 +4,7 @@ test("sign-in uses email and password without seeded credentials", async ({
 }) => {
   await page.goto("/login");
   await expect(
-    page.getByRole("heading", { name: "Sign in", exact: true }),
+    page.getByRole("heading", { name: "Welcome back", exact: true }),
   ).toBeVisible();
   await expect(page.getByLabel("Email", { exact: true })).toHaveValue("");
   await expect(page.getByLabel("Password", { exact: true })).toHaveAttribute(
@@ -20,7 +20,7 @@ test("signup requires matching password fields and has no verification step", as
 }) => {
   await page.goto("/login");
   await page
-    .getByRole("button", { name: "Create an account", exact: true })
+    .getByRole("link", { name: "Create an account", exact: true })
     .click();
   await expect(
     page.getByRole("heading", { name: "Create your account", exact: true }),
@@ -33,7 +33,7 @@ test("signup requires matching password fields and has no verification step", as
     page.getByLabel("Confirm password", { exact: true }),
   ).toBeVisible();
   await expect(
-    page.getByText("No email verification is required.", { exact: false }),
+    page.getByText("get started immediately", { exact: false }),
   ).toBeVisible();
 });
 test("private owner routes require authentication", async ({ page }) => {
@@ -54,7 +54,7 @@ test("expired password reset links offer recovery without asking for a password"
 }) => {
   await page.goto("/login?mode=recover&error=expired&next=%2Fapp");
   await expect(
-    page.getByRole("alert").filter({ hasText: "invalid or expired" }),
+    page.getByRole("status").filter({ hasText: "invalid or expired" }),
   ).toBeVisible();
   await expect(
     page.getByRole("heading", { name: "Reset your password" }),
@@ -87,7 +87,7 @@ test("signup submits passwords and preserves an invitation destination", async (
     .getByLabel("Confirm password", { exact: true })
     .fill("example password");
   await page
-    .getByRole("button", { name: "Create your account", exact: true })
+    .getByRole("button", { name: "Create account", exact: true })
     .click();
   await expect(page.getByRole("status")).toContainText(
     "Unable to create your account",
