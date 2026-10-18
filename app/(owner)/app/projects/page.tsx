@@ -1,9 +1,11 @@
 import type { Metadata } from "next";
 import { requireOwner } from "@/lib/auth/session";
-import { ListControls } from "@/components/dashboard/list-controls";
+import { ListToolbar } from "@/components/dashboard/list-toolbar";
 import {
   queryList,
   listInput,
+  optionCounts,
+  PAGE_SIZE,
   type SearchParams,
 } from "@/lib/dashboard/list-query";
 import { checked } from "@/lib/api";
@@ -22,7 +24,11 @@ export default async function Page({
 }) {
   const { client } = await requireOwner();
   const input = listInput(await searchParams);
-  const result = await queryList(client, "projects", input);
+  const states = ["all", "active", "draft", "paused", "completed", "archived"];
+  const [result, counts] = await Promise.all([
+    queryList(client, "projects", input),
+    optionCounts(client, "projects", input, "status", states),
+  ]);
   const projects = result.items as unknown as WorkspaceProject[];
   const ids = projects.map((project) => project.id);
   const openDecisions = ids.length
@@ -39,22 +45,33 @@ export default async function Page({
   for (const { project_id } of openDecisions)
     pendingDecisions[project_id] = (pendingDecisions[project_id] ?? 0) + 1;
   return (
-    <>
-      <ListControls
-        input={input}
-        total={result.total}
-        statuses={["all", "active", "draft", "paused", "completed", "archived"]}
-      />
-      <ProjectsList
-        key={JSON.stringify(input)}
-        serverManaged
-        workspaceProjects={projects}
-        pendingDecisions={pendingDecisions}
-        clientPhotos={await loadClientPhotos(
-          client,
-          projects.map((project) => project.client_name),
-        )}
-      />
-    </>
+    <ProjectsList
+      key={JSON.stringify(input)}
+      serverManaged
+      toolbar={
+        <ListToolbar
+          values={input}
+          pills={{
+            param: "status",
+            label: "Filter by state",
+            options: states.map((id) => ({
+              id,
+              label: id.charAt(0).toUpperCase() + id.slice(1),
+              count: counts[id],
+            })),
+          }}
+          search={{ placeholder: "Search by name" }}
+          page={input.page}
+          pageSize={PAGE_SIZE}
+          total={result.total}
+        />
+      }
+      workspaceProjects={projects}
+      pendingDecisions={pendingDecisions}
+      clientPhotos={await loadClientPhotos(
+        client,
+        projects.map((project) => project.client_name),
+      )}
+    />
   );
 }

@@ -364,11 +364,14 @@ function ProjectPanel({
 export function ProjectsList({
   workspaceProjects = [],
   serverManaged = false,
+  toolbar,
   pendingDecisions = {},
   clientPhotos = {},
 }: {
   workspaceProjects?: WorkspaceProject[];
   serverManaged?: boolean;
+  /** Filters shown in place of the client-side ones when serverManaged. */
+  toolbar?: React.ReactNode;
   pendingDecisions?: Record<string, number>;
   clientPhotos?: Record<string, string>;
 }) {
@@ -523,7 +526,7 @@ export function ProjectsList({
           </div>
         ) : (
           <>
-            {!serverManaged && <>
+            {serverManaged ? toolbar : <>
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div
                 role="group"
