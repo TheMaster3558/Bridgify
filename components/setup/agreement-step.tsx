@@ -1,13 +1,26 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { centsFromInput } from "@/lib/domain/security";
+import {
+  agreementErrors,
+  termGroups,
+  type FieldErrors,
+} from "@/lib/projects/setup-validation";
+import {
+  FieldFeedback,
+  SetupField,
+  SetupForm,
+  SetupSubmit,
+} from "./setup-form";
 import type { Bundle } from "@/lib/domain/types";
 import {
   initialReview,
   reviewedAgreementSchema,
+  reviewDraftSchema,
   type AgreementReview,
 } from "@/lib/schemas/agreement";
 
@@ -29,7 +42,11 @@ async function submit(url: string, body: unknown, key = crypto.randomUUID()) {
         json.error?.message ||
           "Agreement could not be saved. Retry or refresh to compare the saved version.",
       ),
-      { status: response.status },
+      {
+        status: response.status,
+        code: json.error?.code,
+        fieldErrors: json.error?.fieldErrors?.fieldErrors,
+      },
     );
   return json.data;
 }
@@ -47,6 +64,15 @@ export function AgreementStep({ bundle }: { bundle: Bundle }) {
       (doc?.extraction?.commercial ? initialReview(doc.extraction) : null),
   );
   const [busy, setBusy] = useState("");
+  const [priceInput, setPriceInput] = useState(
+    review?.commercial.price.amount_cents == null
+      ? ""
+      : (review.commercial.price.amount_cents / 100).toFixed(2),
+  );
+  const [revisionInput, setRevisionInput] = useState(
+    String(review?.commercial.revision.allowance ?? ""),
+  );
+  const [invalidDateInput, setInvalidDateInput] = useState(false);
   const [error, setError] = useState("");
   const [saveState, setSaveState] = useState("Saved");
   const [confirmed, setConfirmed] = useState(false);
@@ -138,7 +164,13 @@ export function AgreementStep({ bundle }: { bundle: Bundle }) {
     flushRef.current = flush;
   });
   useEffect(() => {
-    if (locked || !review || saved.current === JSON.stringify(review)) return;
+    if (
+      locked ||
+      !review ||
+      !reviewDraftSchema.safeParse(review).success ||
+      saved.current === JSON.stringify(review)
+    )
+      return;
     const timer = setTimeout(() => {
       void flushRef.current().catch((e) => {
         setSaveState("Review not saved");
@@ -156,6 +188,7 @@ export function AgreementStep({ bundle }: { bundle: Bundle }) {
     return () => window.removeEventListener("beforeunload", handler);
   }, []);
   function change(next: AgreementReview) {
+    setError("");
     latest.current = next;
     setReview(next);
     setConfirmed(false);
@@ -191,36 +224,80 @@ export function AgreementStep({ bundle }: { bundle: Bundle }) {
     });
   }
   const spans = bundle.spans.filter((s) => s.document_id === doc?.id);
+  const errors = review ? agreementErrors(review, spans, p) : {};
+  let validPriceInput = true;
+  if (priceInput.trim()) {
+    try {
+      centsFromInput(priceInput);
+    } catch {
+      validPriceInput = false;
+      errors["commercial.price.amount_cents"] =
+        "Enter a price from 0 to 1,000,000 with no more than two decimal places.";
+    }
+  }
+  const validRevisionInput =
+    revisionInput === "" ||
+    (/^\d+$/.test(revisionInput) && Number(revisionInput) <= 10000);
+  if (!validRevisionInput)
+    errors["commercial.revision.allowance"] =
+      "Enter a whole number from 0 to 10,000, or leave blank if the agreement does not specify included changes.";
+  if (invalidDateInput)
+    errors["commercial.due_date.value"] =
+      "Enter a complete, real date, or clear the date if none is agreed.";
+  const canConfirm = review && !Object.keys(errors).length;
   function evidence(key: keyof AgreementReview["commercial"]) {
     const field = review!.commercial[key];
     return (
-      <div className="grid gap-2">
-        <label>
-          Source page
-          <select
-            aria-label={`${key} source page`}
-            value={field.span_id || ""}
-            onChange={(e) =>
-              commercial(key, { span_id: e.target.value || null })
-            }
-            className="ml-2 rounded border p-2"
+      <details
+        open={
+          !!(
+            errors[`commercial.${key}.span_id`] ||
+            errors[`commercial.${key}.quote`]
+          )
+        }
+        className="rounded border p-3"
+      >
+        <summary className="cursor-pointer text-sm">
+          Check the contract excerpt
+        </summary>
+        <div className="mt-3 grid gap-3">
+          <FieldFeedback
+            label="Source page"
+            name={`commercial.${key}.span_id`}
+            errors={errors}
           >
-            <option value="">Not specified</option>
-            {spans.map((s) => (
-              <option key={s.id} value={s.id}>
-                Page {s.page}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Exact contract excerpt
-          <Textarea
-            value={field.quote || ""}
-            onChange={(e) => commercial(key, { quote: e.target.value || null })}
-          />
-        </label>
-      </div>
+            <select
+              aria-label={`${key} source page`}
+              value={field.span_id || ""}
+              onChange={(e) =>
+                commercial(key, { span_id: e.target.value || null })
+              }
+              className="rounded border p-2"
+            >
+              <option value="">Not stated in the agreement</option>
+              {spans.map((s) => (
+                <option key={s.id} value={s.id}>
+                  Page {s.page}
+                </option>
+              ))}
+            </select>
+          </FieldFeedback>
+          <FieldFeedback
+            label="Exact contract excerpt"
+            name={`commercial.${key}.quote`}
+            errors={errors}
+            hint="Copy the exact words from the source page. Do not paraphrase this excerpt."
+          >
+            <Textarea
+              value={field.quote || ""}
+              maxLength={4000}
+              onChange={(e) =>
+                commercial(key, { quote: e.target.value || null })
+              }
+            />
+          </FieldFeedback>
+        </div>
+      </details>
     );
   }
   const priceMismatch =
@@ -234,49 +311,51 @@ export function AgreementStep({ bundle }: { bundle: Bundle }) {
     review.commercial.due_date.value !== p.agreed_due_date;
   return (
     <div className="grid gap-6">
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          const form = new FormData(e.currentTarget);
+      <SetupForm
+        validate={validateUpload}
+        disabled={!!busy || locked}
+        onSave={async (form) => {
           form.set("expectedVersion", String(p.version));
-          void run("Analyzing agreement with Gemini…", async () => {
-            try {
-              await send(`/api/v1/projects/${p.id}/documents`, form);
-            } finally {
-              router.refresh();
-            }
-          });
+          setBusy("Analyzing agreement…");
+          try {
+            await send(`/api/v1/projects/${p.id}/documents`, form);
+          } finally {
+            setBusy("");
+            router.refresh();
+          }
         }}
-        className="grid gap-4"
       >
-        <fieldset disabled={!!busy || locked} className="grid gap-4">
-          <label>
-            Paste the complete agreement
-            <Textarea name="text" rows={6} maxLength={30000} />
-          </label>
-          <label>
-            Or upload a text PDF (5 MB, 50 pages maximum)
-            <Input name="file" type="file" accept="application/pdf" />
-          </label>
-          <p className="text-sm text-muted-foreground">
-            Private to your workspace. Maximum 30,000 extracted characters.
-            Scanned PDFs require pasted text. A replacement invalidates the
-            previous extraction and baseline.
-          </p>
-          <Button>
-            {doc
-              ? "Upload replacement / analyze new text"
-              : "Upload / analyze agreement"}
-          </Button>
-        </fieldset>
-      </form>
+        <SetupField
+          label="Paste the complete agreement"
+          name="text"
+          hint="Paste text here, or upload a PDF below. Use one source at a time."
+        >
+          <Textarea name="text" rows={6} maxLength={30000} />
+        </SetupField>
+        <SetupField
+          label="Or upload a text PDF (5 MB, 50 pages maximum)"
+          name="file"
+          hint="Scanned PDFs cannot be read. Paste their complete text instead."
+        >
+          <Input name="file" type="file" accept="application/pdf,.pdf" />
+        </SetupField>
+        <p className="text-sm text-muted-foreground">
+          Your agreement is private to your workspace. Replacing it means
+          reviewing and confirming the new agreement again.
+        </p>
+        <SetupSubmit>
+          {doc
+            ? "Upload replacement / analyze new text"
+            : "Upload / analyze agreement"}
+        </SetupSubmit>
+      </SetupForm>
       {doc && !busy && (
         <p role="status">
           {doc.status === "ready"
             ? "Review ready"
             : ["queued", "processing"].includes(doc.status)
-              ? "Analysis is pending or running. Use Analyze now to start or resume this saved agreement."
-              : "Extraction needs attention"}{" "}
+              ? "Your agreement is saved. Analysis is running or waiting to start."
+              : "The agreement could not be read."}{" "}
           ·{" "}
           {doc.kind === "pdf" ? "Private PDF saved" : "Pasted agreement saved"}
         </p>
@@ -284,7 +363,19 @@ export function AgreementStep({ bundle }: { bundle: Bundle }) {
       {!busy &&
         doc?.error &&
         ["failed", "unsupported"].includes(doc.status) && (
-          <p role="alert">{doc.error}</p>
+          <div className="rounded border border-destructive p-4">
+            <p className="font-medium">
+              {doc.kind === "pdf"
+                ? "Check your agreement PDF"
+                : "Check your agreement text"}
+            </p>
+            <p role="alert" className="mt-2 text-sm text-destructive">
+              {doc.error}
+            </p>
+            <p className="mt-2 text-sm">
+              Retry analysis, or replace the agreement using the fields above.
+            </p>
+          </div>
         )}
       {doc &&
         ["queued", "processing", "failed", "unsupported"].includes(
@@ -293,7 +384,7 @@ export function AgreementStep({ bundle }: { bundle: Bundle }) {
           <Button
             disabled={!!busy || locked}
             onClick={() =>
-              void run("Analyzing agreement with Gemini…", async () => {
+              void run("Analyzing agreement…", async () => {
                 try {
                   await send(
                     `/api/v1/projects/${p.id}/agreement`,
@@ -318,133 +409,195 @@ export function AgreementStep({ bundle }: { bundle: Bundle }) {
           </Button>
         )}
       {doc?.status === "ready" && !review && (
-        <p role="alert">
-          This older extraction lacks structured commercial fields. Import the
-          agreement again to review it in this flow.
-        </p>
-      )}
-      {doc?.status === "ready" && doc.extraction?.model && (
-        <p className="text-sm text-muted-foreground">
-          Analyzed with {doc.extraction.model}.
-          {doc.extraction.fallback_from
-            ? ` Used this fallback because ${doc.extraction.fallback_from} was unavailable or reached its request limit.`
-            : ""}
+        <p role="alert" className="rounded border border-destructive p-4">
+          This saved agreement needs a fresh analysis. Upload or paste it again
+          to review its price, dates and included changes.
         </p>
       )}
       {review && doc?.status === "ready" && (
         <>
-          <p className="text-sm">
-            Review all terms and their excerpts. Missing terms remain
-            unspecified. Your edits save to a review draft; Continue creates the
-            confirmed baseline.
-          </p>
-          <fieldset disabled={locked || !!busy} className="grid gap-5">
-            {review.terms.map((term, i) => (
-              <div key={i} className="grid gap-3 rounded border p-4">
-                <label>
-                  Category
-                  <select
-                    aria-label={`Term ${i + 1} category`}
-                    className="ml-2 rounded border p-2"
-                    value={term.kind}
+          <div className="rounded-lg bg-muted p-4 text-sm">
+            <p className="font-medium">
+              Review what you and your client agreed
+            </p>
+            <p className="mt-1">
+              Check the items below, edit any unclear wording and answer the
+              questions. Original contract excerpts are available for every
+              item. Your edits save as a draft until you confirm.
+            </p>
+          </div>
+          <fieldset disabled={locked || !!busy} className="grid gap-6">
+            {termGroups.map((group) => {
+              const items = review.terms
+                .map((term, i) => ({ term, i }))
+                .filter(({ term }) => term.kind === group.kind);
+              return (
+                <section
+                  key={group.kind}
+                  className="grid gap-3"
+                  aria-label={group.label}
+                >
+                  <div>
+                    <h3 className="font-semibold">
+                      {group.label}{" "}
+                      <span className="text-sm font-normal text-muted-foreground">
+                        ({items.length})
+                      </span>
+                    </h3>
+                    <p className="text-sm text-muted-foreground">
+                      {group.description}
+                    </p>
+                  </div>
+                  {!items.length && (
+                    <p className="rounded border border-dashed p-3 text-sm text-muted-foreground">
+                      No items found in the agreement.
+                    </p>
+                  )}
+                  {group.kind === "inclusion" && errors.terms && (
+                    <p
+                      role="alert"
+                      className="rounded border border-destructive p-3 text-sm text-destructive"
+                    >
+                      {errors.terms}
+                    </p>
+                  )}
+                  {items.map(({ term, i }) => (
+                    <div
+                      key={i}
+                      className={`grid gap-3 rounded-lg border p-4 ${errors[`terms.${i}.text`] || errors[`terms.${i}.quote`] ? "border-destructive" : ""}`}
+                    >
+                      <FieldFeedback
+                        label="Reviewed wording"
+                        name={`terms.${i}.text`}
+                        errors={errors}
+                      >
+                        <Textarea
+                          value={term.text}
+                          maxLength={2000}
+                          onChange={(e) =>
+                            change({
+                              ...review,
+                              terms: review.terms.map((t, n) =>
+                                n === i ? { ...t, text: e.target.value } : t,
+                              ),
+                            })
+                          }
+                        />
+                      </FieldFeedback>
+                      <details>
+                        <summary className="cursor-pointer text-sm text-muted-foreground">
+                          View contract excerpt · page{" "}
+                          {spans.find((s) => s.id === term.span_id)?.page ||
+                            "unknown"}
+                        </summary>
+                        <blockquote className="my-3 whitespace-pre-wrap border-l-2 pl-3 text-sm">
+                          “{term.quote}”
+                        </blockquote>
+                        <label className="grid gap-2 text-sm">
+                          Move to section
+                          <select
+                            aria-label={`Term ${i + 1} category`}
+                            className="rounded border p-2"
+                            value={term.kind}
+                            onChange={(e) =>
+                              change({
+                                ...review,
+                                terms: review.terms.map((t, n) =>
+                                  n === i
+                                    ? {
+                                        ...t,
+                                        kind: e.target.value as typeof t.kind,
+                                      }
+                                    : t,
+                                ),
+                              })
+                            }
+                          >
+                            {termGroups.map((g) => (
+                              <option key={g.kind} value={g.kind}>
+                                {g.label}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      </details>
+                      {errors[`terms.${i}.quote`] && (
+                        <p role="alert" className="text-sm text-destructive">
+                          {errors[`terms.${i}.quote`]}
+                        </p>
+                      )}
+                      <button
+                        type="button"
+                        className="justify-self-start text-sm text-muted-foreground underline"
+                        onClick={() =>
+                          change({
+                            ...review,
+                            terms: review.terms.filter((_, n) => n !== i),
+                          })
+                        }
+                      >
+                        Remove draft term
+                      </button>
+                    </div>
+                  ))}
+                </section>
+              );
+            })}
+            <section className="grid gap-4 rounded-lg border p-4">
+              <h3 className="font-semibold">Contract price</h3>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <FieldFeedback
+                  label="Agreement price"
+                  name="commercial.price.amount_cents"
+                  errors={errors}
+                  hint="Leave blank if the contract does not state a price."
+                >
+                  <Input
+                    inputMode="decimal"
+                    value={priceInput}
+                    onChange={(e) => {
+                      setPriceInput(e.target.value);
+                      if (!e.target.value.trim())
+                        commercial("price", { amount_cents: null });
+                      else {
+                        try {
+                          commercial("price", {
+                            amount_cents: centsFromInput(e.target.value),
+                          });
+                        } catch {
+                          setConfirmed(false);
+                        }
+                      }
+                    }}
+                  />
+                </FieldFeedback>
+                <FieldFeedback
+                  label="Currency"
+                  name="commercial.price.currency"
+                  errors={errors}
+                  hint="For example, USD, EUR or GBP. Leave blank if not stated."
+                >
+                  <Input
+                    value={review.commercial.price.currency || ""}
+                    maxLength={3}
                     onChange={(e) =>
-                      change({
-                        ...review,
-                        terms: review.terms.map((t, n) =>
-                          n === i
-                            ? { ...t, kind: e.target.value as typeof t.kind }
-                            : t,
-                        ),
-                      })
-                    }
-                  >
-                    {[
-                      "inclusion",
-                      "exclusion",
-                      "revision",
-                      "date",
-                      "responsibility",
-                    ].map((k) => (
-                      <option key={k}>{k}</option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  Reviewed wording
-                  <Textarea
-                    value={term.text}
-                    maxLength={2000}
-                    onChange={(e) =>
-                      change({
-                        ...review,
-                        terms: review.terms.map((t, n) =>
-                          n === i ? { ...t, text: e.target.value } : t,
-                        ),
+                      commercial("price", {
+                        currency: e.target.value.toUpperCase() || null,
                       })
                     }
                   />
-                </label>
-                <blockquote className="border-l-2 pl-3 text-sm">
-                  Page {spans.find((s) => s.id === term.span_id)?.page}: “
-                  {term.quote}”
-                </blockquote>
-                <button
-                  type="button"
-                  className="text-left text-sm underline"
-                  onClick={() =>
-                    change({
-                      ...review,
-                      terms: review.terms.filter((_, n) => n !== i),
-                    })
-                  }
-                >
-                  Remove draft term
-                </button>
+                </FieldFeedback>
               </div>
-            ))}
-            <div className="grid gap-3 rounded border p-4">
-              <h3 className="font-semibold">Price and currency</h3>
-              <label>
-                Agreement price (leave blank if unspecified)
-                <Input
-                  aria-label="Agreement price"
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={
-                    review.commercial.price.amount_cents === null
-                      ? ""
-                      : review.commercial.price.amount_cents / 100
-                  }
-                  onChange={(e) =>
-                    commercial("price", {
-                      amount_cents:
-                        e.target.value === ""
-                          ? null
-                          : Math.round(Number(e.target.value) * 100),
-                    })
-                  }
-                />
-              </label>
-              <label>
-                ISO currency
-                <Input
-                  value={review.commercial.price.currency || ""}
-                  maxLength={3}
-                  onChange={(e) =>
-                    commercial("price", {
-                      currency: e.target.value.toUpperCase() || null,
-                    })
-                  }
-                />
-              </label>
               {evidence("price")}
               {priceMismatch && (
-                <label className="rounded bg-muted p-3">
-                  Price differs from Basics ({p.currency}{" "}
-                  {(p.original_amount_cents / 100).toFixed(2)}).
+                <FieldFeedback
+                  label={`Which price should this project use? Basics has ${p.currency} ${(p.original_amount_cents / 100).toFixed(2)}.`}
+                  name="price_choice"
+                  errors={errors}
+                >
                   <select
                     aria-label="Resolve price mismatch"
+                    className="rounded border p-2"
                     value={review.price_choice}
                     onChange={(e) =>
                       change({
@@ -454,34 +607,42 @@ export function AgreementStep({ bundle }: { bundle: Bundle }) {
                       })
                     }
                   >
-                    <option value="">Choose explicitly…</option>
-                    <option value="basics">
-                      Keep Basics price; retain agreement excerpt
-                    </option>
+                    <option value="">Choose a price…</option>
+                    <option value="basics">Keep the price from Basics</option>
                     <option value="agreement">
-                      Update Basics to reviewed agreement price
+                      Use the reviewed contract price
                     </option>
                   </select>
-                </label>
+                </FieldFeedback>
               )}
-            </div>
-            <div className="grid gap-3 rounded border p-4">
-              <h3 className="font-semibold">Overall completion date</h3>
-              <Input
-                aria-label="Agreement completion date"
-                type="date"
-                value={review.commercial.due_date.value || ""}
-                onChange={(e) =>
-                  commercial("due_date", { value: e.target.value || null })
-                }
-              />
+            </section>
+            <section className="grid gap-4 rounded-lg border p-4">
+              <h3 className="font-semibold">Project completion date</h3>
+              <FieldFeedback
+                label="Agreement completion date"
+                name="commercial.due_date.value"
+                errors={errors}
+                hint="Use the overall completion date. Leave blank if the agreement only lists milestones or has no date."
+              >
+                <Input
+                  type="date"
+                  value={review.commercial.due_date.value || ""}
+                  onChange={(e) => {
+                    setInvalidDateInput(!e.target.validity.valid);
+                    commercial("due_date", { value: e.target.value || null });
+                  }}
+                />
+              </FieldFeedback>
               {evidence("due_date")}
               {dateMismatch && (
-                <label className="rounded bg-muted p-3">
-                  Date differs from Basics ({p.agreed_due_date || "unspecified"}
-                  ).
+                <FieldFeedback
+                  label={`Which completion date should this project use? Basics has ${p.agreed_due_date || "no date"}.`}
+                  name="date_choice"
+                  errors={errors}
+                >
                   <select
                     aria-label="Resolve date mismatch"
+                    className="rounded border p-2"
                     value={review.date_choice}
                     onChange={(e) =>
                       change({
@@ -491,37 +652,50 @@ export function AgreementStep({ bundle }: { bundle: Bundle }) {
                       })
                     }
                   >
-                    <option value="">Choose explicitly…</option>
-                    <option value="basics">
-                      Keep Basics date; retain agreement excerpt
-                    </option>
+                    <option value="">Choose a date…</option>
+                    <option value="basics">Keep the date from Basics</option>
                     <option value="agreement">
-                      Update Basics to reviewed agreement date
+                      Use the reviewed contract date
                     </option>
                   </select>
-                </label>
+                </FieldFeedback>
               )}
-            </div>
-            <div className="grid gap-3 rounded border p-4">
-              <h3 className="font-semibold">Revision allowance</h3>
-              <Input
-                aria-label="Revision allowance"
-                type="number"
-                min="0"
-                max="10000"
-                step="1"
-                value={review.commercial.revision.allowance ?? ""}
-                onChange={(e) =>
-                  commercial("revision", {
-                    allowance:
-                      e.target.value === "" ? null : Number(e.target.value),
-                  })
-                }
-              />
-              <label>
-                Allowance means
+            </section>
+            <section className="grid gap-4 rounded-lg border p-4">
+              <h3 className="font-semibold">Changes included in the price</h3>
+              <p className="text-sm text-muted-foreground">
+                A request is one individual change. A round is a batch of
+                feedback reviewed together. Check which meaning your agreement
+                uses.
+              </p>
+              <FieldFeedback
+                label="Number of included changes or rounds"
+                name="commercial.revision.allowance"
+                errors={errors}
+                hint="Leave blank only if the agreement does not specify a number."
+              >
+                <Input
+                  aria-label="Number of included changes or rounds"
+                  inputMode="numeric"
+                  value={revisionInput}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setRevisionInput(value);
+                    if (!value) commercial("revision", { allowance: null });
+                    else if (/^\d+$/.test(value))
+                      commercial("revision", { allowance: Number(value) });
+                    else setConfirmed(false);
+                  }}
+                />
+              </FieldFeedback>
+              <FieldFeedback
+                label="What does that number cover?"
+                name="commercial.revision.unit"
+                errors={errors}
+              >
                 <select
-                  aria-label="Revision unit"
+                  aria-label="What does that number cover?"
+                  className="rounded border p-2"
                   value={review.commercial.revision.unit}
                   onChange={(e) =>
                     commercial("revision", {
@@ -530,142 +704,138 @@ export function AgreementStep({ bundle }: { bundle: Bundle }) {
                     })
                   }
                 >
-                  {["ambiguous", "requests", "rounds", "not_specified"].map(
-                    (unit) => (
-                      <option key={unit}>{unit}</option>
-                    ),
-                  )}
+                  <option value="ambiguous">
+                    Needs clarification — choose a meaning
+                  </option>
+                  <option value="requests">Individual change requests</option>
+                  <option value="rounds">Rounds of feedback</option>
+                  <option value="not_specified">
+                    The agreement does not specify included changes
+                  </option>
                 </select>
-              </label>
-              <p className="text-sm">
-                “Two revisions” is ambiguous until you resolve what a revision
-                means. Missing allowance can remain unspecified; automation must
-                remain review-only.
+              </FieldFeedback>
+              <p className="text-sm text-muted-foreground">
+                Rounds of feedback and agreements without a specified number of
+                changes need your approval for each request.
               </p>
               {evidence("revision")}
-            </div>
-            {review.issues.map((issue, i) => (
-              <label key={i} className="grid gap-2 rounded border p-4">
-                Needs review: {issue.text}
-                <Textarea
-                  aria-label={`Resolution ${i + 1}`}
-                  placeholder="Explain your correction, clarification, or explicitly acknowledge that the agreement leaves this unspecified."
-                  value={issue.resolution}
-                  onChange={(e) =>
-                    change({
-                      ...review,
-                      issues: review.issues.map((v, n) =>
-                        n === i ? { ...v, resolution: e.target.value } : v,
-                      ),
-                    })
-                  }
-                />
-              </label>
-            ))}
-            {spans.map((span) => (
-              <details key={span.id} className="rounded border p-4">
-                <summary>Complete source · page {span.page}</summary>
-                <pre className="my-4 max-h-80 overflow-auto whitespace-pre-wrap font-sans text-sm">
-                  {span.text}
-                </pre>
-                <form
-                  className="grid gap-3"
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    const form = new FormData(e.currentTarget);
-                    const quote = String(form.get("quote"));
-                    if (!quote.trim() || !span.text.includes(quote)) {
-                      setError("Use an exact excerpt from this source page.");
-                      return;
+            </section>
+            {!!review.issues.length && (
+              <section className="grid gap-4" aria-label="Questions to review">
+                <h3 className="font-semibold">Questions to review</h3>
+                <p className="text-sm text-muted-foreground">
+                  Clarify these points, or record that you understand the
+                  agreement leaves them open.
+                </p>
+                {review.issues.map((issue, i) => (
+                  <FieldFeedback
+                    key={i}
+                    label={issue.text}
+                    name={`issues.${i}.resolution`}
+                    errors={errors}
+                  >
+                    <Textarea
+                      aria-label={`Resolution ${i + 1}`}
+                      maxLength={2000}
+                      placeholder="Describe your clarification, or acknowledge that this is not stated in the agreement."
+                      value={issue.resolution}
+                      onChange={(e) =>
+                        change({
+                          ...review,
+                          issues: review.issues.map((v, n) =>
+                            n === i ? { ...v, resolution: e.target.value } : v,
+                          ),
+                        })
+                      }
+                    />
+                  </FieldFeedback>
+                ))}
+              </section>
+            )}
+            <section className="grid gap-3">
+              <h3 className="font-semibold">
+                Original agreement & missing items
+              </h3>
+              <p className="text-sm text-muted-foreground">
+                Open a source page to check the complete text or add something
+                the assistant missed.
+              </p>
+              {spans.map((span) => (
+                <details key={span.id} className="rounded border p-4">
+                  <summary className="cursor-pointer">
+                    Complete source · page {span.page}
+                  </summary>
+                  <pre className="my-4 max-h-80 overflow-auto whitespace-pre-wrap font-sans text-sm">
+                    {span.text}
+                  </pre>
+                  <MissingTermForm
+                    span={span}
+                    disabled={review.terms.length >= 100}
+                    onAdd={(term) =>
+                      change({ ...review, terms: [...review.terms, term] })
                     }
-                    change({
-                      ...review,
-                      terms: [
-                        ...review.terms,
-                        {
-                          kind: form.get(
-                            "kind",
-                          ) as AgreementReview["terms"][number]["kind"],
-                          text: String(form.get("text")),
-                          span_id: span.id,
-                          quote,
-                        },
-                      ],
-                    });
-                    e.currentTarget.reset();
-                  }}
-                >
-                  <label>
-                    Missing term category
-                    <select name="kind">
-                      {[
-                        "inclusion",
-                        "exclusion",
-                        "revision",
-                        "date",
-                        "responsibility",
-                      ].map((k) => (
-                        <option key={k}>{k}</option>
-                      ))}
-                    </select>
-                  </label>
-                  <label>
-                    Exact excerpt
-                    <Input name="quote" required maxLength={4000} />
-                  </label>
-                  <label>
-                    Missing term wording
-                    <Input name="text" required maxLength={2000} />
-                  </label>
-                  <Button variant="outline">Add missing term</Button>
-                </form>
-              </details>
-            ))}
-            <label className="flex gap-3">
+                  />
+                </details>
+              ))}
+            </section>
+            <label className="flex gap-3 rounded border p-4 text-sm">
               <input
                 type="checkbox"
                 checked={confirmed}
                 onChange={(e) => setConfirmed(e.target.checked)}
+                className="mt-1"
               />
               I reviewed the entire agreement, source excerpts, missing terms,
-              revision meaning and all flagged issues.
+              included changes and all flagged questions.
             </label>
           </fieldset>
           <p role="status">
             {saveState}
             {baseline
-              ? " · Confirmed baseline exists; edits remain draft until Continue."
+              ? " · A confirmed agreement exists. These edits are a draft until you confirm again."
               : ""}
           </p>
-          <div className="flex gap-3">
+          {errors.review && (
+            <p
+              role="alert"
+              className="rounded border border-destructive p-3 text-sm text-destructive"
+            >
+              {errors.review}
+            </p>
+          )}
+          <div className="flex flex-wrap gap-3">
             <Button
               variant="outline"
-              disabled={!!busy || locked}
+              disabled={
+                !!busy ||
+                locked ||
+                !reviewDraftSchema.safeParse(review).success ||
+                !validPriceInput ||
+                !validRevisionInput ||
+                invalidDateInput
+              }
               onClick={() => void run("Saving review…", flush)}
             >
               Save review draft
             </Button>
             <Button
-              disabled={!confirmed || !!busy || locked}
+              disabled={!confirmed || !canConfirm || !!busy || locked}
               onClick={() =>
                 void run("Confirming agreement…", async () => {
-                  const parsed = reviewedAgreementSchema.safeParse(
-                    latest.current,
-                  );
-                  if (!parsed.success)
-                    throw new Error(
-                      parsed.error.issues.map((i) => i.message).join(". "),
-                    );
-                  if (priceMismatch && !parsed.data.price_choice)
-                    throw new Error("Resolve the price mismatch first.");
-                  if (dateMismatch && !parsed.data.date_choice)
-                    throw new Error("Resolve the date mismatch first.");
+                  if (
+                    !canConfirm ||
+                    !latest.current ||
+                    Object.keys(agreementErrors(latest.current, spans, p))
+                      .length
+                  )
+                    return;
+                  const parsed = reviewedAgreementSchema.parse(latest.current);
                   await flush();
                   await send(`/api/v1/projects/${p.id}/scope/confirm`, {
                     expectedVersion: p.version,
                     document_id: doc.id,
-                    terms: parsed.data.terms,
-                    review: parsed.data,
+                    terms: parsed.terms,
+                    review: parsed,
                     reviewed_all_terms: true,
                   });
                   router.push(`/app/projects/${p.id}/setup?step=3`);
@@ -673,17 +843,111 @@ export function AgreementStep({ bundle }: { bundle: Bundle }) {
                 })
               }
             >
-              Confirm baseline & continue
+              Confirm agreement &amp; continue
             </Button>
           </div>
+          {(!canConfirm || !confirmed) && (
+            <p className="text-sm text-muted-foreground">
+              To continue, complete the highlighted fields, answer each question
+              and check the review confirmation above.
+            </p>
+          )}
         </>
       )}
       {busy && <p role="status">{busy}</p>}
       {error && (
-        <p role="alert" className="text-destructive">
+        <p
+          role="alert"
+          className="rounded border border-destructive p-4 text-sm text-destructive"
+        >
           {error}
         </p>
       )}
     </div>
+  );
+}
+
+function validateUpload(form: FormData): FieldErrors {
+  const text = String(form.get("text") || "").trim(),
+    file = form.get("file");
+  if (file instanceof File && file.name) {
+    if (text)
+      return {
+        text: "Use either pasted text or a PDF. Clear this text to upload the PDF.",
+        file: "Clear the pasted text above, or remove this PDF to analyze the text.",
+      };
+    if (!file.size)
+      return {
+        file: "This PDF is empty. Choose a PDF containing the agreement text.",
+      };
+    if (file.type !== "application/pdf" || !/\.pdf$/i.test(file.name))
+      return { file: "Choose a PDF file, or paste the agreement text above." };
+    if (file.size > 5242880)
+      return {
+        file: "This PDF is larger than 5 MB. Choose a smaller PDF or paste the complete agreement text.",
+      };
+    return {};
+  }
+  if (!text) return { text: "Paste your agreement, or choose a PDF below." };
+  if (text.length > 30000)
+    return {
+      text: "Keep the complete agreement within 30,000 characters. No text will be cut off.",
+    };
+  return {};
+}
+
+function MissingTermForm({
+  span,
+  disabled,
+  onAdd,
+}: {
+  span: Bundle["spans"][number];
+  disabled: boolean;
+  onAdd: (term: AgreementReview["terms"][number]) => void;
+}) {
+  const validate = useCallback(
+    (form: FormData): FieldErrors => {
+      const errors: FieldErrors = {},
+        quote = String(form.get("quote") || ""),
+        text = String(form.get("text") || "");
+      if (!quote.trim() || !span.text.includes(quote))
+        errors.quote = "Copy an exact excerpt from this source page.";
+      if (!text.trim())
+        errors.text = "Describe this part of the agreement in plain language.";
+      return errors;
+    },
+    [span.text],
+  );
+  return (
+    <SetupForm
+      validate={validate}
+      disabled={disabled}
+      resetOnSave
+      onSave={async (form) =>
+        onAdd({
+          kind: form.get("kind") as AgreementReview["terms"][number]["kind"],
+          text: String(form.get("text")).trim(),
+          quote: String(form.get("quote")),
+          span_id: span.id,
+        })
+      }
+    >
+      <SetupField label="Section for this item" name="kind">
+        <select name="kind" className="rounded border p-2">
+          {termGroups.map((g) => (
+            <option key={g.kind} value={g.kind}>
+              {g.label}
+            </option>
+          ))}
+        </select>
+      </SetupField>
+      <SetupField label="Exact excerpt" name="quote">
+        <Textarea name="quote" required maxLength={4000} />
+      </SetupField>
+      <SetupField label="Missing item description" name="text">
+        <Input name="text" required maxLength={2000} />
+      </SetupField>
+      <SetupSubmit>Add missing term</SetupSubmit>
+    </SetupForm>
   );
 }

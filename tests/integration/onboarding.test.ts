@@ -195,6 +195,15 @@ beforeAll(async () => {
       "utf8",
     ),
   );
+  await db.exec(
+    await readFile(
+      new URL(
+        "../../supabase/migrations/202610170007_editable_project_introduction.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    ),
+  );
   for (const [id, email] of [
     [owner, "owner@example.test"],
     [other, "other@example.test"],
@@ -1168,4 +1177,27 @@ describe("Photon Pro shared-line client connection", () => {
     );
     expect(paused.project.status).toBe("paused");
   });
+});
+
+it("retains the sent setup introduction and rejects empty recorded messages", async () => {
+  await user(owner);
+  const p = await readyProject();
+  await admin();
+  await db.query(
+    "update chat_bindings set introduction_text=$1 where project_id=$2",
+    ["Hi! I organize requests for this project.", p.id],
+  );
+  const saved = await db.query<{ introduction_text: string }>(
+    "select introduction_text from chat_bindings where project_id=$1",
+    [p.id],
+  );
+  expect(saved.rows[0].introduction_text).toBe(
+    "Hi! I organize requests for this project.",
+  );
+  await expect(
+    db.query(
+      "update chat_bindings set introduction_text='   ' where project_id=$1",
+      [p.id],
+    ),
+  ).rejects.toThrow();
 });

@@ -2,7 +2,7 @@ import { readJson } from "@/lib/body";
 import { z } from "zod";
 import { api, checked, ApiError } from "@/lib/api";
 import { adminDb } from "@/lib/db/admin";
-import { peopleSchema } from "@/lib/schemas/onboarding";
+import { peopleSchema, chatIntroductionSchema } from "@/lib/schemas/onboarding";
 import { membershipHash } from "@/lib/photon/connection";
 import {
   PhotonSetupError,
@@ -10,16 +10,15 @@ import {
   readSpectrumCredentials,
   sendPhotonText,
 } from "@/lib/photon/spectrum";
-import { INTRODUCTION } from "@/lib/domain/security";
 export async function POST(
   request: Request,
   context: { params: Promise<{ projectId: string }> },
 ) {
   return api(request, async (client) => {
     const id = z.uuid().parse((await context.params).projectId),
-      { expectedVersion } = z
-        .object({ expectedVersion: z.number().int().positive() })
-        .parse(await readJson(request));
+      { expectedVersion, introduction } = chatIntroductionSchema.parse(
+        await readJson(request),
+      );
     const project = checked(
       await client.from("projects").select("*").eq("id", id).maybeSingle(),
     );
@@ -63,7 +62,7 @@ export async function POST(
       );
     checked(begin);
     const admin = adminDb();
-    const result = await sendPhotonText(client_sender_id, INTRODUCTION);
+    const result = await sendPhotonText(client_sender_id, introduction);
     if (result.state === "failed") {
       await admin
         .from("chat_bindings")
@@ -96,6 +95,7 @@ export async function POST(
       .from("chat_bindings")
       .update({
         test_state: "sent",
+        introduction_text: introduction,
         test_message_guid: result.messageId,
         disclosed_message_guid: result.messageId,
         verified_at: new Date().toISOString(),

@@ -5,7 +5,15 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { INTRODUCTION, centsFromInput } from "@/lib/domain/security";
+import { INTRODUCTION } from "@/lib/domain/security";
+import { basicsPayload, validateBasics } from "@/lib/projects/setup-validation";
+import {
+  SetupField,
+  SetupForm,
+  SetupSubmit,
+  FieldFeedback,
+} from "./setup-form";
+import { AutomationSetup } from "./automation-setup";
 import type { Bundle } from "@/lib/domain/types";
 import { AgreementStep } from "./agreement-step";
 import { PhotonClientPicker } from "./photon-client-picker";
@@ -16,47 +24,6 @@ const steps = [
   "Automation",
   "Review & activate",
 ];
-function Field({
-  label,
-  name,
-  value = "",
-  type = "text",
-  required = true,
-}: {
-  label: string;
-  name: string;
-  value?: string | number;
-  type?: string;
-  required?: boolean;
-}) {
-  return (
-    <label className="grid gap-2 text-sm font-medium">
-      {label}
-      <Input name={name} type={type} defaultValue={value} required={required} />
-    </label>
-  );
-}
-function Check({
-  name,
-  children,
-  checked = false,
-}: {
-  name: string;
-  children: React.ReactNode;
-  checked?: boolean;
-}) {
-  return (
-    <label className="flex items-start gap-3 text-sm">
-      <input
-        className="mt-1"
-        type="checkbox"
-        name={name}
-        defaultChecked={checked}
-      />
-      <span>{children}</span>
-    </label>
-  );
-}
 export function ProjectWizard({
   bundle,
   step = 1,
@@ -69,6 +36,11 @@ export function ProjectWizard({
   const [pending, setPending] = useState(false),
     [error, setError] = useState(""),
     [notice, setNotice] = useState("");
+  const [introduction, setIntroduction] = useState(
+    bundle?.binding?.introduction_text || INTRODUCTION,
+  );
+  const [consented, setConsented] = useState(false);
+  const [errorTarget, setErrorTarget] = useState("");
   const router = useRouter(),
     keys = useRef(new Map<string, string>());
   useEffect(() => {
@@ -121,13 +93,23 @@ export function ProjectWizard({
     });
     const data = await response.json();
     if (!response.ok)
-      throw new Error(data.error?.message || "Request failed. Retry.");
+      throw Object.assign(
+        new Error(
+          data.error?.message ||
+            "This step could not be saved. Check your connection and try again.",
+        ),
+        {
+          code: data.error?.code,
+          fieldErrors: data.error?.fieldErrors?.fieldErrors,
+        },
+      );
     return data.data;
   }
-  async function run(action: () => Promise<void>) {
+  async function run(action: () => Promise<void>, target = "") {
     setPending(true);
     setError("");
     setNotice("");
+    setErrorTarget(target);
     try {
       await action();
     } catch (e) {
@@ -146,12 +128,35 @@ export function ProjectWizard({
     router.refresh();
   }
   const base = p ? `/app/projects/${p.id}/setup` : "/app/projects/new";
+  const readyToActivate = !!(
+    p?.scope_version &&
+    p.policy_version &&
+    p.policy &&
+    p.people &&
+    bundle?.binding?.test_state === "sent" &&
+    bundle.binding.verified_at &&
+    bundle.binding.disclosed_message_guid &&
+    !bundle.binding.hold_reason
+  );
+  function stepError(target: string) {
+    return error && errorTarget === target ? (
+      <p
+        role="alert"
+        className="rounded border border-destructive p-3 text-sm text-destructive"
+      >
+        {error}
+      </p>
+    ) : null;
+  }
   return (
     <main className="mx-auto max-w-4xl p-5 md:p-10">
       <div className="mb-7 flex items-center justify-between gap-4">
         <div>
           <p className="text-sm text-muted-foreground">
-            Project onboarding {p ? `· ${p.status}` : ""}
+            Project setup{" "}
+            {p
+              ? `· ${{ draft: "Draft", active: "Active", review_only: "Manual approval", paused: "Paused", completed: "Completed", archived: "Archived" }[p.status] || "Saved"}`
+              : ""}
           </p>
           <h1 className="font-display text-3xl font-semibold">
             {p?.name || "Create a project"}
@@ -187,68 +192,96 @@ export function ProjectWizard({
       <section className="rounded-xl border bg-card p-5 md:p-8">
         <h2 className="mb-5 text-xl font-semibold">{steps[step - 1]}</h2>
         {step === 1 && (
-          <form
-            className="grid gap-5"
-            onSubmit={(e) => {
-              e.preventDefault();
-              const form = new FormData(e.currentTarget);
-              void run(async () => {
-                await save(
-                  "basics",
-                  {
-                    name: form.get("name"),
-                    client_name: form.get("client_name"),
-                    original_amount_cents: centsFromInput(
-                      String(form.get("price")),
-                    ),
-                    currency: String(form.get("currency")).toUpperCase(),
-                    timezone: form.get("timezone"),
-                    agreed_due_date: form.get("due") || null,
-                  },
-                  2,
-                );
-              });
-            }}
+          <SetupForm
+            validate={validateBasics}
+            disabled={locked}
+            onSave={(form) => save("basics", basicsPayload(form), 2)}
           >
-            <fieldset
-              disabled={pending || locked}
-              className="grid gap-5 sm:grid-cols-2"
-            >
-              <Field label="Project name" name="name" value={p?.name} />
-              <Field
-                label="Client name"
-                name="client_name"
-                value={p?.client_name}
-              />
-              <Field
+            <div className="grid gap-5 sm:grid-cols-2">
+              <SetupField label="Project name" name="name">
+                <Input
+                  name="name"
+                  defaultValue={p?.name}
+                  required
+                  maxLength={120}
+                  autoComplete="off"
+                />
+              </SetupField>
+              <SetupField label="Client name" name="client_name">
+                <Input
+                  name="client_name"
+                  defaultValue={p?.client_name}
+                  required
+                  maxLength={120}
+                  autoComplete="name"
+                />
+              </SetupField>
+              <SetupField
                 label="Original agreed price"
                 name="price"
-                value={p ? (p.original_amount_cents / 100).toFixed(2) : "0.00"}
-              />
-              <Field
-                label="ISO currency"
+                hint="Enter an amount, such as 250.00. Use 0 for an unpaid project."
+              >
+                <Input
+                  name="price"
+                  defaultValue={
+                    p ? (p.original_amount_cents / 100).toFixed(2) : "0.00"
+                  }
+                  required
+                  inputMode="decimal"
+                />
+              </SetupField>
+              <SetupField
+                label="Currency"
                 name="currency"
-                value={p?.currency || "USD"}
-              />
-              <Field
-                label="Project timezone (IANA)"
+                hint="Choose a three-letter currency code, such as USD or EUR."
+              >
+                <Input
+                  name="currency"
+                  defaultValue={p?.currency || "USD"}
+                  list="setup-currencies"
+                  required
+                  maxLength={3}
+                />
+              </SetupField>
+              <datalist id="setup-currencies">
+                {Intl.supportedValuesOf("currency").map((code) => (
+                  <option key={code} value={code} />
+                ))}
+              </datalist>
+              <SetupField
+                label="Project time zone"
                 name="timezone"
-                value={p?.timezone || "America/Los_Angeles"}
-              />
-              <Field
+                hint="Dates use this time zone. Search by region or city."
+              >
+                <Input
+                  name="timezone"
+                  defaultValue={
+                    p?.timezone ||
+                    Intl.DateTimeFormat().resolvedOptions().timeZone
+                  }
+                  list="setup-timezones"
+                  required
+                />
+              </SetupField>
+              <datalist id="setup-timezones">
+                {Intl.supportedValuesOf("timeZone").map((zone) => (
+                  <option key={zone} value={zone} />
+                ))}
+              </datalist>
+              <SetupField
                 label="Agreed completion date (optional)"
                 name="due"
-                type="date"
-                required={false}
-                value={p?.agreed_due_date || ""}
-              />
-              <p className="text-xs text-muted-foreground">
-                The date is an agreed calendar date in the project timezone.
-                Leave blank when no date is agreed.
-              </p>
-              <Button type="submit">Save basics & continue</Button>
-            </fieldset>
-          </form>
+                hint="Leave blank if you have not agreed on a completion date."
+              >
+                <Input
+                  name="due"
+                  type="date"
+                  defaultValue={p?.agreed_due_date || ""}
+                />
+              </SetupField>
+            </div>
+            <SetupSubmit>Save basics &amp; continue</SetupSubmit>
+          </SetupForm>
         )}
         {step === 2 && bundle && (
           <AgreementStep key={doc?.id + "-" + doc?.status} bundle={bundle} />
@@ -257,6 +290,7 @@ export function ProjectWizard({
           <div className="grid gap-7">
             <PhotonClientPicker
               people={p.people}
+              error={errorTarget === "people" ? error : undefined}
               disabled={pending || locked}
               onConnect={(photonUserId) =>
                 void run(async () => {
@@ -265,7 +299,7 @@ export function ProjectWizard({
                     people: { photon_user_id: photonUserId },
                   });
                   router.refresh();
-                })
+                }, "people")
               }
             />
             {p.people && (
@@ -278,9 +312,38 @@ export function ProjectWizard({
             )}
             <div className="grid gap-4">
               <h3 className="font-semibold">2. Introduce the assistant</h3>
-              <blockquote className="rounded border p-4 text-sm">
-                {INTRODUCTION}
-              </blockquote>
+              <FieldFeedback
+                label="Introduction message"
+                name="introduction"
+                errors={
+                  errorTarget === "introduction" && error
+                    ? { introduction: error }
+                    : introduction.trim()
+                      ? {}
+                      : {
+                          introduction:
+                            "Write an introduction before sending it to your client.",
+                        }
+                }
+                hint="Personalize this message before sending. Explain what the assistant does and how your client can ask you to pause it."
+              >
+                <Textarea
+                  value={introduction}
+                  onChange={(e) => {
+                    setIntroduction(e.target.value);
+                    setError("");
+                  }}
+                  rows={6}
+                  maxLength={4000}
+                  disabled={
+                    pending ||
+                    locked ||
+                    ["sending", "unknown"].includes(
+                      bundle?.binding?.test_state || "",
+                    )
+                  }
+                />
+              </FieldFeedback>
               <p className="text-sm text-muted-foreground">
                 With your client&apos;s consent, this texts the introduction to{" "}
                 {p.people?.client_name || "the connected client"} through
@@ -288,7 +351,13 @@ export function ProjectWizard({
                 retrying.
               </p>
               <p className="text-sm">
-                Introduction: {bundle?.binding?.test_state || "Not sent"}
+                Introduction:{" "}
+                {{
+                  sent: "Sent to client",
+                  sending: "Sending…",
+                  unknown: "Check with your client before retrying",
+                  failed: "Could not send — try again",
+                }[bundle?.binding?.test_state || ""] || "Not sent"}
               </p>
               {bundle?.binding?.hold_reason && (
                 <p role="alert">{bundle.binding.hold_reason}</p>
@@ -296,6 +365,9 @@ export function ProjectWizard({
               <Button
                 disabled={
                   pending ||
+                  locked ||
+                  !introduction.trim() ||
+                  introduction.length > 4000 ||
                   !p.people ||
                   (!!bundle?.binding &&
                     ["sending", "unknown"].includes(bundle.binding.test_state))
@@ -304,11 +376,11 @@ export function ProjectWizard({
                   void run(async () => {
                     const result = await send(
                       `/api/v1/projects/${p.id}/chat-test`,
-                      { expectedVersion: p.version },
+                      { expectedVersion: p.version, introduction },
                     );
                     setNotice(result.message);
                     router.refresh();
-                  })
+                  }, "introduction")
                 }
               >
                 Send introduction text
@@ -317,140 +389,35 @@ export function ProjectWizard({
                 <Button variant="outline" onClick={() => router.refresh()}>
                   Refresh status
                 </Button>
-                <Button asChild>
-                  <Link href={`${base}?step=4`}>Continue to automation</Link>
+                <Button
+                  disabled={
+                    pending ||
+                    !p.people ||
+                    bundle?.binding?.test_state !== "sent" ||
+                    !!bundle.binding.hold_reason
+                  }
+                  onClick={() => router.push(`${base}?step=4`)}
+                >
+                  Continue to automation
                 </Button>
               </div>
             </div>
           </div>
         )}
         {step === 4 && p && (
-          <form
-            className="grid gap-5"
-            onSubmit={(e) => {
-              e.preventDefault();
-              const f = new FormData(e.currentTarget);
-              void run(() =>
-                save(
-                  "policy",
-                  {
-                    mode: f.get("mode"),
-                    allowance_mode: f.get("allowance_mode"),
-                    allowance: Number(f.get("allowance")),
-                    operations: f.getAll("operations"),
-                    targets: String(f.get("targets"))
-                      .split("\n")
-                      .map((t) => t.trim())
-                      .filter(Boolean),
-                    exclusions: f.get("exclusions"),
-                    max_open_tasks: Number(f.get("max_open_tasks")),
-                    notifications: "dashboard",
-                  },
-                  5,
-                ),
-              );
-            }}
-          >
-            <fieldset disabled={pending || locked} className="grid gap-5">
-              <label className="grid gap-2">
-                Automation mode
-                <select
-                  name="mode"
-                  defaultValue={p.policy?.mode || "review_only"}
-                  className="rounded border p-2"
-                >
-                  <option value="review_only">
-                    Review only — owner decides all requests
-                  </option>
-                  <option value="enabled">
-                    Automatically accept eligible routine requests
-                  </option>
-                </select>
-              </label>
-              <label className="grid gap-2">
-                Revision accounting
-                <select
-                  name="allowance_mode"
-                  defaultValue={p.policy?.allowance_mode || "per_request"}
-                  className="rounded border p-2"
-                >
-                  <option value="per_request">
-                    One unit per accepted request
-                  </option>
-                  <option value="manual_rounds">
-                    Contract uses rounds — manual review required
-                  </option>
-                </select>
-              </label>
-              <Field
-                label="Agreed revision allowance (defaults to zero)"
-                name="allowance"
-                type="number"
-                value={p.policy?.allowance || 0}
-              />
-              <p className="text-sm text-muted-foreground">
-                Revision rounds cannot be silently converted into per-request
-                units. Agreements mentioning rounds require review-only
-                handling.
-              </p>
-              <label className="flex gap-3 text-sm">
-                <input
-                  name="operations"
-                  type="checkbox"
-                  value="replace_text"
-                  defaultChecked={p.policy?.operations.includes("replace_text")}
-                />
-                Replace exact text
-              </label>
-              <label className="flex gap-3 text-sm">
-                <input
-                  name="operations"
-                  type="checkbox"
-                  value="change_color"
-                  defaultChecked={p.policy?.operations.includes("change_color")}
-                />
-                Change an existing element color
-              </label>
-              <label className="grid gap-2">
-                Confirmed page/element target IDs (one per line)
-                <Textarea
-                  name="targets"
-                  required
-                  defaultValue={p.policy?.targets.join("\n")}
-                />
-              </label>
-              <label className="grid gap-2">
-                Exclusions and boundaries
-                <Textarea
-                  name="exclusions"
-                  required
-                  defaultValue={
-                    p.policy?.exclusions ||
-                    "No new pages, accounts, payments, integrations, prices or deadline commitments."
-                  }
-                />
-              </label>
-              <Field
-                label="Maximum open automatic tasks (1–10)"
-                name="max_open_tasks"
-                type="number"
-                value={p.policy?.max_open_tasks || 10}
-              />
-              <p className="text-sm">
-                Owner exceptions go to the private dashboard. Paused and
-                review-only projects retain messages without automatic
-                acceptance.
-              </p>
-              <Button>Save automation & continue</Button>
-            </fieldset>
-          </form>
+          <AutomationSetup
+            project={p}
+            bundle={bundle!}
+            locked={locked}
+            onSave={(payload) => save("policy", payload, 5)}
+          />
         )}
         {step === 5 && p && (
           <div className="grid gap-5">
             <p className="rounded border bg-muted p-4 text-sm">
-              This release saves standing permissions and establishes verified
-              message intake. Request analysis, automatic task creation and
-              proposal responses are separate features and are not running yet.
+              These settings prepare the assistant to receive project messages.
+              Request analysis, task creation and proposal replies are not
+              available in this release.
             </p>
             <dl className="grid grid-cols-2 gap-3 text-sm">
               <dt>Client</dt>
@@ -466,11 +433,11 @@ export function ProjectWizard({
               <dd>{p.timezone}</dd>
               <dt>Agreed completion date</dt>
               <dd>{p.agreed_due_date || "No date agreed"}</dd>
-              <dt>Confirmed baseline</dt>
+              <dt>Reviewed agreement</dt>
               <dd>
-                {p.scope_version ? `Version ${p.scope_version}` : "Required"}
+                {p.scope_version ? "Confirmed" : "Review the agreement first"}
               </dd>
-              <dt>Client identity</dt>
+              <dt>Connected client</dt>
               <dd>
                 {p.people
                   ? `${p.people.client_name} · ${p.people.client_sender_id}`
@@ -491,23 +458,36 @@ export function ProjectWizard({
               <dt>Policy</dt>
               <dd>
                 {p.policy
-                  ? `${p.policy.mode}; ${p.policy.allowance} ${p.policy.allowance_mode} units`
+                  ? `${p.policy.mode === "enabled" ? "Accept permitted changes automatically" : "You approve every request"} · ${p.policy.allowance} ${p.policy.allowance_mode === "manual_rounds" ? "rounds of feedback" : "individual changes"} included`
                   : "Required"}
               </dd>
             </dl>
             <p className="text-sm">
-              Activation establishes the server timestamp cutoff. Earlier
-              messages remain evidence and cannot trigger new work. Resuming
-              also establishes a fresh cutoff. Completed and archived projects
-              stop accepting work.
+              The assistant starts handling new messages after you activate this
+              project. Earlier messages stay available for context.
             </p>
-            <blockquote className="rounded border p-4 text-sm">
-              {INTRODUCTION}
-            </blockquote>
+            {bundle?.binding?.introduction_text && (
+              <div className="grid gap-2">
+                <h3 className="font-medium">
+                  Introduction sent to your client
+                </h3>
+                <blockquote className="whitespace-pre-wrap rounded border p-4 text-sm">
+                  {bundle.binding.introduction_text}
+                </blockquote>
+              </div>
+            )}
+            {!readyToActivate && (
+              <p className="rounded border p-3 text-sm">
+                Before activating, confirm the agreement, connect your client,
+                send the introduction and save your automation settings. Use the
+                steps above to finish setup.
+              </p>
+            )}
             <form
-              className="grid gap-4"
+              className={`grid gap-4 rounded-lg ${errorTarget === "activation" && error ? "border border-destructive p-4" : ""}`}
               onSubmit={(e) => {
                 e.preventDefault();
+                if (!consented || !readyToActivate || pending || locked) return;
                 const f = new FormData(e.currentTarget);
                 void run(async () => {
                   await save(
@@ -520,20 +500,33 @@ export function ProjectWizard({
                     },
                     5,
                   );
-                });
+                }, "activation");
               }}
             >
-              <Check name="disclosed">
-                All participants agreed to assistant processing, received the
-                introduction, and know how to ask the owner to pause.
-              </Check>
-              <Button disabled={pending || locked}>
+              <label className="flex items-start gap-3 rounded border p-3 text-sm">
+                <input
+                  type="checkbox"
+                  name="disclosed"
+                  checked={consented}
+                  onChange={(e) => setConsented(e.target.checked)}
+                  disabled={pending || locked}
+                  className="mt-1"
+                />
+                <span>
+                  All participants agreed to assistant processing, received the
+                  introduction, and know how to ask the owner to pause.
+                </span>
+              </label>
+              <Button
+                disabled={pending || locked || !consented || !readyToActivate}
+              >
                 Activate{" "}
                 {p.policy?.mode === "enabled"
                   ? "automation"
                   : "in review-only mode"}
               </Button>
             </form>
+            {stepError("activation")}
             <Link href={`/app/projects/${p.id}`} className="underline">
               Open project overview
             </Link>
@@ -547,21 +540,6 @@ export function ProjectWizard({
         <p aria-live="polite" className="mt-4 text-sm">
           {notice}
         </p>
-        {error && (
-          <div
-            role="alert"
-            className="mt-4 rounded border border-destructive p-4 text-sm"
-          >
-            <p>{error}</p>
-            <button className="mt-2 underline" onClick={() => router.refresh()}>
-              Refresh saved state
-            </button>
-            <p className="mt-2">
-              Your current form stays visible. If this is a version conflict,
-              compare it with the refreshed state before saving again.
-            </p>
-          </div>
-        )}
       </section>
       <p className="mt-5 text-xs text-muted-foreground">
         Each Save persists progress to your workspace. You can sign out and

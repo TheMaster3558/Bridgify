@@ -1,4 +1,15 @@
 import { z } from "zod";
+import { INTRODUCTION } from "@/lib/domain/security";
+
+export const chatIntroductionSchema = z.object({
+  expectedVersion: z.number().int().positive(),
+  introduction: z
+    .string()
+    .trim()
+    .min(1, "Write an introduction before sending it to your client.")
+    .max(4000, "Keep the introduction to 4,000 characters or fewer.")
+    .default(INTRODUCTION),
+});
 
 export const basicsSchema = z.object({
   name: z.string().trim().min(1).max(120),

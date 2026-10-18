@@ -11,8 +11,7 @@ type PhotonUser = {
   assignedPhoneNumber: string | null;
 };
 type PhotonUsersResult =
-  | { ok: true; users: PhotonUser[] }
-  | { ok: false; message: string };
+  { ok: true; users: PhotonUser[] } | { ok: false; message: string };
 
 async function fetchPhotonUsers(): Promise<PhotonUsersResult> {
   const unavailable = "Photon users could not be loaded.";
@@ -33,10 +32,12 @@ export function PhotonClientPicker({
   people,
   disabled,
   onConnect,
+  error,
 }: {
   people: Project["people"];
   disabled: boolean;
   onConnect: (photonUserId: string) => void;
+  error?: string;
 }) {
   const [result, setResult] = useState<PhotonUsersResult | null>(null),
     [loading, setLoading] = useState(true),
@@ -53,8 +54,15 @@ export function PhotonClientPicker({
     void fetchPhotonUsers().then(show);
   };
   return (
-    <div className="grid gap-4">
+    <div
+      className={`grid gap-4 rounded-lg ${error ? "border border-destructive p-4" : ""}`}
+    >
       <h3 className="font-semibold">1. Connect your client on iMessage</h3>
+      {error && (
+        <p role="alert" className="text-sm text-destructive">
+          {error}
+        </p>
+      )}
       <p className="text-sm text-muted-foreground">
         Add your client on the Users page of your{" "}
         <a
@@ -84,7 +92,10 @@ export function PhotonClientPicker({
         </p>
       )}
       {!loading && result && !result.ok && (
-        <p role="alert" className="rounded border border-destructive p-3 text-sm">
+        <p
+          role="alert"
+          className="rounded border border-destructive p-3 text-sm"
+        >
           {result.message}
         </p>
       )}
@@ -139,7 +150,13 @@ export function PhotonClientPicker({
         </Button>
         <Button
           type="button"
-          disabled={disabled || !selected || !result?.ok}
+          disabled={
+            disabled ||
+            loading ||
+            !selected ||
+            !result?.ok ||
+            !result.users.some((user) => user.id === selected)
+          }
           onClick={() => onConnect(selected)}
         >
           {!people
