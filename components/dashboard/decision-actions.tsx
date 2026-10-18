@@ -29,6 +29,7 @@ export function DecisionActions({
 }) {
   const router = useRouter();
   const [note, setNote] = useState("");
+  const [extraRevision,setExtraRevision]=useState(false);
   const [showNote, setShowNote] = useState(false);
   const [reply, setReply] = useState("");
   const [busy, setBusy] = useState(false);
@@ -37,8 +38,8 @@ export function DecisionActions({
   const canApprove =
     !decision.task_change_kind &&
     Boolean(decision.automation_request_id) &&
-    !["unknown_participant", "delivery_unknown"].includes(decision.reason);
-  async function resolve(action: "approve" | "decline" | "dismiss") {
+    !["unknown_participant", "delivery_unknown", "scope_addition", "deadline_change"].includes(decision.reason);
+  async function resolve(action: "approve" | "decline" | "dismiss" | "clarify") {
     setBusy(true);
     setError("");
     try {
@@ -50,6 +51,8 @@ export function DecisionActions({
         },
         body: JSON.stringify({
           action,
+          expectedUpdatedAt:decision.updated_at,
+          extraRevision,
           note,
           reply,
           ...(action === "approve" ? { taskTitle } : {}),
@@ -74,6 +77,7 @@ export function DecisionActions({
     "rounded-2xl bg-card ring-1 ring-sidebar-border transition-shadow focus-within:ring-[3px] focus-within:ring-sidebar-ring/40 dark:bg-sidebar";
   const failedProcessingHint =
     "Automatic interpretation failed. Review the original message and enter the task you want to authorize. Your approval creates the task directly.";
+  if (!["open","reviewing"].includes(decision.status)) return <p className="p-5 text-sm">This review is {decision.status}. Its history and original source are retained.</p>;
   return (
     <>
       <section className="grid gap-4 border-t border-sidebar-border bg-sidebar/60 px-6 pt-6 pb-6 dark:bg-sidebar/40">
@@ -99,6 +103,7 @@ export function DecisionActions({
             />
           </Link>
         )}
+        {decision.reason === "exhausted_allowance" && <label className="flex gap-2"><input type="checkbox" checked={extraRevision} onChange={e=>{setExtraRevision(e.target.checked);setShowNote(true);}}/>Authorize one additional revision for this request; enter a private reason below.</label>}
         {canApprove && (
           <label className="grid gap-2">
             <span className="text-sm font-medium">Task to approve</span>
@@ -200,7 +205,7 @@ export function DecisionActions({
             <button
               type="button"
               className={cn(settingsPrimaryButton, "h-9 gap-1.5 px-4")}
-              disabled={busy || taskTitle.trim().length < 3}
+              disabled={busy || taskTitle.trim().length < 3 || (decision.reason === "exhausted_allowance" && (!extraRevision || note.trim().length < 3))}
               onClick={() => void resolve("approve")}
             >
               <Check aria-hidden className="size-4" />
@@ -217,6 +222,7 @@ export function DecisionActions({
               Decline
             </button>
           )}
+          {decision.automation_request_id && !decision.task_change_kind && !["unknown_participant","delivery_unknown"].includes(decision.reason) && <button type="button" className={settingsButton} disabled={busy || !reply.trim()} onClick={()=>void resolve("clarify")}>Ask client</button>}
           <button
             type="button"
             className={cn(

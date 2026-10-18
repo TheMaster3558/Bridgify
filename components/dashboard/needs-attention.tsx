@@ -433,14 +433,14 @@ function SelectBox({
   );
 }
 
-async function deleteDecision(id: string) {
+async function deleteDecision(id: string, expectedUpdatedAt:string) {
   const response = await fetch(`/api/v1/decisions/${id}`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       "Idempotency-Key": crypto.randomUUID(),
     },
-    body: JSON.stringify({ action: "delete" }),
+    body: JSON.stringify({ action: "delete", expectedUpdatedAt }),
   });
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
@@ -465,7 +465,7 @@ function DeleteDialog({
     setBusy(true);
     setError("");
     const results = await Promise.allSettled(
-      targets.map((decision) => deleteDecision(decision.id)),
+      targets.map((decision) => deleteDecision(decision.id, decision.updated_at)),
     );
     const deleted = targets
       .filter((_, index) => results[index].status === "fulfilled")
@@ -547,11 +547,13 @@ export function NeedsAttention({
   decisions,
   clientPhotos = {},
   serverManaged = false,
+  initialDecisionId,
   activeProjects = [],
 }: {
   decisions: Decision[];
   clientPhotos?: Record<string, string>;
   serverManaged?: boolean;
+  initialDecisionId?: string;
   activeProjects?: { id: string; name: string; client_name: string }[];
 }) {
   const [photoOverrides, setPhotoOverrides] = useState<
@@ -565,7 +567,7 @@ export function NeedsAttention({
   const [filter, setFilter] = useState("all");
   const [project, setProject] = useState("all");
   const router = useRouter();
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(initialDecisionId ?? null);
   const [checkedIds, setCheckedIds] = useState<string[]>([]);
   const [deleteTargets, setDeleteTargets] = useState<Decision[]>([]);
   const [sort, setSort] = useState<{ key: SortKey; dir: "asc" | "desc" }>({
@@ -763,7 +765,7 @@ export function NeedsAttention({
         <section aria-labelledby="open-decisions-heading" className={tableCard}>
           <div className="flex min-h-[3.25rem] flex-wrap items-center justify-between gap-3 px-4 py-2.5">
             <h2 id="open-decisions-heading" className="text-[17px] font-medium">
-              Open decisions
+              Decisions
             </h2>
             {checkedVisible.length > 0 ? (
               <div className="flex items-center gap-2">

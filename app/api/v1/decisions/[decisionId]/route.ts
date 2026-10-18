@@ -14,7 +14,9 @@ export async function POST(
     const id = z.uuid().parse((await context.params).decisionId);
     const input = z
       .object({
-        action: z.enum(["approve", "decline", "dismiss", "delete"]),
+        action: z.enum(["approve", "decline", "dismiss", "delete", "clarify"]),
+        expectedUpdatedAt: z.iso.datetime({offset:true}),
+        extraRevision: z.boolean().default(false),
         note: z.string().trim().max(2000).default(""),
         reply: z.string().trim().max(4000).default(""),
         taskTitle: z.string().trim().min(3).max(500).optional(),
@@ -22,13 +24,15 @@ export async function POST(
       .strict()
       .parse(await readJson(request));
     const result = checked(
-      await client.rpc("resolve_automation_review", {
+      await client.rpc("owner_review_command", {
         p_decision: id,
+        p_expected:input.expectedUpdatedAt,
+        p_extra:input.extraRevision,
         p_action: input.action,
         p_note: input.note,
         p_reply: input.reply,
         p_key: idempotency(request),
-        p_task_title: input.taskTitle ?? null,
+        p_title: input.taskTitle ?? null,
       }),
     );
     after(async () => {
