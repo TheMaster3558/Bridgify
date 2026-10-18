@@ -1,5 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
+import { DeletePhotonUser } from "./delete-photon-user";
+import { AddPhotonUser } from "./add-photon-user";
 import { Button } from "@/components/ui/button";
 import type { Project } from "@/lib/domain/types";
 
@@ -29,11 +31,13 @@ async function fetchPhotonUsers(): Promise<PhotonUsersResult> {
 }
 
 export function PhotonClientPicker({
+  projectId,
   people,
   disabled,
   onConnect,
   error,
 }: {
+  projectId: string;
   people: Project["people"];
   disabled: boolean;
   onConnect: (photonUserId: string) => void;
@@ -42,6 +46,10 @@ export function PhotonClientPicker({
   const [result, setResult] = useState<PhotonUsersResult | null>(null),
     [loading, setLoading] = useState(true),
     [selected, setSelected] = useState(people?.photon_user_id || "");
+  const [adding, setAdding] = useState(false),
+    [creating, setCreating] = useState(false),
+    [deleting, setDeleting] = useState(false),
+    [notice, setNotice] = useState("");
   const show = useCallback((next: PhotonUsersResult) => {
     setResult(next);
     setLoading(false);
@@ -64,18 +72,8 @@ export function PhotonClientPicker({
         </p>
       )}
       <p className="text-sm text-muted-foreground">
-        Add your client on the Users page of your{" "}
-        <a
-          className="underline"
-          href="https://app.photon.codes"
-          target="_blank"
-          rel="noreferrer"
-        >
-          Photon project
-        </a>{" "}
-        with their phone number, then refresh this list and choose them. That
-        Photon user is the project client. Photon Pro gives each user their own
-        number for texting the assistant.
+        Choose an existing Photon user or add your client here with their name,
+        email and phone number. Then connect the selected user to this project.
       </p>
       {people && (
         <p className="rounded border p-3 text-sm">
@@ -101,49 +99,118 @@ export function PhotonClientPicker({
       )}
       {!loading && result?.ok && result.users.length === 0 && (
         <p className="text-sm">
-          No users yet. Add your client on the Photon Users page, then refresh.
+          No users yet. Use Add user to create your client in Photon.
         </p>
       )}
       {!loading && result?.ok && result.users.length > 0 && (
         <fieldset
-          disabled={disabled}
+          disabled={disabled || creating || deleting}
           className="grid gap-2"
           aria-label="Photon users"
         >
           {result.users.map((user) => (
-            <label
+            <div
               key={user.id}
               className={`flex items-start gap-3 rounded-lg border p-3 text-sm ${selected === user.id ? "border-primary bg-accent" : ""}`}
             >
-              <input
-                className="mt-1"
-                type="radio"
-                name="photon_user"
-                value={user.id}
-                checked={selected === user.id}
-                onChange={() => setSelected(user.id)}
-              />
-              <span className="grid gap-0.5">
-                <span className="font-medium">{user.name}</span>
-                <span className="text-muted-foreground">
-                  {user.phoneNumber}
-                  {user.email ? ` · ${user.email}` : ""}
-                </span>
-                {user.assignedPhoneNumber && (
+              <label className="flex min-w-0 flex-1 items-start gap-3">
+                <input
+                  className="mt-1"
+                  type="radio"
+                  name="photon_user"
+                  value={user.id}
+                  checked={selected === user.id}
+                  onChange={() => setSelected(user.id)}
+                />
+                <span className="grid gap-0.5">
+                  <span className="font-medium">{user.name}</span>
                   <span className="text-muted-foreground">
-                    Texts the assistant at {user.assignedPhoneNumber}
+                    {user.phoneNumber}
+                    {user.email ? ` · ${user.email}` : ""}
                   </span>
-                )}
-              </span>
-            </label>
+                  {user.assignedPhoneNumber && (
+                    <span className="text-muted-foreground">
+                      Texts the assistant at {user.assignedPhoneNumber}
+                    </span>
+                  )}
+                </span>
+              </label>
+              <DeletePhotonUser
+                projectId={projectId}
+                user={user}
+                disabled={disabled || creating || deleting}
+                connected={people?.photon_user_id === user.id}
+                onBusyChange={setDeleting}
+                onDeleted={(id) => {
+                  setResult((previous) =>
+                    previous?.ok
+                      ? {
+                          ...previous,
+                          users: previous.users.filter(
+                            (user) => user.id !== id,
+                          ),
+                        }
+                      : previous,
+                  );
+                  setSelected((previous) => (previous === id ? "" : previous));
+                  setNotice(
+                    "Photon user deleted. Choose another client or add a new user.",
+                  );
+                }}
+              />
+            </div>
           ))}
         </fieldset>
+      )}
+      {adding && (
+        <AddPhotonUser
+          projectId={projectId}
+          disabled={disabled || deleting}
+          onBusyChange={setCreating}
+          onCancel={() => setAdding(false)}
+          onAdded={(user, existing) => {
+            setResult((previous) => ({
+              ok: true,
+              users: [
+                ...(previous?.ok
+                  ? previous.users.filter(
+                      (item) =>
+                        item.id !== user.id &&
+                        item.phoneNumber !== user.phoneNumber,
+                    )
+                  : []),
+                user,
+              ],
+            }));
+            setSelected(user.id);
+            setAdding(false);
+            setNotice(
+              `${existing ? "This phone number is already in Photon. The existing user is selected." : "Photon user added and selected."} Connect the selected client below to save the project connection.`,
+            );
+          }}
+        />
+      )}
+      {notice && (
+        <p role="status" className="rounded border p-3 text-sm">
+          {notice}
+        </p>
       )}
       <div className="flex flex-wrap gap-3">
         <Button
           type="button"
           variant="outline"
-          disabled={loading}
+          disabled={disabled || creating || deleting || loading || adding}
+          onClick={() => {
+            setAdding(true);
+            setNotice("");
+          }}
+        >
+          Add user
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          disabled={loading || creating || deleting}
           onClick={refresh}
         >
           Refresh Photon users
@@ -152,6 +219,8 @@ export function PhotonClientPicker({
           type="button"
           disabled={
             disabled ||
+            creating ||
+            deleting ||
             loading ||
             !selected ||
             !result?.ok ||

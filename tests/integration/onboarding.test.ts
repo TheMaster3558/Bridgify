@@ -216,6 +216,7 @@ beforeAll(async () => {
   for (const migration of [
     "202610170007_work_management.sql",
     "202610170010_delete_projects.sql",
+    "202610170011_photon_user_deletion.sql",
   ]) {
     await db.exec(
       await readFile(
@@ -1370,5 +1371,114 @@ describe("project deletion transaction", () => {
     expect(
       (await db.query("select id from projects where id=$1", [p.id])).rows,
     ).toHaveLength(0);
+  });
+});
+
+describe("Photon user deletion reservations", () => {
+  const instance = "spectrum-project",
+    uid = "aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa",
+    phone = "+12065550881";
+  it("reserves an unlinked user and prevents both pending and deleted users being linked", async () => {
+    await user(owner);
+    const p = await project();
+    expect(
+      (
+        await db.query<{ state: string }>(
+          "select begin_photon_user_deletion($1,$2,$3,$4) state",
+          [p.id, instance, uid, phone],
+        )
+      ).rows[0].state,
+    ).toBe("pending");
+    expect(
+      (
+        await db.query<{ state: string }>(
+          "select begin_photon_user_deletion($1,$2,$3,$4) state",
+          [p.id, instance, uid, phone],
+        )
+      ).rows[0].state,
+    ).toBe("pending");
+    const candidate = { ...sharedPeople(phone), photon_user_id: uid };
+    await expect(command(p.id, p.version, "people", candidate)).rejects.toThrow(
+      /being deleted or has been deleted/,
+    );
+    await expect(
+      db.query(
+        "update photon_user_deletions set state='deleted' where user_id=$1",
+        [uid],
+      ),
+    ).rejects.toThrow();
+    await admin();
+    await db.query(
+      "update photon_user_deletions set state='deleted',phone_number=null where user_id=$1",
+      [uid],
+    );
+    await user(owner);
+    await expect(command(p.id, p.version, "people", candidate)).rejects.toThrow(
+      /being deleted or has been deleted/,
+    );
+    const connected = await command(p.id, p.version, "people", {
+      ...sharedPeople("+12065550882"),
+      photon_user_id: "bbbbbbbb-1111-4111-8111-bbbbbbbbbbbb",
+    });
+    expect(connected.project.status).toBe("draft");
+  });
+  it("blocks users linked to another owner's project without revealing that project", async () => {
+    await user(other);
+    const linked = await project();
+    const candidate = {
+      ...sharedPeople("+12065550883"),
+      photon_user_id: "cccccccc-1111-4111-8111-cccccccccccc",
+    };
+    await command(linked.id, linked.version, "people", candidate);
+    await user(owner);
+    const draft = await project();
+    await expect(
+      db.query("select begin_photon_user_deletion($1,$2,$3,$4)", [
+        draft.id,
+        instance,
+        candidate.photon_user_id,
+        candidate.client_sender_id,
+      ]),
+    ).rejects.toThrow(/linked to a project/);
+    expect(
+      (
+        await db.query("select * from photon_user_deletions where user_id=$1", [
+          candidate.photon_user_id,
+        ])
+      ).rows,
+    ).toHaveLength(0);
+  });
+  it("requires an accessible unfinished draft and keeps receipts private", async () => {
+    await user(owner);
+    const draft = await project();
+    await user(other);
+    await expect(
+      db.query("select begin_photon_user_deletion($1,$2,$3,$4)", [
+        draft.id,
+        instance,
+        "dddddddd-1111-4111-8111-dddddddddddd",
+        "+12065550884",
+      ]),
+    ).rejects.toThrow();
+    expect(
+      (
+        await db.query("select * from photon_user_deletions where user_id=$1", [
+          uid,
+        ])
+      ).rows,
+    ).toHaveLength(0);
+    await admin();
+    await db.query("update projects set status='archived' where id=$1", [
+      draft.id,
+    ]);
+    await user(owner);
+    await expect(
+      db.query("select begin_photon_user_deletion($1,$2,$3,$4)", [
+        draft.id,
+        instance,
+        "dddddddd-1111-4111-8111-dddddddddddd",
+        "+12065550884",
+      ]),
+    ).rejects.toThrow(/unfinished/);
   });
 });
