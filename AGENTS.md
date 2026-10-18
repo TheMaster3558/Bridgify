@@ -20,7 +20,7 @@ Follow these rules for every feature, bug fix, refactor, or other standalone cha
 
 - Commit whenever a standalone change is complete.
 - Use clear, descriptive commit messages that explain what changed.
-- Add an `Assisted-by: Codex` trailer to every commit.
+- Add an `Assisted-by: <model name>` trailer to every commit, using the name of the model that assisted with the change.
 - Keep commits focused. Do not combine unrelated changes into a single commit.
 - Review your changes before committing to ensure no unrelated files or changes are included.
 - Never commit directly to `main`.
