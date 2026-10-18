@@ -22,6 +22,7 @@ async function main() {
       for (const name of [
         "202610170010_project_automation.sql",
         "202610170011_automation_review_recovery.sql",
+        "202610170012_optional_review_notes.sql",
       ]) {
         const sql = await readFile(`supabase/migrations/${name}`, "utf8");
         const checksum = createHash("sha256").update(sql).digest("hex");

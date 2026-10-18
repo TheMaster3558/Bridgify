@@ -56,12 +56,12 @@ export function DecisionActions({
         Your decision
       </h3>
       <label className="grid gap-1 text-sm">
-        Decision reason (private)
+        Decision reason (private, optional)
         <textarea
           value={note}
           onChange={(e) => setNote(e.target.value)}
-          minLength={3}
           maxLength={2000}
+          placeholder="Add context for your records if needed"
           className="min-h-20 rounded border bg-background p-2"
         />
       </label>
@@ -97,7 +97,7 @@ export function DecisionActions({
           value={reply}
           onChange={(e) => setReply(e.target.value)}
           maxLength={4000}
-          placeholder="Leave blank to resolve without sending a message"
+          placeholder="Approval uses a saved-task confirmation; other actions stay silent when blank"
           className="min-h-20 rounded border bg-background p-2"
         />
       </label>
@@ -115,7 +115,7 @@ export function DecisionActions({
         {canApprove && (
           <Button
             disabled={
-              busy || note.trim().length < 3 || taskTitle.trim().length < 3
+              busy || taskTitle.trim().length < 3
             }
             onClick={() => void resolve("approve")}
           >
@@ -125,7 +125,7 @@ export function DecisionActions({
         {canApprove && (
           <Button
             variant="outline"
-            disabled={busy || note.trim().length < 3}
+            disabled={busy}
             onClick={() => void resolve("decline")}
           >
             Decline
@@ -133,7 +133,7 @@ export function DecisionActions({
         )}
         <Button
           variant="secondary"
-          disabled={busy || note.trim().length < 3}
+          disabled={busy}
           onClick={() => void resolve("dismiss")}
         >
           Dismiss review

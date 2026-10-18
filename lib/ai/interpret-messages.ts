@@ -59,7 +59,7 @@ export const interpretationSchema = z.object({
   }).strict()).max(20),
 }).strict();
 export type Interpretation = z.infer<typeof interpretationSchema>;
-export const INTERPRET_PROMPT_VERSION = "interpret-v2";
+export const INTERPRET_PROMPT_VERSION = "interpret-v3";
 
 export function validateInterpretation(raw: unknown, context: InterpretationContext): Interpretation {
   const result = interpretationSchema.parse(raw);
@@ -119,6 +119,8 @@ Never infer scope merely because an operation or target is permitted.
 Link clarification answers only when a single unresolved request matches; otherwise flag ambiguous.
 Unresolved request summaries include previously supplied fields. Return the complete merged payload
 and only the fields still missing. Use the latest requester message as a source for every intent.
+Standalone gratitude or acknowledgments are casual and need no reply. If a message also
+contains a request or status question, interpret that part; do not repeat earlier requests.
 For status questions select a task only when uniquely identifiable, otherwise leave taskId null.
 If no task exists, match statusRequestId from requestStatuses so the client can be told
 their request is awaiting approval or details. Never treat waiting for approval as accepted work.

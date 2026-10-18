@@ -235,6 +235,43 @@ test("provider replay and authenticated history import deduplicate at message id
   assert.equal(await count("automation_jobs"), 1);
   await assert.rejects(message("different text", values), /identity_conflict/);
 });
+test("standalone thanks stay in history without model calls, tasks, reviews or replies", async () => {
+  for (const text of ["thanks", "Thanks!", "Thank you so much 🙏", "Great, thanks for the update!", "👍"]) {
+    await message(text);
+  }
+  assert.equal(await count("automation_messages"), 5);
+  assert.equal(await count("automation_events", "disposition='courtesy_context'"), 5);
+  assert.equal(await processor(() => { throw new Error("Must not call Gemini"); }).once(), false);
+  assert.equal(await count("project_tasks"), 0);
+  assert.equal(await count("owner_decisions"), 0);
+  assert.equal(await count("automation_outbox"), 0);
+});
+test("courtesy jobs queued before deployment finish silently even if Gemini is unavailable", async () => {
+  await message("Thanks!");
+  await pg.exec(`insert into automation_jobs(project_id,event_id,message_id)
+    select project_id,event_id,id from automation_messages`);
+  assert.equal(await processor(() => { throw new Error("Must not call Gemini"); }).once(), true);
+  assert.equal(await count("automation_jobs", "state='done' and prompt_version='courtesy-v1'"), 1);
+  assert.equal(await count("automation_outbox"), 0);
+  assert.equal(await count("owner_decisions"), 0);
+});
+test("thanks with a request still creates one task and sends exactly one workflow update across replay", async () => {
+  const identity = {messageGuid: randomUUID(), occurredAt: new Date().toISOString()};
+  await message("Thanks, can you make the heading green?", identity);
+  await processor().once();
+  await message("Thanks, can you make the heading green?", identity);
+  assert.equal(await processor().once(), false);
+  let sends = 0;
+  const delivery = createAutomationDelivery(database, async () => {
+    sends++;
+    return {state: "sent", messageId: "one-workflow-confirmation"};
+  }, instance);
+  assert.equal(await delivery.once(), true);
+  assert.equal(await delivery.once(), false);
+  assert.equal(sends, 1);
+  assert.equal(await count("project_tasks"), 1);
+  assert.equal(await count("automation_outbox", "state='sent' and text like '%Accepted%'"), 1);
+});
 test("clarification is connected to its existing request and consumes allowance only on acceptance", async () => {
   await message("Change the heading color");
   await processor((c) => ({
@@ -615,6 +652,24 @@ test("owner resolves review once, authorizes a task and queues a separate resolu
   assert.equal(await count("automation_revision_uses"), 1);
   assert.equal(await count("automation_outbox"), 2);
   assert.equal(await count("owner_decisions", "status='resolved'"), 1);
+});
+test("approval without a private note commits the task, revision, audit and one idempotent confirmation", async () => {
+  await changePolicy({ mode: "review_only" });
+  await message();
+  await processor().once();
+  const decision = (await pg.query<{ id: string }>("select id from owner_decisions")).rows[0].id;
+  const key = randomUUID();
+  await asOwner(async () => {
+    const run = () => pg.query("select resolve_automation_review($1,'approve','','',$2,null) result", [decision, key]);
+    const first = await run();
+    assert.deepEqual(await run(), first);
+  });
+  assert.equal(await count("project_tasks", "authorized_by='Owner approval: Accepted by owner'"), 1);
+  assert.equal(await count("automation_requests", "state='accepted' and task_id is not null"), 1);
+  assert.equal(await count("automation_revision_uses"), 1);
+  assert.equal(await count("owner_decisions", "status='resolved' and internal_note='Accepted by owner'"), 1);
+  assert.equal(await count("audit_events", "action='automation:review:approve' and details->>'note'='Accepted by owner'"), 1);
+  assert.equal(await count("automation_outbox", "purpose like 'resolution:%' and text like '%approved and added%'"), 1);
 });
 test("owner can decline without revision usage; another account cannot resolve a decision", async () => {
   await changePolicy({ mode: "review_only" });

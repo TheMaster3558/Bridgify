@@ -16,6 +16,7 @@ import {
 } from "../ai/interpret-messages";
 import type { PhotonSendResult } from "../photon/spectrum";
 import { processingErrorCode } from "./processing-errors";
+import { isCourtesyOnly } from "./courtesy";
 
 type Job = {
   id: string;
@@ -143,6 +144,7 @@ export function createProjectAutomationInbox(database: Database): InboxWriter {
             (event.contentType && event.contentType !== "text")
           )
             disposition = "unsupported_input";
+          else if (isCourtesyOnly(event.text)) disposition = "courtesy_context";
           else if (!isOpen(project)) disposition = "policy_denied";
           else disposition = "pending_analysis";
         }
@@ -182,7 +184,7 @@ export function createProjectAutomationInbox(database: Database): InboxWriter {
           );
         }
         let messageId: string | null = null;
-        if (["pending_analysis", "outbound_context"].includes(disposition)) {
+        if (["pending_analysis", "outbound_context", "courtesy_context"].includes(disposition)) {
           // Message identity deduplicates webhook delivery and authenticated history sync.
           const saved = await sql.query<{ id: string }>(
             `insert into automation_messages(project_id,event_id,provider_guid,role,text,occurred_at)
@@ -677,6 +679,21 @@ export function createAutomationProcessor(
       });
       if (!job) return false;
       try {
+        // Also cover acknowledgments queued before the intake rule was deployed.
+        // No model call, task, review, or reply is needed for a standalone thanks.
+        const source = job.message_id && !job.review_reason
+          ? (await database.query<{ text: string }>(
+              "select text from automation_messages where id=$1 and project_id=$2 and role='requester'",
+              [job.message_id, job.project_id],
+            )).rows[0]
+          : null;
+        if (source && isCourtesyOnly(source.text)) {
+          await database.query(
+            "update automation_jobs set state='done',lease_until=null,error_code=null,analysis=$3,prompt_version='courtesy-v1' where id=$1 and state='running' and lease_token=$2 and lease_until>now()",
+            [job.id, job.lease_token, JSON.stringify({ intents: [] })],
+          );
+          return true;
+        }
         if (job.review_reason || job.attempts > 3)
           throw new Error("owner_review_required");
         const snapshot = await loadAutomationSnapshot(database, job);

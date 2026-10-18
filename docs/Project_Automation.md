@@ -52,7 +52,9 @@ must equal the Spectrum project used by the sender. Unsigned payloads are reject
   enabled for existing projects.
 - Project creation includes independent controls for status answers, clarification
   questions and review acknowledgments. Earlier policies default these to enabled.
-  Task acceptance always queues a confirmation. Casual messages stay quiet.
+  Task acceptance always queues a confirmation. Standalone thanks and gratitude
+  emoji stay in conversation history without invoking Gemini or queuing replies.
+  Messages combining thanks with a request still follow the normal workflow.
 - Clarifications retain their original request and source IDs, with at most two
   questions. No revision is used while waiting. Ambiguous matching requires review.
 - Status answers use stored request states as well as task titles and statuses,
@@ -63,11 +65,12 @@ must equal the Spectrum project used by the sender. Unsigned payloads are reject
   ledger. Task cancellation does not silently refund it. Contractual rounds remain
   under manual accounting. Owner overrides are explicit and audited.
 - Owners can accept, decline, dismiss or delete review items. Approval accepts an
-  editable task title and a private decision reason, saves a real task, accounts
+  editable task title and an optional private decision reason, saves a real task, accounts
   for the revision and queues a confirmation in the same transaction. An optional
   owner-written reply replaces the default confirmation. Deletion removes an item
   from Needs Attention while retaining source and audit history. Message identity and delivery
   reviews must be checked in the conversation rather than accepted as work.
+  When the reason is blank, the audit records the owner's action automatically.
 - Failed interpretation retains the verified original text as an approvable
   request. Owners can explicitly authorize that work after reviewing the source;
   no AI-generated values are invented to bypass failed processing.

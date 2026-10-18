@@ -66,19 +66,13 @@ test.beforeEach(async ({ page }) => {
     });
   });
 });
-test("owner approval submits the real review command with note and optional reply", async ({
+test("owner approval works immediately without a private note or custom reply", async ({
   page,
 }) => {
   await page.goto("https://automation.test/decision");
   await expect(
     page.getByRole("button", { name: "Accept work" }),
-  ).toBeDisabled();
-  await page
-    .getByLabel("Decision reason (private)")
-    .fill("Approved one extra revision");
-  await page
-    .getByLabel("Client reply (optional)")
-    .fill("I approved your change.");
+  ).toBeEnabled();
   const request = page.waitForRequest(
     (r) => r.method() === "POST" && r.url().includes("/api/v1/decisions/"),
   );
@@ -86,8 +80,8 @@ test("owner approval submits the real review command with note and optional repl
   const sent = await request;
   expect(sent.postDataJSON()).toEqual({
     action: "approve",
-    note: "Approved one extra revision",
-    reply: "I approved your change.",
+    note: "",
+    reply: "",
     taskTitle: "Change the heading color",
   });
   expect(sent.headers()["idempotency-key"]).toBeTruthy();
@@ -135,7 +129,7 @@ test("failed processing reviews allow approval with an owner-edited task title",
     page.getByText("Automatic interpretation failed.", { exact: false }),
   ).toBeVisible();
   await page
-    .getByLabel("Decision reason (private)")
+    .getByLabel("Decision reason (private, optional)")
     .fill("Source checked and accepted");
   await page.getByLabel("Task to approve").fill("Make the heading blue");
   const request = page.waitForRequest((r) => r.method() === "POST");

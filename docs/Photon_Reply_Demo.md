@@ -31,3 +31,6 @@ functionality that has not been implemented.
 
 The old standalone chat responder and isolated tests remain as legacy helpers,
 but neither production worker command uses their conversational response path.
+Stop older demos or other apps using the same Photon agent number, including on
+other developers' machines. A separate responder bypasses this project's outbox
+and can send a second chatbot answer even when this worker sends exactly once.
