@@ -200,6 +200,23 @@ export function AutomationSetup({
           </SetupField>
         </div>
       </details>
+      <fieldset className="grid gap-3 rounded-lg border p-4">
+        <legend className="px-1 font-medium">Automatic client replies</legend>
+        <p className="text-sm text-muted-foreground">These replies also work with manual approval. Accepted requests always receive a task confirmation. Casual conversation stays quiet.</p>
+        {([
+          ["status_questions", "Answer status questions from saved task information"],
+          ["clarifications", "Ask for missing request details (up to two follow-ups)"],
+          ["review_acknowledgments", "Acknowledge requests waiting for my review"],
+        ] as const).map(([key, label]) => (
+          <label key={key} className="grid gap-1 text-sm">
+            {label}
+            <select name={`reply_${key}`} defaultValue={p.policy?.replies?.[key] === false ? "off" : "on"} className="rounded border p-2">
+              <option value="on">Enabled</option>
+              <option value="off">Disabled</option>
+            </select>
+          </label>
+        ))}
+      </fieldset>
       <p className="text-sm text-muted-foreground">
         Requests needing your decision appear in your private dashboard. These
         settings let the assistant accept work for you to do; it does not edit

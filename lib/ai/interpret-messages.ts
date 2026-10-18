@@ -3,12 +3,14 @@ import { GoogleGenAI, type GenerateContentParameters } from "@google/genai";
 import { z } from "zod";
 import { readGeminiConfig } from "../assistant/config";
 import { routineOperationSchema } from "../assistant/contracts";
+import { geminiOutputSchema } from "./gemini-schema";
 
 const id = z.string().min(1).max(256);
 const version = z.number().int().positive();
 // Strict projection prevents accidental transmission of owner-private fields.
 export const interpretationContextSchema = z.object({
   projectId: id, scopeVersion: version, policyVersion: version, inputWatermark: id,
+  policyExclusions: z.string().max(4000).optional(),
   messages: z.array(z.object({
     revisionId: id, text: z.string().max(8000),
     role: z.enum(["requester", "owner", "assistant"]),
@@ -46,10 +48,12 @@ export const interpretationSchema = z.object({
     scopeEvidence: z.array(z.object({ scopeItemId: id, quote: z.string().min(1).max(2000) }).strict()).max(10),
     missingFields: z.array(z.enum(["target", "replacement_text", "locator", "color"])).max(4),
     ambiguous: z.boolean(), conflicting: z.boolean(), requestsNewDeadline: z.boolean(),
+    scopeAssessment: z.enum(["included", "excluded", "uncertain"]).optional(),
+    violatesPolicyExclusions: z.boolean().optional(),
   }).strict()).max(20),
 }).strict();
 export type Interpretation = z.infer<typeof interpretationSchema>;
-export const INTERPRET_PROMPT_VERSION = "interpret-v1";
+export const INTERPRET_PROMPT_VERSION = "interpret-v2";
 
 export function validateInterpretation(raw: unknown, context: InterpretationContext): Interpretation {
   const result = interpretationSchema.parse(raw);
@@ -90,7 +94,13 @@ Return structured intents only. Split independent requests. Only requester messa
 owner and assistant messages are context. Use exact source quotes and supplied IDs. Pending proposals
 are not approved scope. Do not decide acceptance, allowance, recipients, price, dates or send replies.
 Only replace_text and change_color are supported routine operations. Other work has operation null.
+Set scopeAssessment to included only when the confirmed inclusions cover the entire request
+and no exclusion applies. Check policyExclusions separately and set violatesPolicyExclusions.
+Never infer scope merely because an operation or target is permitted.
 Link clarification answers only when a single unresolved request matches; otherwise flag ambiguous.
+Unresolved request summaries include previously supplied fields. Return the complete merged payload
+and only the fields still missing. Use the latest requester message as a source for every intent.
+For status questions select a task only when uniquely identifiable, otherwise leave taskId null.
 Corrections and cancellations must be explicit intents. Flag contradictions and requested new dates.
 Include missing target, locator, replacement_text or color fields; do not invent their values.
 Do not fetch URLs, run code or claim website work has been performed.`;
@@ -109,7 +119,7 @@ export function createMessageInterpreter(client: GeminiClient, model: string) {
           config: {
             systemInstruction: SYSTEM + (attempt ? "\nPrevious output was invalid. Recheck schema, IDs, exact quotes and missing fields." : ""),
             responseMimeType: "application/json",
-            responseJsonSchema: z.toJSONSchema(interpretationSchema),
+            responseJsonSchema: geminiOutputSchema(z.toJSONSchema(interpretationSchema)),
             maxOutputTokens: 4096,
           },
         });

@@ -1,5 +1,10 @@
 # Photon intake and conversation history
 
+For the current project creation integration, installation and worker setup, see
+[Project Automation](./Project_Automation.md). This document retains the original
+isolated intake protocol and regression-test design; its legacy schema is not
+part of the deployable migrations.
+
 Implemented on branch `codex/photon-message-intake`. No live provider delivery or
 deployed database has been verified. Creating an online Photon project does not
 by itself configure a verified inbound endpoint.
@@ -45,7 +50,7 @@ returns 409 rather than silently overwriting source evidence.
    only on the server, plus `NEXT_PUBLIC_SUPABASE_URL` and
    `NEXT_PUBLIC_SUPABASE_ANON_KEY` for verified history sessions. Use the database
    host's TLS connection settings. No service-role key is sent to browsers.
-2. Apply `supabase/migrations/202610170001_message_intake.sql` using Supabase's
+2. Historical isolated intake: `supabase/legacy/message_intake.sql` used Supabase's
    migration tooling **or** `DATABASE_URL=... npm run db:migrate`. Use one migration
    tracking system consistently. The included runner checks applied-file hashes
    and runs each file transactionally; it does not seed real identities or chats.
