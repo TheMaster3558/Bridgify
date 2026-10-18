@@ -29,7 +29,7 @@ export function TaskStatusActions({
     try {
       const response = await fetch(`/api/v1/tasks/${task.id}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID() },
         body: JSON.stringify({
           status,
           note,

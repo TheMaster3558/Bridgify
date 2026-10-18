@@ -17,7 +17,6 @@ import {
   MessageCircle,
   Minus,
   MoreVertical,
-  Plus,
   Search,
 } from "lucide-react";
 import { Checkbox, DropdownMenu } from "radix-ui";
@@ -57,10 +56,11 @@ import {
 import { clientKey } from "@/lib/clients/photos";
 import type { DashboardTask } from "@/lib/dashboard/work-management-types";
 import { cn } from "@/lib/utils";
+import { TaskEditor } from "./task-editor";
 import { TaskStatusActions } from "./task-status-actions";
 
 type Task = DashboardTask;
-type TaskStatus = Exclude<Task["status"], "cancelled">;
+type TaskStatus = Task["status"];
 type SortKey = "title" | "priority" | "date" | "updated";
 
 function taskCriteriaLabel(value: string) {
@@ -81,6 +81,7 @@ const statusFilters: { id: "all" | TaskStatus; label: string }[] = [
   { id: "in_progress", label: "In progress" },
   { id: "blocked", label: "Blocked" },
   { id: "done", label: "Done" },
+  { id: "cancelled", label: "Cancelled" },
 ];
 
 const statusLabels: Record<Task["status"], string> = {
@@ -175,7 +176,7 @@ function SelectBox({
 async function patchStatus(task: Task, status: Task["status"]) {
   const response = await fetch(`/api/v1/tasks/${task.id}`, {
     method: "PATCH",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID() },
     body: JSON.stringify({
       status,
       note: "",
@@ -385,6 +386,7 @@ function TaskDetail({
         </PanelSection>
       </div>
 
+      <TaskEditor key={`edit-${task.id}-${task.updated_at}`} task={task} onSaved={onSaved} />
       <TaskStatusActions key={task.id} task={task} onSaved={onSaved} />
     </>
   );
@@ -393,9 +395,13 @@ function TaskDetail({
 export function TasksWorkspace({
   tasks,
   clientPhotos = {},
+  creationForm,
+  initialTaskId,
   serverManaged = false,
 }: {
   tasks: Task[];
+  creationForm?: React.ReactNode;
+  initialTaskId?: string;
   clientPhotos?: Record<string, string>;
   serverManaged?: boolean;
 }) {
@@ -406,7 +412,7 @@ export function TasksWorkspace({
   const [project, setProject] = useState("all");
   const [assignee, setAssignee] = useState("all");
   const [query, setQuery] = useState("");
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(initialTaskId ?? null);
   const [checkedIds, setCheckedIds] = useState<string[]>([]);
   const [saved, setSaved] = useState<Record<string, Task>>({});
   const [bulkBusy, setBulkBusy] = useState(false);
@@ -591,18 +597,11 @@ export function TasksWorkspace({
                 </button>
               ))}
             </div>
-            <button
-              type="button"
-              disabled
-              title="Task creation will be connected with the work-management workflow"
-              className={cn(settingsPrimaryButton, "h-9 gap-1.5 px-4")}
-            >
-              <Plus aria-hidden className="size-4" />
-              New task
-            </button>
+
           </div>
         </header>
 
+        {creationForm}
         {!serverManaged && <>
         <section
           aria-label="Task filters and view options"
