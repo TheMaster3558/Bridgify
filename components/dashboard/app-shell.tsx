@@ -38,8 +38,8 @@ export function AppShell({
   )?.[1];
 
   return (
-    <div className="min-h-screen md:pl-[236px]">
-      <aside className="flex flex-col gap-4 border-b bg-card p-3 md:fixed md:inset-y-0 md:left-0 md:w-[236px] md:overflow-hidden md:border-r md:border-b-0 md:p-4">
+    <div className="min-h-screen pl-[200px] md:pl-[236px]">
+      <aside className="fixed inset-y-0 left-0 flex w-[200px] flex-col gap-4 overflow-y-auto border-r bg-card p-3 md:w-[236px] md:p-4">
         <Link href="/app" className="flex items-center gap-2.5 px-2">
           <span className="grid size-8 place-items-center rounded-md bg-primary text-sm font-semibold text-primary-foreground">
             B
@@ -48,7 +48,7 @@ export function AppShell({
         </Link>
         <nav
           aria-label="Main"
-          className="flex gap-1 overflow-x-auto md:flex-col"
+          className="flex flex-col gap-1"
         >
           {nav.map((item) => {
             const active = isActive(pathname, item.href);

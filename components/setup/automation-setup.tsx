@@ -3,19 +3,26 @@ import { useCallback, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import type { Bundle, Project } from "@/lib/domain/types";
-import { policyPayload, validatePolicy } from "@/lib/projects/setup-validation";
+import {
+  DEFAULT_SETUP_POLICY,
+  policyPayload,
+  validatePolicy,
+} from "@/lib/projects/setup-validation";
 import { SetupField, SetupForm, SetupSubmit } from "./setup-form";
+import type { ContinueStateChange } from "./use-setup-continue";
 
 export function AutomationSetup({
   project: p,
   bundle,
   locked,
   onSave,
+  onContinueState,
 }: {
   project: Project;
   bundle: Bundle;
   locked: boolean;
   onSave: (payload: ReturnType<typeof policyPayload>) => Promise<void>;
+  onContinueState?: ContinueStateChange;
 }) {
   const agreement = bundle.scope.find(
     (s) => s.version === p.scope_version,
@@ -43,6 +50,7 @@ export function AutomationSetup({
   return (
     <SetupForm
       validate={validate}
+      onContinueState={onContinueState}
       disabled={locked}
       onSave={(form) => onSave(policyPayload(form))}
     >
@@ -108,14 +116,15 @@ export function AutomationSetup({
           defaultValue={p.policy?.allowance ?? revision?.allowance ?? 0}
         />
       </SetupField>
-      <details
-        open={!p.policy?.targets.length || mode === "enabled"}
-        className="rounded-lg border p-4"
-      >
+      <details className="rounded-lg border p-4">
         <summary className="cursor-pointer font-medium">
           Advanced settings · permitted changes and limits
         </summary>
         <div className="mt-4 grid gap-5">
+          <p className="text-sm text-muted-foreground">
+            The default is manual approval for every request. No pages or
+            elements are authorized for automatic changes until you choose them.
+          </p>
           <SetupField
             label="Types of change the assistant may accept"
             name="operations"
@@ -127,7 +136,9 @@ export function AutomationSetup({
                   name="operations"
                   type="checkbox"
                   value="replace_text"
-                  defaultChecked={p.policy?.operations.includes("replace_text")}
+                  defaultChecked={(
+                    p.policy?.operations ?? DEFAULT_SETUP_POLICY.operations
+                  ).includes("replace_text")}
                 />
                 Replace existing text
               </label>
@@ -136,7 +147,9 @@ export function AutomationSetup({
                   name="operations"
                   type="checkbox"
                   value="change_color"
-                  defaultChecked={p.policy?.operations.includes("change_color")}
+                  defaultChecked={(
+                    p.policy?.operations ?? DEFAULT_SETUP_POLICY.operations
+                  ).includes("change_color")}
                 />
                 Change an existing element’s color
               </label>
@@ -145,11 +158,11 @@ export function AutomationSetup({
           <SetupField
             label="Pages or elements covered by these permissions"
             name="targets"
-            hint="Enter the exact identifiers from your website or design file, one per line (for example, home.hero.heading). These identify where a change is allowed. Ask your developer or designer if you do not know them; they must match the real project. Required before saving permissions."
+            hint="Defaults to none. Leave blank for manual approval. To enable automatic acceptance, enter the exact page or element identifiers from your website or design file, one per line (for example, home.hero.heading). Ask your developer or designer if you do not know them."
           >
             <Textarea
               name="targets"
-              required
+              required={mode === "enabled"}
               defaultValue={p.policy?.targets.join("\n") || ""}
               rows={3}
             />
@@ -164,8 +177,7 @@ export function AutomationSetup({
               required
               maxLength={4000}
               defaultValue={
-                p.policy?.exclusions ||
-                "New pages, accounts, payments, integrations, price changes and deadline changes always need my approval."
+                p.policy?.exclusions || DEFAULT_SETUP_POLICY.exclusions
               }
             />
           </SetupField>
@@ -181,7 +193,9 @@ export function AutomationSetup({
               max={10}
               step={1}
               required
-              defaultValue={p.policy?.max_open_tasks || 10}
+              defaultValue={
+                p.policy?.max_open_tasks ?? DEFAULT_SETUP_POLICY.max_open_tasks
+              }
             />
           </SetupField>
         </div>

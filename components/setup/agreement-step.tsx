@@ -16,6 +16,10 @@ import {
   SetupForm,
   SetupSubmit,
 } from "./setup-form";
+import {
+  useSetupContinue,
+  type ContinueStateChange,
+} from "./use-setup-continue";
 import type { Bundle } from "@/lib/domain/types";
 import {
   initialReview,
@@ -50,7 +54,13 @@ async function submit(url: string, body: unknown, key = crypto.randomUUID()) {
     );
   return json.data;
 }
-export function AgreementStep({ bundle }: { bundle: Bundle }) {
+export function AgreementStep({
+  bundle,
+  onContinueState,
+}: {
+  bundle: Bundle;
+  onContinueState?: ContinueStateChange;
+}) {
   const { project: p } = bundle;
   const doc =
     bundle.documents.find((d) => d.id === p.current_agreement_document_id) ||
@@ -245,6 +255,33 @@ export function AgreementStep({ bundle }: { bundle: Bundle }) {
     errors["commercial.due_date.value"] =
       "Enter a complete, real date, or clear the date if none is agreed.";
   const canConfirm = review && !Object.keys(errors).length;
+  function confirmAgreement() {
+    if (!confirmed || !canConfirm || busy || locked || !doc || !latest.current)
+      return;
+    void run("Confirming agreement…", async () => {
+      if (
+        !latest.current ||
+        Object.keys(agreementErrors(latest.current, spans, p)).length
+      )
+        return;
+      const parsed = reviewedAgreementSchema.parse(latest.current);
+      await flush();
+      await send(`/api/v1/projects/${p.id}/scope/confirm`, {
+        expectedVersion: p.version,
+        document_id: doc.id,
+        terms: parsed.terms,
+        review: parsed,
+        reviewed_all_terms: true,
+      });
+      router.push(`/app/projects/${p.id}/setup?step=3`);
+      router.refresh();
+    });
+  }
+  useSetupContinue(
+    !!confirmed && !!canConfirm && !busy && !locked && doc?.status === "ready",
+    confirmAgreement,
+    onContinueState,
+  );
   function evidence(key: keyof AgreementReview["commercial"]) {
     const field = review!.commercial[key];
     return (
@@ -820,28 +857,7 @@ export function AgreementStep({ bundle }: { bundle: Bundle }) {
             </Button>
             <Button
               disabled={!confirmed || !canConfirm || !!busy || locked}
-              onClick={() =>
-                void run("Confirming agreement…", async () => {
-                  if (
-                    !canConfirm ||
-                    !latest.current ||
-                    Object.keys(agreementErrors(latest.current, spans, p))
-                      .length
-                  )
-                    return;
-                  const parsed = reviewedAgreementSchema.parse(latest.current);
-                  await flush();
-                  await send(`/api/v1/projects/${p.id}/scope/confirm`, {
-                    expectedVersion: p.version,
-                    document_id: doc.id,
-                    terms: parsed.terms,
-                    review: parsed,
-                    reviewed_all_terms: true,
-                  });
-                  router.push(`/app/projects/${p.id}/setup?step=3`);
-                  router.refresh();
-                })
-              }
+              onClick={confirmAgreement}
             >
               Confirm agreement &amp; continue
             </Button>

@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -41,6 +41,17 @@ export function ProjectWizard({
   );
   const [consented, setConsented] = useState(false);
   const [errorTarget, setErrorTarget] = useState("");
+  const [continuation, setContinuation] = useState<{
+    step: number;
+    ready: boolean;
+    proceed: () => void;
+  } | null>(null);
+  const onContinueState = useCallback(
+    (ready: boolean, proceed: () => void) => {
+      setContinuation({ step, ready, proceed });
+    },
+    [step],
+  );
   const router = useRouter(),
     keys = useRef(new Map<string, string>());
   useEffect(() => {
@@ -128,6 +139,25 @@ export function ProjectWizard({
     router.refresh();
   }
   const base = p ? `/app/projects/${p.id}/setup` : "/app/projects/new";
+  const canContinuePeople =
+    !!p?.people &&
+    !pending &&
+    bundle?.binding?.test_state === "sent" &&
+    !bundle.binding.hold_reason;
+  const canContinue =
+    step === 3
+      ? canContinuePeople
+      : continuation?.step === step && continuation.ready;
+  function goToStep(target: number) {
+    if (target === step) return;
+    if (locked || target < step) {
+      if (p && target <= p.setup_step) router.push(`${base}?step=${target}`);
+      return;
+    }
+    if (target !== step + 1 || !canContinue) return;
+    if (step === 3) router.push(`${base}?step=4`);
+    else continuation?.proceed();
+  }
   const readyToActivate = !!(
     p?.scope_version &&
     p.policy_version &&
@@ -171,16 +201,20 @@ export function ProjectWizard({
         className="mb-8 grid grid-cols-2 gap-2 sm:grid-cols-5"
       >
         {steps.map((label, index) => (
-          <Link
+          <button
+            type="button"
             aria-current={step === index + 1 ? "step" : undefined}
             key={label}
-            href={
-              p ? `${base}?step=${Math.min(index + 1, p.setup_step)}` : base
+            disabled={
+              locked
+                ? index + 1 > (p?.setup_step || step)
+                : index + 1 > step && (index + 1 !== step + 1 || !canContinue)
             }
-            className={`rounded-lg border p-3 text-sm ${step === index + 1 ? "border-primary bg-accent font-semibold" : "text-muted-foreground"}`}
+            onClick={() => goToStep(index + 1)}
+            className={`rounded-lg border p-3 text-left text-sm disabled:cursor-not-allowed disabled:opacity-50 ${step === index + 1 ? "border-primary bg-accent font-semibold" : "text-muted-foreground"}`}
           >
             {index + 1}. {label}
-          </Link>
+          </button>
         ))}
       </nav>
       {locked && (
@@ -194,6 +228,7 @@ export function ProjectWizard({
         {step === 1 && (
           <SetupForm
             validate={validateBasics}
+            onContinueState={onContinueState}
             disabled={locked}
             onSave={(form) => save("basics", basicsPayload(form), 2)}
           >
@@ -284,7 +319,11 @@ export function ProjectWizard({
           </SetupForm>
         )}
         {step === 2 && bundle && (
-          <AgreementStep key={doc?.id + "-" + doc?.status} bundle={bundle} />
+          <AgreementStep
+            key={doc?.id + "-" + doc?.status}
+            bundle={bundle}
+            onContinueState={onContinueState}
+          />
         )}
         {step === 3 && p && (
           <div className="grid gap-7">
@@ -390,13 +429,8 @@ export function ProjectWizard({
                   Refresh status
                 </Button>
                 <Button
-                  disabled={
-                    pending ||
-                    !p.people ||
-                    bundle?.binding?.test_state !== "sent" ||
-                    !!bundle.binding.hold_reason
-                  }
-                  onClick={() => router.push(`${base}?step=4`)}
+                  disabled={!canContinuePeople}
+                  onClick={() => goToStep(4)}
                 >
                   Continue to automation
                 </Button>
@@ -409,6 +443,7 @@ export function ProjectWizard({
             project={p}
             bundle={bundle!}
             locked={locked}
+            onContinueState={onContinueState}
             onSave={(payload) => save("policy", payload, 5)}
           />
         )}

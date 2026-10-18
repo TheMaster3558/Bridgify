@@ -198,7 +198,16 @@ beforeAll(async () => {
   await db.exec(
     await readFile(
       new URL(
-        "../../supabase/migrations/202610170007_editable_project_introduction.sql",
+        "../../supabase/migrations/202610170008_editable_project_introduction.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    ),
+  );
+  await db.exec(
+    await readFile(
+      new URL(
+        "../../supabase/migrations/202610170009_manual_approval_defaults.sql",
         import.meta.url,
       ),
       "utf8",
@@ -1200,4 +1209,36 @@ it("retains the sent setup introduction and rejects empty recorded messages", as
       [p.id],
     ),
   ).rejects.toThrow();
+});
+
+it("saves manual-approval defaults without targets while requiring targets for automation", async () => {
+  const p = await readyProject();
+  const defaults = {
+    ...policy,
+    mode: "review_only",
+    targets: [],
+    operations: ["replace_text"],
+  };
+  const key = crypto.randomUUID();
+  const saved = await command(p.id, p.version, "policy", defaults, key);
+  expect(saved.project.version).toBe(p.version + 1);
+  expect(await command(p.id, p.version, "policy", defaults, key)).toEqual(
+    saved,
+  );
+  await expect(
+    command(p.id, saved.project.version, "policy", {
+      ...defaults,
+      mode: "enabled",
+      allowance: 2,
+    }),
+  ).rejects.toThrow(/Choose pages or elements/);
+  await admin();
+  const row = await db.query<{ policy: { targets: string[]; mode: string } }>(
+    "select policy from projects where id=$1",
+    [p.id],
+  );
+  expect(row.rows[0].policy).toMatchObject({
+    targets: [],
+    mode: "review_only",
+  });
 });

@@ -12,6 +12,10 @@ import {
 } from "react";
 import { Button } from "@/components/ui/button";
 import type { FieldErrors } from "@/lib/projects/setup-validation";
+import {
+  useSetupContinue,
+  type ContinueStateChange,
+} from "./use-setup-continue";
 
 const FormContext = createContext<{
   errors: FieldErrors;
@@ -103,12 +107,14 @@ export function SetupForm({
   onSave,
   disabled = false,
   resetOnSave = false,
+  onContinueState,
   children,
 }: {
   validate: (form: FormData) => FieldErrors;
   onSave: (form: FormData) => Promise<void>;
   disabled?: boolean;
   resetOnSave?: boolean;
+  onContinueState?: ContinueStateChange;
   children: ReactNode;
 }) {
   const ref = useRef<HTMLFormElement>(null);
@@ -117,6 +123,14 @@ export function SetupForm({
   const [pending, setPending] = useState(false),
     [failure, setFailure] = useState("");
   const [serverErrors, setServerErrors] = useState<FieldErrors>({});
+  useSetupContinue(
+    !disabled &&
+      !pending &&
+      !Object.keys(errors).length &&
+      !Object.keys(serverErrors).length,
+    () => ref.current?.requestSubmit(),
+    onContinueState,
+  );
   useEffect(() => {
     if (ref.current) setErrors(checkForm(ref.current, validate));
   }, [validate]);

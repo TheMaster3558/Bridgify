@@ -10,6 +10,17 @@ import {
 } from "@/lib/schemas/agreement";
 
 export type FieldErrors = Record<string, string>;
+export const DEFAULT_SETUP_POLICY = {
+  mode: "review_only",
+  allowance_mode: "per_request",
+  allowance: 0,
+  operations: ["replace_text"] as ("replace_text" | "change_color")[],
+  targets: [] as string[],
+  exclusions:
+    "New pages, accounts, payments, integrations, price changes and deadline changes always need my approval.",
+  max_open_tasks: 10,
+  notifications: "dashboard",
+} as const;
 export const termGroups = [
   {
     kind: "inclusion",
@@ -125,12 +136,12 @@ export function validatePolicy(form: FormData): FieldErrors {
       errors[key] = `Enter a whole number of ${label} from ${min} to ${max}.`;
   }
   if (
-    !value.targets.length ||
+    (value.mode === "enabled" && !value.targets.length) ||
     value.targets.length > 30 ||
     value.targets.some((t) => t.length > 200)
   )
     errors.targets =
-      "Enter 1–30 page or element identifiers, one per line, with no more than 200 characters each.";
+      "Automatic acceptance needs 1–30 page or element identifiers, one per line, with no more than 200 characters each. Leave blank only when every request needs your approval.";
   if (!value.exclusions || value.exclusions.length > 4000)
     errors.exclusions =
       "Describe what the assistant must leave for your approval, using 1–4,000 characters.";

@@ -73,10 +73,15 @@ export const policySchema = z
     allowance_mode: z.enum(["per_request", "manual_rounds"]),
     allowance: z.number().int().min(0).max(10000),
     operations: z.array(z.enum(["replace_text", "change_color"])).max(2),
-    targets: z.array(z.string().trim().min(1).max(200)).min(1).max(30),
+    targets: z.array(z.string().trim().min(1).max(200)).max(30),
     exclusions: z.string().trim().min(1).max(4000),
     max_open_tasks: z.number().int().min(1).max(10),
     notifications: z.literal("dashboard"),
+  })
+  .refine((v) => v.mode !== "enabled" || v.targets.length > 0, {
+    message:
+      "Choose at least one page or element before enabling automatic acceptance.",
+    path: ["targets"],
   })
   .refine(
     (v) => v.allowance_mode !== "manual_rounds" || v.mode === "review_only",

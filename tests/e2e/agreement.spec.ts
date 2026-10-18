@@ -197,7 +197,13 @@ test("Basics → paste → review/edit → refresh → confirm → next step", a
   await page
     .getByLabel("Original agreed price", { exact: true })
     .fill("100.00");
-  await page.getByRole("button", { name: "Save basics & continue" }).click();
+  await expect(
+    page.getByRole("button", { name: "2. Agreement", exact: true }),
+  ).toBeEnabled();
+  await expect(
+    page.getByRole("button", { name: "3. People & chat", exact: true }),
+  ).toBeDisabled();
+  await page.getByRole("button", { name: "2. Agreement", exact: true }).click();
   await expect(
     page.getByRole("button", {
       name: "Upload / analyze agreement",
@@ -263,14 +269,17 @@ test("Basics → paste → review/edit → refresh → confirm → next step", a
     page.getByLabel("Resolve price mismatch", { exact: true }),
   ).toHaveValue("agreement");
   await page.getByRole("checkbox").check();
+  await expect(
+    page.getByRole("button", { name: "3. People & chat", exact: true }),
+  ).toBeEnabled();
   await page
-    .getByRole("button", { name: "Confirm agreement & continue", exact: true })
+    .getByRole("button", { name: "3. People & chat", exact: true })
     .click();
   await expect(
     page.getByRole("heading", { name: "People & chat", exact: true }),
   ).toBeVisible();
   expect(bundle!.project.status).toBe("draft");
-  await page.getByRole("link", { name: "2. Agreement", exact: true }).click();
+  await page.getByRole("button", { name: "2. Agreement", exact: true }).click();
   failNextImport = true;
   await page
     .getByLabel("Or upload a text PDF (5 MB, 50 pages maximum)")
@@ -418,6 +427,9 @@ test("Basics validates each field and maps server errors back to the input", asy
   });
   const save = page.getByRole("button", { name: "Save basics & continue" });
   await expect(save).toBeDisabled();
+  await expect(
+    page.getByRole("button", { name: "2. Agreement", exact: true }),
+  ).toBeDisabled();
   await page.getByLabel("Project name", { exact: true }).fill("   ");
   await page.getByLabel("Client name", { exact: true }).fill("Client");
   await expect(
@@ -560,7 +572,12 @@ test("Automation shows readable advanced settings and blocks invalid permissions
   await expect(save).toBeDisabled();
   await expect(
     page.getByLabel("Pages or elements covered by these permissions"),
-  ).toBeVisible();
+  ).not.toBeVisible();
+  await page
+    .getByText("Advanced settings · permitted changes and limits", {
+      exact: true,
+    })
+    .click();
   await page.getByLabel("Replace existing text", { exact: true }).check();
   await expect(save).toBeEnabled();
   await page.getByLabel("Included change requests", { exact: true }).fill("");
@@ -611,4 +628,103 @@ test("Activation requires consent and completed setup", async ({ page }) => {
   await page.reload();
   await page.getByRole("checkbox").check();
   await expect(activate).toBeDisabled();
+});
+
+test("New automation defaults save through the header without opening advanced settings", async ({
+  page,
+}) => {
+  const bundle = setupBundle();
+  bundle.project.policy = null;
+  bundle.project.policy_version = 0;
+  bundle.project.setup_step = 4;
+  let payload: Record<string, unknown> | undefined;
+  await fixture(page, bundle, 4, async (route) => {
+    if (route.request().method() !== "PATCH") return false;
+    const input = route.request().postDataJSON();
+    expect(input.section).toBe("policy");
+    payload = input.payload;
+    bundle.project.policy = input.payload;
+    bundle.project.policy_version = 1;
+    bundle.project.setup_step = 5;
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ data: { project: bundle.project } }),
+    });
+    return true;
+  });
+  await expect(
+    page.getByRole("button", { name: "Save automation & continue" }),
+  ).toBeEnabled();
+  const nextHeader = page.getByRole("button", {
+    name: "5. Review & activate",
+    exact: true,
+  });
+  await expect(nextHeader).toBeEnabled();
+  await expect(
+    page.getByLabel("Pages or elements covered by these permissions"),
+  ).not.toBeVisible();
+  await nextHeader.click();
+  await expect(
+    page.getByRole("heading", { name: "Review & activate", exact: true }),
+  ).toBeVisible();
+  expect(payload).toMatchObject({
+    mode: "review_only",
+    targets: [],
+    allowance: 0,
+    operations: ["replace_text"],
+    max_open_tasks: 10,
+  });
+});
+
+test("Forward headers track unsaved validity instead of previously completed setup steps", async ({
+  page,
+}) => {
+  const bundle = setupBundle();
+  await fixture(page, bundle, 4);
+  const header = page.getByRole("button", {
+    name: "5. Review & activate",
+    exact: true,
+  });
+  await expect(header).toBeEnabled();
+  await page.getByLabel("Included change requests", { exact: true }).fill("");
+  await expect(header).toBeDisabled();
+  await expect(
+    page.getByRole("button", { name: "Save automation & continue" }),
+  ).toBeDisabled();
+  await page.getByRole("button", { name: "1. Basics", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "2. Agreement", exact: true }),
+  ).toBeEnabled();
+  await expect(
+    page.getByRole("button", { name: "5. Review & activate", exact: true }),
+  ).toBeDisabled();
+  await page.getByLabel("Project name", { exact: true }).fill(" ");
+  await expect(
+    page.getByRole("button", { name: "2. Agreement", exact: true }),
+  ).toBeDisabled();
+});
+
+test("People headers cannot skip an unsent or uncertain introduction", async ({
+  page,
+}) => {
+  const bundle = setupBundle();
+  bundle.binding = null;
+  await fixture(page, bundle, 3);
+  await expect(
+    page.getByRole("button", { name: "4. Automation", exact: true }),
+  ).toBeDisabled();
+  await expect(
+    page.getByRole("button", { name: "5. Review & activate", exact: true }),
+  ).toBeDisabled();
+  bundle.binding = {
+    test_state: "unknown",
+    verified_at: null,
+    disclosed_message_guid: null,
+    webhook_verified_at: null,
+    hold_reason: "Check delivery with your client first.",
+  };
+  await page.reload();
+  await expect(
+    page.getByRole("button", { name: "4. Automation", exact: true }),
+  ).toBeDisabled();
 });

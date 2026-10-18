@@ -4,8 +4,9 @@ import {
   validateBasics,
   validatePolicy,
   agreementErrors,
+  DEFAULT_SETUP_POLICY,
 } from "@/lib/projects/setup-validation";
-import { chatIntroductionSchema } from "@/lib/schemas/onboarding";
+import { chatIntroductionSchema, policySchema } from "@/lib/schemas/onboarding";
 import {
   initialReview,
   type AgreementExtraction,
@@ -33,6 +34,17 @@ const policy = {
   max_open_tasks: "10",
 };
 describe("project setup validation", () => {
+  it("accepts manual-approval defaults without fabricated target identifiers", () => {
+    expect(policySchema.safeParse(DEFAULT_SETUP_POLICY).success).toBe(true);
+    expect(validatePolicy(form({ ...policy, targets: "" }))).toEqual({});
+    expect(
+      policySchema.safeParse({
+        ...DEFAULT_SETUP_POLICY,
+        mode: "enabled",
+        allowance: 2,
+      }).success,
+    ).toBe(false);
+  });
   it("normalizes valid basics without rounding money", () => {
     expect(validateBasics(form(basics))).toEqual({});
     expect(basicsPayload(form({ ...basics, name: " Site " }))).toMatchObject({
