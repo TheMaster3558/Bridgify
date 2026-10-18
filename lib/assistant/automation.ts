@@ -38,6 +38,11 @@ type Request = {
 };
 type Project = {
   id: string;
+  name: string;
+  timezone: string;
+  original_amount_cents: number | string;
+  approved_additions_cents: number | string;
+  currency: string;
   version: number;
   status: string;
   scope_version: number;
@@ -236,7 +241,7 @@ export async function loadAutomationSnapshot(
 ): Promise<Snapshot> {
   const project = (
     await sql.query<Project>(
-      `select p.*,b.instance_id,b.chat_guid,b.hold_reason,b.verified_at,b.test_state,b.disclosed_message_guid
+      `select p.*,to_char(p.agreed_due_date,'YYYY-MM-DD') as agreed_due_date,b.instance_id,b.chat_guid,b.hold_reason,b.verified_at,b.test_state,b.disclosed_message_guid
     from projects p join chat_bindings b on b.project_id=p.id where p.id=$1`,
       [job.project_id],
     )
@@ -284,7 +289,12 @@ export async function loadAutomationSnapshot(
       [project.id, search],
     )
   ).rows;
-  const watermark = hash({ project, pending, tasks, scope, messages });
+  const counts = (await sql.query<{ status: keyof NonNullable<InterpretationContext["taskCounts"]>; n: number }>(
+    "select status,count(*)::int n from project_tasks where project_id=$1 group by status", [project.id],
+  )).rows;
+  const taskCounts = { ready: 0, in_progress: 0, blocked: 0, done: 0, cancelled: 0 };
+  for (const row of counts) taskCounts[row.status] = row.n;
+  const watermark = hash({ project, pending, tasks, taskCounts, scope, messages });
   const requestStatuses = (
     await sql.query<
       NonNullable<InterpretationContext["requestStatuses"]>[number]
@@ -304,6 +314,16 @@ export async function loadAutomationSnapshot(
       scopeVersion: project.scope_version,
       policyVersion: project.policy_version,
       inputWatermark: hash({ watermark, requestStatuses }),
+      // Explicit public projection: never serialize the project row, source
+      // document, private task history, owner decisions or draft proposals.
+      project: {
+        name: project.name,
+        timezone: project.timezone,
+        agreedDueDate: project.agreed_due_date,
+        confirmedAmountCents: Number(project.original_amount_cents) + Number(project.approved_additions_cents),
+        currency: project.currency,
+      },
+      taskCounts,
       policyExclusions: policy.exclusions,
       permissionMode: policy.permission_mode,
       acceptanceGuidance: policy.acceptance_guidance,
@@ -313,8 +333,8 @@ export async function loadAutomationSnapshot(
         role: m.role,
       })),
       scope: scope.terms.flatMap((t, i) =>
-        t.kind === "inclusion" || t.kind === "exclusion"
-          ? [{ id: `scope-${i}`, kind: t.kind, text: t.text }]
+        ["inclusion", "exclusion", "revision", "date", "responsibility"].includes(t.kind)
+          ? [{ id: `scope-${i}`, kind: t.kind as InterpretationContext["scope"][number]["kind"], text: t.text }]
           : [],
       ),
       targets: policy.targets.map((id) => ({
@@ -439,12 +459,16 @@ async function applyAnalysis(
     if (!intent.sources.some((s) => s.revisionId === job.message_id))
       throw new Error("latest_source_required");
     if (
-      intent.intent === "status_question" &&
+      ["status_question", "project_question"].includes(intent.intent) &&
       !intent.ambiguous &&
       !intent.conflicting &&
       !intent.requestsNewDeadline
     ) {
-      if (policy.replies.status_questions) {
+      const allowed = intent.intent === "status_question"
+        ? policy.replies.status_questions : policy.replies.clarifications;
+      if (allowed && intent.answer) {
+        replies.push(intent.answer.text);
+      } else if (allowed && intent.intent === "status_question") {
         const task = snapshot.context.tasks.find((t) => t.id === intent.taskId);
         const request = snapshot.context.requestStatuses?.find(
           (r) => r.id === intent.statusRequestId,
