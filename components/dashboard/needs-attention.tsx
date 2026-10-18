@@ -547,12 +547,15 @@ export function NeedsAttention({
   decisions,
   clientPhotos = {},
   serverManaged = false,
+  toolbar,
   initialDecisionId,
   activeProjects = [],
 }: {
   decisions: Decision[];
   clientPhotos?: Record<string, string>;
   serverManaged?: boolean;
+  /** Filters shown in place of the client-side ones when serverManaged. */
+  toolbar?: React.ReactNode;
   initialDecisionId?: string;
   activeProjects?: { id: string; name: string; client_name: string }[];
 }) {
@@ -685,7 +688,7 @@ export function NeedsAttention({
           </div>
         </header>
 
-        {!serverManaged && <>
+        {serverManaged ? toolbar : <>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div
             role="group"

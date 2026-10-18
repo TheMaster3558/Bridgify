@@ -73,18 +73,23 @@ const config = {
     id: "id",
   },
 } as const;
-export async function queryList(
-  client: Client,
-  kind: ListKind,
-  input: ListInput,
-) {
+// Proposal pills group several stored statuses.
+const proposalGroups: Record<string, string[]> = {
+  draft: ["draft", "changes_requested"],
+  closed: ["superseded", "withdrawn", "expired", "declined", "rejected"],
+};
+
+// Filters shared by the page query and the status counts.
+type Filterable = {
+  eq(column: string, value: unknown): Filterable;
+  in(column: string, values: unknown[]): Filterable;
+  is(column: string, value: null): Filterable;
+  ilike(column: string, pattern: string): Filterable;
+};
+
+function applyFilters<Q>(builder: Q, kind: ListKind, input: ListInput): Q {
+  let query = builder as unknown as Filterable;
   const c = config[kind];
-  let query = client
-    .from(c.table)
-    .select(
-      kind === "projects" ? "*" : "*,projects!inner(id,name,client_name)",
-      { count: "exact" },
-    );
   if (input.project !== "all" && kind !== "projects")
     query = query.eq("project_id", input.project);
   if (kind === "requests" && input.task !== "all")
@@ -102,9 +107,58 @@ export async function queryList(
       query = query.in("status", ["active", "review_only"]);
     else if (kind === "decisions" && input.status === "open")
       query = query.in("status", ["open", "reviewing"]);
+    else if (kind === "proposals" && proposalGroups[input.status])
+      query = query.in("status", proposalGroups[input.status]);
     else if (kind !== "activity")
       query = query.eq(kind === "requests" ? "state" : "status", input.status);
   }
+  return query as unknown as Q;
+}
+
+// How many rows each status (or reason) option would show with the other
+// filters kept, for the counts on the filter pills.
+export async function optionCounts(
+  client: Client,
+  kind: ListKind,
+  input: ListInput,
+  field: "status" | "reason" | "project" | "assignee",
+  options: string[],
+) {
+  const results = await Promise.all(
+    options.map(async (option) => {
+      const result = await applyFilters(
+        client
+          .from(config[kind].table)
+          .select(kind === "projects" ? "id" : "id,projects!inner(id)", {
+            count: "exact",
+            head: true,
+          }),
+        kind,
+        { ...input, [field]: option },
+      );
+      checked(result);
+      return [option, result.count ?? 0] as const;
+    }),
+  );
+  return Object.fromEntries(results) as Record<string, number>;
+}
+
+export async function queryList(
+  client: Client,
+  kind: ListKind,
+  input: ListInput,
+) {
+  const c = config[kind];
+  let query = applyFilters(
+    client
+      .from(c.table)
+      .select(
+        kind === "projects" ? "*" : "*,projects!inner(id,name,client_name)",
+        { count: "exact" },
+      ),
+    kind,
+    input,
+  );
   const fields: Record<string, string> =
     kind === "projects"
       ? {
