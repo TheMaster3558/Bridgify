@@ -20,3 +20,8 @@ export type ProjectChatHistory = {
   nextCursor: string | null;
   fetchedAt: string;
 };
+
+export type OwnerMessageResult = {
+  state: "sent" | "failed" | "unknown";
+  messageId?: string;
+};

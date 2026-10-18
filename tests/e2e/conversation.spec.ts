@@ -138,3 +138,90 @@ test("production conversation displays both directions, pagination, refresh and 
     page.getByRole("link", { name: "Connect client in People & chat" }),
   ).toBeVisible();
 });
+
+test("owner composes, sends and checks uncertain delivery without creating a new attempt", async ({
+  page,
+}) => {
+  const state: ProjectChatHistory = {
+    projectName: "Website",
+    timezone: "UTC",
+    connected: true,
+    connectionKey: "a".repeat(64),
+    clientName: "Alex",
+    agentAddress: "+14155550200",
+    messages: [],
+    nextCursor: null,
+    fetchedAt: new Date().toISOString(),
+  };
+  const sends: {
+    key: string;
+    body: { text: string; connectionKey: string };
+  }[] = [];
+  let outcome: "sent" | "unknown" | "failed" = "sent";
+  await page.route("https://history.test/**", async (route) => {
+    const req = route.request(),
+      url = new URL(req.url());
+    if (url.pathname === "/bundle.js")
+      return route.fulfill({
+        contentType: "text/javascript",
+        body: javascript,
+      });
+    if (url.pathname.includes("/api/")) {
+      if (req.method() === "POST") {
+        sends.push({
+          key: req.headers()["idempotency-key"],
+          body: req.postDataJSON(),
+        });
+        if (outcome === "sent")
+          state.messages.push(
+            message(`manual-${sends.length}`, req.postDataJSON().text, true),
+          );
+        return route.fulfill({
+          json: {
+            data: {
+              state: outcome,
+              messageId: outcome === "sent" ? "provider-guid" : undefined,
+            },
+          },
+        });
+      }
+      return route.fulfill({ json: { data: state } });
+    }
+    return route.fulfill({
+      contentType: "text/html",
+      body: '<div id="root"></div><script src="/bundle.js"></script>',
+    });
+  });
+  await page.goto("https://history.test/conversation");
+  const box = page.getByRole("textbox", { name: "Message Alex" }),
+    button = page.getByRole("button", { name: "Send message", exact: true });
+  await expect(button).toBeDisabled();
+  await box.fill("Sure, will do");
+  await button.click();
+  await expect(box).toHaveValue("");
+  await expect(page.getByText("Sure, will do", { exact: true })).toBeVisible();
+  expect(sends).toHaveLength(1);
+  expect(sends[0].body).toEqual({
+    text: "Sure, will do",
+    connectionKey: state.connectionKey,
+  });
+  outcome = "unknown";
+  await box.fill("Another reply");
+  await button.click();
+  await expect(page.getByRole("alert")).toContainText(
+    "Delivery is unconfirmed",
+  );
+  await expect(box).toBeDisabled();
+  await page.getByRole("button", { name: "Check send status" }).click();
+  expect(sends[1].key).toBe(sends[2].key);
+  await page.getByRole("button", { name: "Compose another message" }).click();
+  await expect(box).toBeEnabled();
+  outcome = "failed";
+  await box.fill("Try after reconnecting");
+  await button.click();
+  await expect(page.getByRole("alert")).toContainText(
+    "The message was not sent",
+  );
+  await expect(box).toHaveValue("Try after reconnecting");
+  expect(sends[3].key).not.toBe(sends[2].key);
+});

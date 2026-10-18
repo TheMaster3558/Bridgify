@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import { OwnerMessageComposer } from "./owner-message-composer";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import type {
@@ -136,8 +137,8 @@ export function ProjectConversation({ projectId }: { projectId: string }) {
         </div>
       </div>
       <p className="text-sm text-muted-foreground">
-        Read-only history between the connected client and your Photon agent.
-        Viewing this page does not send messages or authorize work.
+        Messages between the connected client and your Photon agent. Use the
+        message box below to reply to the client yourself.
       </p>
       {error && (
         <div role="alert" className="rounded-lg border border-destructive p-4">
@@ -217,7 +218,7 @@ export function ProjectConversation({ projectId }: { projectId: string }) {
                 <div className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
                   <strong>
                     {message.sender === "agent"
-                      ? "Bridgify agent"
+                      ? "Bridgify"
                       : message.sender === "client"
                         ? history.clientName
                         : "Unidentified participant"}
@@ -253,6 +254,15 @@ export function ProjectConversation({ projectId }: { projectId: string }) {
               </li>
             ))}
           </ol>
+          {history.connectionKey && (
+            <OwnerMessageComposer
+              key={history.connectionKey}
+              projectId={projectId}
+              connectionKey={history.connectionKey}
+              clientName={history.clientName || "client"}
+              onSent={() => void load()}
+            />
+          )}
         </>
       )}
     </main>
