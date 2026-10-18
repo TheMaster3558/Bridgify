@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { ArrowDown, ArrowUp, ChevronsUpDown, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -90,22 +90,38 @@ export function InitialsAvatar({
   name,
   size = "sm",
   square = false,
+  src,
 }: {
   name: string;
-  size?: "sm" | "md";
+  size?: "sm" | "md" | "lg";
   square?: boolean;
+  src?: string | null;
 }) {
+  const [failed, setFailed] = useState<string | null>(null);
+  const showPhoto = Boolean(src) && failed !== src;
   return (
     <span
       aria-hidden
       className={cn(
-        "grid shrink-0 place-items-center font-semibold",
+        "grid shrink-0 place-items-center overflow-hidden font-semibold",
         square ? "rounded-lg" : "rounded-full",
-        size === "sm" ? "size-7 text-[11px]" : "size-10 text-sm",
-        avatarTone(name),
+        size === "sm" && "size-7 text-[11px]",
+        size === "md" && "size-10 text-sm",
+        size === "lg" && "size-12 text-base",
+        showPhoto ? "bg-sidebar-accent" : avatarTone(name),
       )}
     >
-      {initials(name)}
+      {showPhoto ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={src!}
+          alt=""
+          className="size-full object-cover"
+          onError={() => setFailed(src!)}
+        />
+      ) : (
+        initials(name)
+      )}
     </span>
   );
 }

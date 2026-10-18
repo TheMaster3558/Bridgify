@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { requireOwner } from "@/lib/auth/session";
 import { checked } from "@/lib/api";
+import { loadClientPhotos } from "@/lib/clients/photo-urls";
 import {
   ProjectsList,
   type WorkspaceProject,
@@ -38,6 +39,10 @@ export default async function Page() {
     <ProjectsList
       workspaceProjects={projects}
       pendingDecisions={pendingDecisions}
+      clientPhotos={await loadClientPhotos(
+        client,
+        projects.map((project) => project.client_name),
+      )}
     />
   );
 }
