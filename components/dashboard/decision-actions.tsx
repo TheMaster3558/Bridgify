@@ -6,23 +6,21 @@ import type { OwnerDecisionRecord } from "@/lib/dashboard/work-management-types"
 
 export function DecisionActions({
   decision,
+  onResolved,
 }: {
   decision: OwnerDecisionRecord;
+  onResolved?: (id: string) => void;
 }) {
   const router = useRouter();
   const [note, setNote] = useState("");
   const [reply, setReply] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [taskTitle, setTaskTitle] = useState(decision.title ?? "");
   const canApprove =
     Boolean(decision.automation_request_id) &&
-    ![
-      "unknown_participant",
-      "unsupported_input",
-      "failed_processing",
-      "delivery_unknown",
-    ].includes(decision.reason);
-  async function resolve(action: "approve" | "decline" | "dismiss") {
+    !["unknown_participant", "delivery_unknown"].includes(decision.reason);
+  async function resolve(action: "approve" | "decline" | "dismiss" | "delete") {
     setBusy(true);
     setError("");
     try {
@@ -32,13 +30,19 @@ export function DecisionActions({
           "Content-Type": "application/json",
           "Idempotency-Key": crypto.randomUUID(),
         },
-        body: JSON.stringify({ action, note, reply }),
+        body: JSON.stringify({
+          action,
+          note,
+          reply,
+          ...(action === "approve" ? { taskTitle } : {}),
+        }),
       });
       const result = await response.json();
       if (!response.ok)
         throw new Error(
           result.error?.message ?? "Decision could not be saved.",
         );
+      onResolved?.(decision.id);
       router.refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Decision could not be saved.");
@@ -62,6 +66,25 @@ export function DecisionActions({
         />
       </label>
       {canApprove && (
+        <label className="grid gap-1 text-sm">
+          Task to approve
+          <input
+            value={taskTitle}
+            onChange={(e) => setTaskTitle(e.target.value)}
+            minLength={3}
+            maxLength={500}
+            className="rounded border bg-background p-2"
+          />
+        </label>
+      )}
+      {decision.reason === "failed_processing" && (
+        <p className="text-sm text-muted-foreground">
+          Automatic interpretation failed. Review the original message and enter
+          the task you want to authorize. Your approval creates the task
+          directly.
+        </p>
+      )}
+      {canApprove && (
         <p className="text-xs text-muted-foreground">
           Approving authorizes this work, including an exception to policy where
           needed. Individual requests use one revision; rounds remain under
@@ -79,9 +102,9 @@ export function DecisionActions({
         />
       </label>
       <p className="text-xs text-muted-foreground">
-        Your reply is queued only when this decision is saved. Delivery and
-        identity issues must be checked in the conversation before sending
-        another message.
+        Approval queues a client confirmation after the task is saved. Leave the
+        reply blank to use that confirmation. Delivery and identity issues must
+        be checked in the conversation before sending another message.
       </p>
       {error && (
         <p role="alert" className="text-sm text-destructive">
@@ -91,7 +114,9 @@ export function DecisionActions({
       <div className="flex flex-wrap gap-2">
         {canApprove && (
           <Button
-            disabled={busy || note.trim().length < 3}
+            disabled={
+              busy || note.trim().length < 3 || taskTitle.trim().length < 3
+            }
             onClick={() => void resolve("approve")}
           >
             Accept work
@@ -112,6 +137,13 @@ export function DecisionActions({
           onClick={() => void resolve("dismiss")}
         >
           Dismiss review
+        </Button>
+        <Button
+          variant="destructive"
+          disabled={busy}
+          onClick={() => void resolve("delete")}
+        >
+          Delete review
         </Button>
       </div>
     </section>
