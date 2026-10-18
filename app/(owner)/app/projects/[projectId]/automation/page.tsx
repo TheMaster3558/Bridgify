@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { db } from "@/lib/db/server";
 import { checked } from "@/lib/api";
 import { policySchema } from "@/lib/schemas/onboarding";
+import { processingErrorLabel } from "@/lib/assistant/processing-errors";
 
 export default async function Page({
   params,
@@ -37,6 +38,11 @@ export default async function Page({
       .eq("project_id", projectId)
       .order("created_at", { ascending: false })
       .limit(20),
+    client
+      .from("owner_decisions")
+      .select("id,source_job_id,status,deleted_at")
+      .eq("project_id", projectId)
+      .not("source_job_id", "is", null),
   ]);
   results.forEach((result) => checked<unknown>(result));
   const policy = parsed.success ? parsed.data : null;
@@ -115,10 +121,25 @@ export default async function Page({
                 className="flex flex-wrap justify-between gap-2 py-2 text-sm"
               >
                 <span className="capitalize">
-                  {job.state} · {job.attempts} attempts
+                  {job.state === "failed"
+                    ? "Automatic processing did not finish"
+                    : job.state}{" "}
+                  · {job.attempts} attempts
                   {job.error_code
-                    ? ` · ${job.error_code.replaceAll("_", " ")}`
+                    ? ` · ${processingErrorLabel(job.error_code)}`
                     : ""}
+                  {job.state === "failed" &&
+                    results[3].data?.some(
+                      (d) => d.source_job_id === job.id,
+                    ) && (
+                      <span className="block text-xs normal-case text-muted-foreground">
+                        The original message was preserved and sent for owner
+                        review.{" "}
+                        <Link href="/app/decisions" className="underline">
+                          Open Needs Attention
+                        </Link>
+                      </span>
+                    )}
                 </span>
                 <time>{new Date(job.created_at).toLocaleString()}</time>
               </li>
