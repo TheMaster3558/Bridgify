@@ -1,11 +1,56 @@
 "use client";
 
 import { DeleteProject } from "./delete-project";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import {
+  Activity,
+  ArrowUpRight,
+  ChevronRight,
+  ClipboardList,
+  Compass,
+  Eye,
+  FileText,
+  FolderKanban,
+  Inbox,
+  LayoutDashboard,
+  ListChecks,
+  MessagesSquare,
+  Play,
+  Plus,
+  Search,
+  Sparkles,
+  Workflow,
+} from "lucide-react";
+import { DropdownMenu } from "radix-ui";
+import {
+  DotChip,
+  InitialsAvatar,
+  PanelClose,
+  PanelSection,
+  Pill,
+  SortHeader,
+  filterActive,
+  filterButton,
+  filterIdle,
+  formatShortDate,
+  headCell,
+  iconButton,
+  menuItem,
+  panelAside,
+  panelFooter,
+  panelHeader,
+  tableCard,
+  tableHead,
+  tableRow,
+  tableRowSelected,
+  type PillTone,
+} from "@/components/dashboard/table-ui";
+import {
+  settingsButton,
+  settingsPrimaryButton,
+} from "@/components/settings/settings-ui";
 import { formatAgreedDate } from "@/lib/projects/draft";
 import {
   projectListStatus,
@@ -14,6 +59,7 @@ import {
 import { cn } from "@/lib/utils";
 
 const PAGE_SIZE = 25;
+const SETUP_STEPS = 5;
 
 export type WorkspaceProject = {
   id: string;
@@ -28,13 +74,35 @@ export type WorkspaceProject = {
   updated_at: string;
 };
 
+type SortKey = "name" | "date" | "value" | "updated";
+
 const FILTERS: { id: "all" | ProjectListStatus; label: string }[] = [
-  { id: "all", label: "All states" },
+  { id: "all", label: "All" },
   { id: "active", label: "Active" },
   { id: "draft", label: "Draft" },
   { id: "paused", label: "Paused" },
   { id: "completed", label: "Completed" },
   { id: "archived", label: "Archived" },
+];
+
+const statusDot: Record<ProjectListStatus, string> = {
+  active: "bg-lime-500",
+  draft: "bg-neutral-400",
+  paused: "bg-yellow-400",
+  completed: "bg-blue-500",
+  archived: "bg-neutral-300 dark:bg-neutral-600",
+  unknown: "bg-rose-500",
+};
+
+const projectLinks = [
+  { path: "", label: "Overview", icon: LayoutDashboard },
+  { path: "/conversation", label: "Conversation", icon: MessagesSquare },
+  { path: "/requests", label: "Requests", icon: Inbox },
+  { path: "/work", label: "Work", icon: ListChecks },
+  { path: "/scope", label: "Scope", icon: Compass },
+  { path: "/proposals", label: "Proposals", icon: FileText },
+  { path: "/activity", label: "Activity", icon: Activity },
+  { path: "/automation", label: "Automation", icon: Workflow },
 ];
 
 function workspaceHref(project: WorkspaceProject) {
@@ -43,13 +111,31 @@ function workspaceHref(project: WorkspaceProject) {
     : `/app/projects/${project.id}`;
 }
 
-function workspaceAutomation(project: WorkspaceProject) {
+function automation(project: WorkspaceProject): {
+  label: string;
+  tone: PillTone;
+  detail: string;
+} {
   if (project.status === "draft")
-    return `off (setup step ${project.setup_step} of 5)`;
+    return {
+      label: "Off",
+      tone: "gray",
+      detail: "A draft stays off until you activate it.",
+    };
   if (project.policy?.mode === "enabled" && project.status === "active")
-    return "Enabled";
-  if (project.policy?.mode === "review_only") return "Review only";
-  return "off";
+    return {
+      label: "Enabled",
+      tone: "green",
+      detail: "Automation is on for this project.",
+    };
+  if (project.policy?.mode === "review_only")
+    return {
+      label: "Review only",
+      tone: "yellow",
+      detail:
+        "Requests are interpreted, and each one still needs your approval.",
+    };
+  return { label: "Off", tone: "gray", detail: "Automation is off." };
 }
 
 function workspaceValue(project: WorkspaceProject) {
@@ -60,27 +146,252 @@ function workspaceValue(project: WorkspaceProject) {
   }).format((project.original_amount_cents || 0) / 100);
 }
 
+function StateChip({ status }: { status: ProjectListStatus }) {
+  return (
+    <DotChip dot={statusDot[status]}>
+      <span className="capitalize">
+        {status === "unknown" ? "Unavailable" : status}
+      </span>
+    </DotChip>
+  );
+}
+
+function SetupProgress({ step }: { step: number }) {
+  const done = Math.min(Math.max(step - 1, 0), SETUP_STEPS);
+  return (
+    <span className="flex items-center gap-2 whitespace-nowrap">
+      <span aria-hidden className="flex gap-0.5">
+        {Array.from({ length: SETUP_STEPS }, (_, index) => (
+          <span
+            key={index}
+            className={cn(
+              "h-1.5 w-3 rounded-full",
+              index < done ? "bg-blue-500" : "bg-sidebar-accent",
+            )}
+          />
+        ))}
+      </span>
+      <span className="text-sm text-neutral-500 dark:text-neutral-400">
+        Setup step {step} of {SETUP_STEPS}
+      </span>
+    </span>
+  );
+}
+
+function ProjectPanel({
+  project,
+  pending,
+  onClose,
+}: {
+  project: WorkspaceProject;
+  pending: number;
+  onClose: () => void;
+}) {
+  const status = projectListStatus(project.status);
+  const draft = project.status === "draft";
+  const mode = automation(project);
+  const stats = [
+    { label: "Approved value", value: workspaceValue(project) },
+    {
+      label: "Next agreed date",
+      value: formatAgreedDate(project.agreed_due_date || ""),
+    },
+    { label: "Pending decisions", value: pending ? String(pending) : "None" },
+    { label: "Last updated", value: formatShortDate(project.updated_at) },
+  ];
+
+  return (
+    <>
+      <header className={panelHeader}>
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-3">
+            <InitialsAvatar name={project.name} size="md" square />
+            <div className="min-w-0">
+              <h2 className="truncate text-xl leading-snug font-semibold tracking-tight">
+                {project.name}
+              </h2>
+              <p className="truncate text-sm text-neutral-500 dark:text-neutral-400">
+                {project.client_name || "No client name"}
+              </p>
+            </div>
+          </div>
+          <PanelClose label="Close project" onClick={onClose} />
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <StateChip status={status} />
+          <Pill tone={mode.tone}>{mode.label}</Pill>
+        </div>
+      </header>
+
+      <div className="grid gap-7 px-6 py-6">
+        <dl className="grid grid-cols-2 gap-2">
+          {stats.map((stat) => (
+            <div key={stat.label} className="rounded-2xl bg-sidebar p-3.5">
+              <dt className="text-xs text-neutral-500 dark:text-neutral-400">
+                {stat.label}
+              </dt>
+              <dd className="mt-1 truncate text-[17px] font-semibold tabular-nums">
+                {stat.value}
+              </dd>
+            </div>
+          ))}
+        </dl>
+
+        {pending > 0 && (
+          <Link
+            href="/app/decisions"
+            className="group flex items-center gap-3 rounded-2xl bg-rose-50 p-4 ring-1 ring-rose-200 ring-inset outline-none focus-visible:ring-[3px] focus-visible:ring-sidebar-ring/40 dark:bg-rose-500/10 dark:ring-rose-500/25"
+          >
+            <span
+              aria-hidden
+              className="size-2 shrink-0 rounded-full bg-rose-500"
+            />
+            <span className="flex-1 text-[15px] text-rose-900 dark:text-rose-100">
+              {pending} {pending === 1 ? "decision needs" : "decisions need"}{" "}
+              your review
+            </span>
+            <ChevronRight
+              aria-hidden
+              className="size-4 text-rose-400 transition-transform group-hover:translate-x-0.5"
+            />
+          </Link>
+        )}
+
+        <PanelSection icon={Sparkles} title="Automation">
+          <div className="grid justify-items-start gap-2 rounded-2xl bg-sidebar p-4">
+            {draft ? (
+              <SetupProgress step={project.setup_step} />
+            ) : (
+              <Pill tone={mode.tone}>{mode.label}</Pill>
+            )}
+            <p className="text-sm text-neutral-600 dark:text-neutral-300">
+              {mode.detail}
+            </p>
+          </div>
+        </PanelSection>
+
+        {!draft && (
+          <PanelSection icon={ClipboardList} title="Jump to">
+            <nav
+              aria-label={`${project.name} pages`}
+              className="divide-y divide-card overflow-hidden rounded-2xl bg-sidebar dark:divide-background"
+            >
+              {projectLinks.map((link) => {
+                const Icon = link.icon;
+                return (
+                  <Link
+                    key={link.label}
+                    href={`/app/projects/${project.id}${link.path}`}
+                    className="group flex items-center gap-3 px-4 py-2.5 text-[15px] outline-none hover:bg-sidebar-accent focus-visible:bg-sidebar-accent"
+                  >
+                    <Icon
+                      aria-hidden
+                      className="size-[18px] text-neutral-500 dark:text-neutral-400"
+                    />
+                    <span className="flex-1">{link.label}</span>
+                    <ChevronRight
+                      aria-hidden
+                      className="size-4 text-neutral-400 transition-transform group-hover:translate-x-0.5"
+                    />
+                  </Link>
+                );
+              })}
+            </nav>
+          </PanelSection>
+        )}
+      </div>
+
+      <div className={panelFooter}>
+        <div className="flex items-center gap-2">
+          <Link
+            href={workspaceHref(project)}
+            className={cn(settingsPrimaryButton, "h-9 gap-1.5 px-4")}
+          >
+            {draft ? (
+              <>
+                <Play aria-hidden className="size-4" />
+                Resume setup
+              </>
+            ) : (
+              <>
+                <ArrowUpRight aria-hidden className="size-4" />
+                Open project
+              </>
+            )}
+          </Link>
+          {!draft && (
+            <Link
+              href={`/app/projects/${project.id}/conversation`}
+              className={cn(settingsButton, "h-9 px-3.5")}
+            >
+              Conversation
+            </Link>
+          )}
+          <div className="ml-auto">
+            <DeleteProject id={project.id} name={project.name} icon />
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
 export function ProjectsList({
   workspaceProjects = [],
+  pendingDecisions = {},
 }: {
   workspaceProjects?: WorkspaceProject[];
+  pendingDecisions?: Record<string, number>;
 }) {
   const router = useRouter();
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<(typeof FILTERS)[number]["id"]>("all");
   const [page, setPage] = useState(1);
   const [starting, setStarting] = useState(false);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [sort, setSort] = useState<{ key: SortKey; dir: "asc" | "desc" }>({
+    key: "updated",
+    dir: "desc",
+  });
+
+  const counts = useMemo(() => {
+    const result: Record<string, number> = { all: workspaceProjects.length };
+    for (const project of workspaceProjects) {
+      const status = projectListStatus(project.status);
+      result[status] = (result[status] ?? 0) + 1;
+    }
+    return result;
+  }, [workspaceProjects]);
 
   const workspaceFiltered = useMemo(() => {
     const needle = query.trim().toLowerCase();
-    return workspaceProjects.filter((project) => {
-      const matchesState =
-        filter === "all" || projectListStatus(project.status) === filter;
-      const matchesName =
-        !needle || project.name.toLowerCase().includes(needle);
-      return matchesState && matchesName;
-    });
-  }, [workspaceProjects, query, filter]);
+    const direction = sort.dir === "asc" ? 1 : -1;
+    return workspaceProjects
+      .filter((project) => {
+        const matchesState =
+          filter === "all" || projectListStatus(project.status) === filter;
+        const matchesName =
+          !needle || project.name.toLowerCase().includes(needle);
+        return matchesState && matchesName;
+      })
+      .sort((a, b) => {
+        if (sort.key === "name")
+          return a.name.localeCompare(b.name) * direction;
+        if (sort.key === "value")
+          return (
+            ((a.status === "draft" ? -1 : a.original_amount_cents) -
+              (b.status === "draft" ? -1 : b.original_amount_cents)) *
+            direction
+          );
+        if (sort.key === "date")
+          return (
+            (a.agreed_due_date || "9999").localeCompare(
+              b.agreed_due_date || "9999",
+            ) * direction
+          );
+        return a.updated_at.localeCompare(b.updated_at) * direction;
+      });
+  }, [workspaceProjects, query, filter, sort]);
 
   const pageCount = Math.max(
     1,
@@ -92,6 +403,20 @@ export function ProjectsList({
     currentPage * PAGE_SIZE,
   );
   const emptyWorkspace = workspaceProjects.length === 0;
+  const selected = workspaceProjects.find(
+    (project) => project.id === selectedId,
+  );
+
+  useEffect(() => {
+    if (!selected) return;
+    function onKeyDown(event: KeyboardEvent) {
+      const target = event.target as Element | null;
+      if (event.key === "Escape" && !target?.closest?.('[role="dialog"]'))
+        setSelectedId(null);
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [selected]);
 
   function startProject() {
     if (starting) return;
@@ -99,194 +424,361 @@ export function ProjectsList({
     router.push("/app/projects/new");
   }
 
-  return (
-    <main className="mx-auto flex w-full max-w-6xl flex-col gap-5 p-4 md:p-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold">Projects</h1>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <label className="sr-only" htmlFor="project-search">
-            Search by name
-          </label>
-          <Input
-            id="project-search"
-            value={query}
-            placeholder="Search by name"
-            className="w-56"
-            onChange={(event) => {
-              setQuery(event.target.value);
-              setPage(1);
-            }}
-          />
-          <label className="sr-only" htmlFor="project-state">
-            Filter by state
-          </label>
-          <select
-            id="project-state"
-            className="h-9 rounded-md border bg-transparent px-3 text-sm"
-            value={filter}
-            onChange={(event) => {
-              setFilter(event.target.value as (typeof FILTERS)[number]["id"]);
-              setPage(1);
-            }}
-          >
-            {FILTERS.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.label}
-              </option>
-            ))}
-          </select>
-          <Button type="button" onClick={startProject} disabled={starting}>
-            {starting ? "Starting…" : "New project"}
-          </Button>
-        </div>
-      </div>
+  function onSort(key: SortKey) {
+    setSort((current) =>
+      current.key === key
+        ? { key, dir: current.dir === "asc" ? "desc" : "asc" }
+        : { key, dir: key === "value" ? "desc" : "asc" },
+    );
+  }
 
-      {emptyWorkspace ? (
-        <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed bg-card px-6 py-14 text-center">
-          <h2 className="text-xl font-semibold">Nothing here yet</h2>
-          <p className="max-w-md text-sm text-muted-foreground">
-            Create a project and connect its iMessage chat to start. A draft
-            stays off until you activate it.
-          </p>
-          <Button type="button" onClick={startProject} disabled={starting}>
-            Create your first project
-          </Button>
-        </div>
-      ) : (
-        <section className="overflow-hidden rounded-lg border bg-card">
-          {visible.length === 0 ? (
-            <p className="px-4 py-8 text-sm text-muted-foreground">
-              No projects match that name and state.
-            </p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-muted text-left text-xs tracking-wide text-muted-foreground uppercase">
-                  <tr>
-                    <th className="px-3 py-2 font-medium">Project</th>
-                    <th className="px-3 py-2 font-medium">Client</th>
-                    <th className="px-3 py-2 font-medium">State</th>
-                    <th className="px-3 py-2 font-medium">Automation</th>
-                    <th className="px-3 py-2 font-medium">Pending decisions</th>
-                    <th className="px-3 py-2 font-medium">Next agreed date</th>
-                    <th className="px-3 py-2 text-right font-medium">
-                      Approved value
-                    </th>
-                    <th className="px-3 py-2 font-medium">
-                      <span className="sr-only">Actions</span>
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {visible.map((project) => (
-                    <tr key={project.id} className="border-t">
-                      <td className="px-3 py-3 font-medium">
-                        <Link
-                          href={workspaceHref(project)}
-                          className="underline-offset-2 hover:underline"
-                        >
-                          {project.name}
-                        </Link>
-                      </td>
-                      <td className="px-3 py-3">
-                        {project.client_name || "—"}
-                      </td>
-                      <td className="px-3 py-3">
-                        <StatusPill
-                          status={projectListStatus(project.status)}
-                        />
-                      </td>
-                      <td className="px-3 py-3 text-muted-foreground">
-                        {workspaceAutomation(project)}
-                      </td>
-                      <td className="px-3 py-3 tabular-nums">0</td>
-                      <td className="px-3 py-3 tabular-nums">
-                        {formatAgreedDate(project.agreed_due_date || "")}
-                      </td>
-                      <td className="px-3 py-3 text-right tabular-nums">
-                        {workspaceValue(project)}
-                      </td>
-                      <td className="px-3 py-3">
-                        <div className="flex items-center justify-end gap-3">
-                          {project.status === "draft" ? (
-                            <Link
-                              href={workspaceHref(project)}
-                              className="text-sm underline"
-                            >
-                              Resume setup
-                            </Link>
-                          ) : (
-                            <Link
-                              href={workspaceHref(project)}
-                              className="text-sm underline"
-                            >
-                              Open
-                            </Link>
-                          )}
-                          <DeleteProject
-                            id={project.id}
-                            name={project.name}
-                            menu
-                          />
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-          <div className="flex flex-wrap items-center justify-between gap-2 border-t px-3 py-2 text-xs text-muted-foreground">
-            <span>
-              {workspaceFiltered.length}{" "}
-              {workspaceFiltered.length === 1 ? "project" : "projects"}
-              {pageCount > 1 ? ` · page ${currentPage} of ${pageCount}` : ""}
-            </span>
-            <span>Approved value is agreed work, not payment collected.</span>
-            {pageCount > 1 ? (
-              <div className="flex gap-2">
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  disabled={currentPage === 1}
-                  onClick={() => setPage(currentPage - 1)}
-                >
-                  Previous
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  disabled={currentPage === pageCount}
-                  onClick={() => setPage(currentPage + 1)}
-                >
-                  Next
-                </Button>
-              </div>
-            ) : null}
-          </div>
-        </section>
-      )}
-    </main>
-  );
-}
-
-function StatusPill({ status }: { status: ProjectListStatus }) {
   return (
-    <span
+    <main
       className={cn(
-        "inline-flex rounded-full px-2 py-0.5 text-xs font-medium capitalize",
-        status === "active" && "bg-ok-soft text-ok",
-        status === "draft" && "bg-secondary text-muted-foreground",
-        status === "completed" && "bg-info-soft text-info",
-        status === "paused" && "bg-warn-soft text-warn",
-        status === "archived" && "bg-muted text-muted-foreground",
+        "mx-auto grid w-full max-w-[1280px] items-start gap-5 p-5 md:p-6",
+        selected &&
+          "xl:max-w-[1640px] xl:grid-cols-[minmax(0,1fr)_minmax(400px,460px)]",
       )}
     >
-      {status === "unknown" ? "Unavailable" : status}
-    </span>
+      <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-5">
+        <header className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h1 className="font-display text-2xl font-semibold">Projects</h1>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Every client project, its automation and its agreed value.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={startProject}
+            disabled={starting}
+            className={cn(settingsPrimaryButton, "h-9 gap-1.5 px-4")}
+          >
+            <Plus aria-hidden className="size-4" />
+            {starting ? "Starting…" : "New project"}
+          </button>
+        </header>
+
+        {emptyWorkspace ? (
+          <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-sidebar-border bg-card px-6 py-16 text-center">
+            <span className="grid size-12 place-items-center rounded-2xl bg-sidebar-accent text-neutral-500">
+              <FolderKanban aria-hidden className="size-6" />
+            </span>
+            <h2 className="text-lg font-medium">Nothing here yet</h2>
+            <p className="max-w-md text-sm text-neutral-500 dark:text-neutral-400">
+              Create a project and connect its iMessage chat to start. A draft
+              stays off until you activate it.
+            </p>
+            <button
+              type="button"
+              onClick={startProject}
+              disabled={starting}
+              className={cn(settingsPrimaryButton, "mt-1 h-9 px-4")}
+            >
+              Create your first project
+            </button>
+          </div>
+        ) : (
+          <>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div
+                role="group"
+                aria-label="Filter by state"
+                className="flex max-w-full min-w-0 gap-2 overflow-x-auto pb-1"
+              >
+                {FILTERS.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    aria-pressed={filter === item.id}
+                    onClick={() => {
+                      setFilter(item.id);
+                      setPage(1);
+                    }}
+                    className={cn(
+                      filterButton,
+                      filter === item.id ? filterActive : filterIdle,
+                    )}
+                  >
+                    {item.label} ({counts[item.id] ?? 0})
+                  </button>
+                ))}
+              </div>
+              <label className="flex h-9 w-full items-center gap-2 rounded-full bg-sidebar-accent px-3 text-neutral-500 focus-within:ring-[3px] focus-within:ring-sidebar-ring/40 sm:w-64 dark:text-neutral-400">
+                <Search aria-hidden className="size-[18px] shrink-0" />
+                <span className="sr-only">Search by name</span>
+                <input
+                  id="project-search"
+                  value={query}
+                  placeholder="Search by name"
+                  className="min-w-0 flex-1 bg-transparent text-[15px] text-foreground outline-none placeholder:text-neutral-500 dark:placeholder:text-neutral-400"
+                  onChange={(event) => {
+                    setQuery(event.target.value);
+                    setPage(1);
+                  }}
+                />
+              </label>
+            </div>
+
+            <section aria-labelledby="projects-heading" className={tableCard}>
+              <div className="flex min-h-[3.25rem] flex-wrap items-center justify-between gap-3 px-4 py-2.5">
+                <h2 id="projects-heading" className="text-[17px] font-medium">
+                  {filter === "all"
+                    ? "All projects"
+                    : `${FILTERS.find((item) => item.id === filter)?.label} projects`}
+                </h2>
+                <p className="text-sm text-neutral-500 dark:text-neutral-400">
+                  Approved value is agreed work, not payment collected.
+                </p>
+              </div>
+              {visible.length === 0 ? (
+                <div className="grid place-items-center border-t border-sidebar-border px-4 py-14 text-center">
+                  <Search
+                    aria-hidden
+                    className="mb-2 size-6 text-neutral-400"
+                  />
+                  <p className="text-[15px] font-medium">
+                    No projects match that name and state.
+                  </p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full border-collapse">
+                    <thead className={tableHead}>
+                      <tr>
+                        <th scope="col" className={cn(headCell, "pl-4")}>
+                          <SortHeader
+                            label="Project"
+                            sortKey="name"
+                            sort={sort}
+                            onSort={onSort}
+                          />
+                        </th>
+                        <th scope="col" className={headCell}>
+                          State
+                        </th>
+                        <th scope="col" className={headCell}>
+                          Automation
+                        </th>
+                        <th
+                          scope="col"
+                          className={cn(headCell, "hidden @4xl:table-cell")}
+                        >
+                          Pending
+                        </th>
+                        <th
+                          scope="col"
+                          className={cn(headCell, "hidden @5xl:table-cell")}
+                        >
+                          <SortHeader
+                            label="Next agreed date"
+                            sortKey="date"
+                            sort={sort}
+                            onSort={onSort}
+                          />
+                        </th>
+                        <th
+                          scope="col"
+                          className={cn(headCell, "hidden @3xl:table-cell")}
+                        >
+                          <SortHeader
+                            label="Approved value"
+                            sortKey="value"
+                            sort={sort}
+                            onSort={onSort}
+                          />
+                        </th>
+                        <th
+                          scope="col"
+                          className={cn(headCell, "pr-4 text-right")}
+                        >
+                          Actions
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {visible.map((project) => {
+                        const status = projectListStatus(project.status);
+                        const mode = automation(project);
+                        const pending = pendingDecisions[project.id] ?? 0;
+                        const isSelected = selected?.id === project.id;
+                        const draft = project.status === "draft";
+                        return (
+                          <tr
+                            key={project.id}
+                            onClick={() => setSelectedId(project.id)}
+                            aria-selected={isSelected}
+                            className={cn(
+                              tableRow,
+                              isSelected && tableRowSelected,
+                            )}
+                          >
+                            <td className="py-2 pr-3 pl-4">
+                              <div className="flex max-w-72 items-center gap-2.5">
+                                <InitialsAvatar name={project.name} square />
+                                <div className="min-w-0">
+                                  <p className="truncate text-[15px] leading-5 font-medium">
+                                    {project.name}
+                                  </p>
+                                  <p className="truncate text-sm leading-5 text-neutral-500 dark:text-neutral-400">
+                                    {project.client_name || "—"}
+                                  </p>
+                                </div>
+                              </div>
+                            </td>
+                            <td className="px-3 py-2">
+                              <StateChip status={status} />
+                            </td>
+                            <td className="px-3 py-2">
+                              {draft ? (
+                                <SetupProgress step={project.setup_step} />
+                              ) : (
+                                <Pill tone={mode.tone}>{mode.label}</Pill>
+                              )}
+                            </td>
+                            <td className="hidden px-3 py-2 @4xl:table-cell">
+                              {pending ? (
+                                <Pill tone="red">{pending} open</Pill>
+                              ) : (
+                                <span className="text-sm text-neutral-400">
+                                  None
+                                </span>
+                              )}
+                            </td>
+                            <td
+                              className={cn(
+                                "hidden px-3 py-2 text-[15px] whitespace-nowrap tabular-nums @5xl:table-cell",
+                                !project.agreed_due_date &&
+                                  "text-neutral-500 dark:text-neutral-400",
+                              )}
+                            >
+                              {formatAgreedDate(project.agreed_due_date || "")}
+                            </td>
+                            <td className="hidden px-3 py-2 @3xl:table-cell">
+                              {draft ? (
+                                <span className="text-sm text-neutral-400">
+                                  —
+                                </span>
+                              ) : (
+                                <span className="inline-flex rounded-md bg-sidebar px-2 py-1 text-sm font-medium whitespace-nowrap tabular-nums dark:bg-sidebar-accent">
+                                  {workspaceValue(project)}
+                                </span>
+                              )}
+                            </td>
+                            <td className="py-2 pr-4 pl-3">
+                              <div className="flex items-center justify-end gap-2">
+                                <Link
+                                  href={workspaceHref(project)}
+                                  aria-label={draft ? "Resume setup" : "Open"}
+                                  title={
+                                    draft ? "Resume setup" : "Open project"
+                                  }
+                                  className={iconButton}
+                                  onClick={(event) => event.stopPropagation()}
+                                >
+                                  {draft ? (
+                                    <Play aria-hidden className="size-4" />
+                                  ) : (
+                                    <ArrowUpRight
+                                      aria-hidden
+                                      className="size-4"
+                                    />
+                                  )}
+                                </Link>
+                                <DeleteProject
+                                  id={project.id}
+                                  name={project.name}
+                                  menu
+                                  menuItems={
+                                    <>
+                                      <DropdownMenu.Item
+                                        className={menuItem}
+                                        onSelect={() =>
+                                          setSelectedId(project.id)
+                                        }
+                                      >
+                                        <Eye aria-hidden className="size-4" />
+                                        Preview details
+                                      </DropdownMenu.Item>
+                                      {!draft && (
+                                        <DropdownMenu.Item
+                                          asChild
+                                          className={menuItem}
+                                        >
+                                          <Link
+                                            href={`/app/projects/${project.id}/conversation`}
+                                          >
+                                            <MessagesSquare
+                                              aria-hidden
+                                              className="size-4"
+                                            />
+                                            Open conversation
+                                          </Link>
+                                        </DropdownMenu.Item>
+                                      )}
+                                    </>
+                                  }
+                                />
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              <div className="flex flex-wrap items-center justify-between gap-2 border-t border-sidebar-border px-4 py-2.5 text-sm text-neutral-500 dark:text-neutral-400">
+                <span>
+                  {workspaceFiltered.length}{" "}
+                  {workspaceFiltered.length === 1 ? "project" : "projects"}
+                  {pageCount > 1
+                    ? ` · page ${currentPage} of ${pageCount}`
+                    : ""}
+                </span>
+                {pageCount > 1 ? (
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      className={settingsButton}
+                      disabled={currentPage === 1}
+                      onClick={() => setPage(currentPage - 1)}
+                    >
+                      Previous
+                    </button>
+                    <button
+                      type="button"
+                      className={settingsButton}
+                      disabled={currentPage === pageCount}
+                      onClick={() => setPage(currentPage + 1)}
+                    >
+                      Next
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+            </section>
+          </>
+        )}
+      </div>
+
+      {selected && (
+        <>
+          <div
+            aria-hidden
+            className="fixed inset-0 z-30 bg-black/30 xl:hidden"
+            onClick={() => setSelectedId(null)}
+          />
+          <aside aria-label="Project details" className={panelAside}>
+            <ProjectPanel
+              key={selected.id}
+              project={selected}
+              pending={pendingDecisions[selected.id] ?? 0}
+              onClose={() => setSelectedId(null)}
+            />
+          </aside>
+        </>
+      )}
+    </main>
   );
 }

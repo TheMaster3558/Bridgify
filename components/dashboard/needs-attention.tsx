@@ -4,10 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
-  ArrowDown,
-  ArrowUp,
   Check,
-  ChevronsUpDown,
   CircleHelp,
   Eye,
   FileText,
@@ -21,27 +18,40 @@ import {
   ShieldAlert,
   Trash2,
   Workflow,
-  X,
 } from "lucide-react";
 import { Checkbox, Dialog, DropdownMenu } from "radix-ui";
 import { DecisionActions } from "./decision-actions";
 import { settingsButton } from "@/components/settings/settings-ui";
+import {
+  DotChip,
+  InitialsAvatar,
+  PanelClose,
+  PanelSection,
+  Pill,
+  SortHeader,
+  filterActive,
+  filterButton,
+  filterIdle,
+  formatShortDate,
+  headCell,
+  iconButton,
+  menuContent,
+  menuItem,
+  panelAside,
+  panelHeader,
+  tableCard,
+  tableHead,
+  tableRow,
+  tableRowSelected,
+  type PillTone,
+} from "@/components/dashboard/table-ui";
 import type { OwnerDecisionRecord } from "@/lib/dashboard/work-management-types";
 import { cn } from "@/lib/utils";
 
 type Decision = OwnerDecisionRecord;
 type SortKey = "client" | "severity" | "updated";
 
-const pillTone = {
-  red: "bg-rose-100 text-rose-700 dark:bg-rose-500/15 dark:text-rose-300",
-  yellow:
-    "bg-yellow-100 text-yellow-800 dark:bg-yellow-400/15 dark:text-yellow-200",
-  cyan: "bg-cyan-100 text-cyan-700 dark:bg-cyan-400/15 dark:text-cyan-200",
-  blue: "bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-200",
-  gray: "bg-sidebar-accent text-neutral-600 dark:text-neutral-300",
-};
-
-const reasonTone: Record<string, keyof typeof pillTone> = {
+const reasonTone: Record<string, PillTone> = {
   delivery_unknown: "red",
   failed_processing: "red",
   policy_denied: "red",
@@ -66,120 +76,20 @@ const severityRank: Record<Decision["severity"], number> = {
   info: 2,
 };
 
-const avatarTones = [
-  "bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-200",
-  "bg-violet-100 text-violet-700 dark:bg-violet-500/20 dark:text-violet-200",
-  "bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-200",
-  "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-200",
-  "bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-200",
-  "bg-cyan-100 text-cyan-700 dark:bg-cyan-500/20 dark:text-cyan-200",
-];
-
-const iconButton =
-  "grid size-7 shrink-0 place-items-center rounded-lg bg-card text-neutral-600 shadow-[0_1px_2px_rgba(0,0,0,0.08)] ring-1 ring-black/5 outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-sidebar-ring/40 dark:bg-background dark:text-neutral-300 dark:ring-white/10";
-
-
 function reasonLabel(reason: string) {
   const label = reason.replaceAll("_", " ");
   return label.charAt(0).toUpperCase() + label.slice(1);
 }
 
-function formatDate(value: string) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "—";
-  return new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "2-digit",
-    year: "numeric",
-  }).format(date);
-}
-
-function initials(name: string) {
-  const words = name.trim().split(/\s+/).filter(Boolean);
-  if (!words.length) return "?";
-  return (
-    words.length > 1 ? words[0][0] + words[words.length - 1][0] : words[0][0]
-  ).toUpperCase();
-}
-
-function avatarTone(name: string) {
-  let hash = 0;
-  for (const char of name) hash = (hash * 31 + char.charCodeAt(0)) | 0;
-  return avatarTones[Math.abs(hash) % avatarTones.length];
-}
-
-function ClientAvatar({
-  name,
-  size = "sm",
-}: {
-  name: string;
-  size?: "sm" | "md";
-}) {
-  return (
-    <span
-      aria-hidden
-      className={cn(
-        "grid shrink-0 place-items-center rounded-full font-semibold",
-        size === "sm" ? "size-7 text-[11px]" : "size-10 text-sm",
-        avatarTone(name),
-      )}
-    >
-      {initials(name)}
-    </span>
-  );
-}
-
 function ReasonPill({ reason }: { reason: string }) {
-  return (
-    <span
-      className={cn(
-        "inline-flex rounded-md px-2 py-0.5 text-sm font-medium whitespace-nowrap",
-        pillTone[reasonTone[reason] ?? "gray"],
-      )}
-    >
-      {reasonLabel(reason)}
-    </span>
-  );
+  return <Pill tone={reasonTone[reason] ?? "gray"}>{reasonLabel(reason)}</Pill>;
 }
 
 function SeverityChip({ severity }: { severity: Decision["severity"] }) {
   return (
-    <span className="inline-flex h-7 items-center gap-2 rounded-lg bg-card px-2.5 text-sm font-medium whitespace-nowrap text-foreground ring-1 ring-black/10 dark:bg-background dark:ring-white/10">
-      <span
-        aria-hidden
-        className={cn("size-2 rounded-full", severityDot[severity])}
-      />
+    <DotChip dot={severityDot[severity]}>
       {severity.charAt(0).toUpperCase() + severity.slice(1)}
-    </span>
-  );
-}
-
-function SortHeader({
-  label,
-  sortKey,
-  sort,
-  onSort,
-}: {
-  label: string;
-  sortKey: SortKey;
-  sort: { key: SortKey; dir: "asc" | "desc" };
-  onSort: (key: SortKey) => void;
-}) {
-  const active = sort.key === sortKey;
-  const Icon = !active
-    ? ChevronsUpDown
-    : sort.dir === "asc"
-      ? ArrowUp
-      : ArrowDown;
-  return (
-    <button
-      type="button"
-      onClick={() => onSort(sortKey)}
-      className="inline-flex items-center gap-1 rounded-md font-medium outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-sidebar-ring/40"
-    >
-      {label}
-      <Icon aria-hidden className={cn("size-3.5", !active && "opacity-60")} />
-    </button>
+    </DotChip>
   );
 }
 
@@ -190,8 +100,6 @@ function RowMenu({
   decision: Decision;
   onOpen: () => void;
 }) {
-  const item =
-    "flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm outline-none focus:bg-sidebar-accent";
   return (
     <DropdownMenu.Root>
       <DropdownMenu.Trigger
@@ -205,20 +113,20 @@ function RowMenu({
         <DropdownMenu.Content
           align="end"
           sideOffset={6}
-          className="z-50 min-w-52 rounded-xl border bg-popover p-1 text-popover-foreground shadow-md"
+          className={menuContent}
           onClick={(event) => event.stopPropagation()}
         >
-          <DropdownMenu.Item className={item} onSelect={onOpen}>
+          <DropdownMenu.Item className={menuItem} onSelect={onOpen}>
             <Eye aria-hidden className="size-4" />
             Review decision
           </DropdownMenu.Item>
-          <DropdownMenu.Item asChild className={item}>
+          <DropdownMenu.Item asChild className={menuItem}>
             <Link href={`/app/projects/${decision.project_id}/conversation`}>
               <MessagesSquare aria-hidden className="size-4" />
               Open conversation
             </Link>
           </DropdownMenu.Item>
-          <DropdownMenu.Item asChild className={item}>
+          <DropdownMenu.Item asChild className={menuItem}>
             <Link href={`/app/projects/${decision.project_id}/automation`}>
               <Workflow aria-hidden className="size-4" />
               Open project automation
@@ -244,31 +152,6 @@ const calloutIcon: Record<Decision["severity"], string> = {
   info: "bg-blue-500",
 };
 
-function PanelSection({
-  icon: Icon,
-  title,
-  aside,
-  children,
-}: {
-  icon: React.ComponentType<{ className?: string; "aria-hidden"?: boolean }>;
-  title: string;
-  aside?: React.ReactNode;
-  children: React.ReactNode;
-}) {
-  return (
-    <section className="grid gap-3">
-      <div className="flex items-center justify-between gap-3">
-        <h3 className="flex items-center gap-2 text-sm font-medium text-neutral-500 dark:text-neutral-400">
-          <Icon aria-hidden className="size-4" />
-          {title}
-        </h3>
-        {aside}
-      </div>
-      {children}
-    </section>
-  );
-}
-
 function DecisionDetail({
   decision,
   onClose,
@@ -283,7 +166,7 @@ function DecisionDetail({
   const options = decision.suggested_options;
   return (
     <>
-      <header className="sticky top-0 z-10 grid gap-3 border-b border-sidebar-border bg-card/95 px-6 pt-5 pb-4 backdrop-blur dark:bg-background/95">
+      <header className={panelHeader}>
         <div className="flex items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-1.5 font-mono text-[11px] text-neutral-500 dark:text-neutral-400">
             <span className="rounded-md bg-sidebar px-1.5 py-0.5 dark:bg-sidebar-accent">
@@ -302,14 +185,7 @@ function DecisionDetail({
             >
               <MessagesSquare aria-hidden className="size-4" />
             </Link>
-            <button
-              type="button"
-              aria-label="Close decision"
-              onClick={onClose}
-              className="grid size-7 shrink-0 place-items-center rounded-full bg-sidebar-accent text-neutral-500 outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-sidebar-ring/40"
-            >
-              <X aria-hidden className="size-4" />
-            </button>
+            <PanelClose label="Close decision" onClick={onClose} />
           </div>
         </div>
         <h2 className="text-xl leading-snug font-semibold tracking-tight">
@@ -323,7 +199,7 @@ function DecisionDetail({
 
       <div className="grid gap-7 px-6 py-6">
         <div className="flex items-center gap-3 rounded-2xl bg-sidebar p-3">
-          <ClientAvatar name={decision.client_name} size="md" />
+          <InitialsAvatar name={decision.client_name} size="md" />
           <div className="min-w-0 flex-1">
             <p className="truncate text-[15px] font-medium">
               {decision.client_name}
@@ -335,14 +211,14 @@ function DecisionDetail({
           <div className="text-right text-xs text-neutral-500 dark:text-neutral-400">
             <p>Updated</p>
             <p className="font-medium text-foreground tabular-nums">
-              {formatDate(decision.updated_at)}
+              {formatShortDate(decision.updated_at)}
             </p>
           </div>
         </div>
 
         <PanelSection icon={MessageCircle} title="Client request">
           <div className="flex items-end gap-2.5">
-            <ClientAvatar name={decision.client_name} />
+            <InitialsAvatar name={decision.client_name} />
             <div className="min-w-0">
               <div className="w-fit max-w-full rounded-[20px] rounded-bl-md bg-sidebar-accent px-4 py-2.5 text-[15px] leading-relaxed whitespace-pre-wrap">
                 {decision.source_text || (
@@ -733,15 +609,6 @@ export function NeedsAttention({ decisions }: { decisions: Decision[] }) {
     );
   }
 
-  const filterButton =
-    "rounded-full px-3 py-1.5 text-sm font-medium whitespace-nowrap outline-none transition-colors focus-visible:ring-[3px] focus-visible:ring-sidebar-ring/40";
-  const filterActive =
-    "bg-gradient-to-b from-[#4a82ff] to-[#2563eb] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.25),0_1px_2px_rgba(37,99,235,0.35)]";
-  const filterIdle =
-    "bg-sidebar-accent text-neutral-600 hover:text-foreground dark:text-neutral-300";
-  const headCell =
-    "px-3 py-2.5 text-left text-[15px] font-medium whitespace-nowrap";
-
   return (
     <main
       className={cn(
@@ -800,10 +667,7 @@ export function NeedsAttention({ decisions }: { decisions: Decision[] }) {
           ))}
         </div>
 
-        <section
-          aria-labelledby="open-decisions-heading"
-          className="@container min-w-0 overflow-hidden rounded-2xl border border-sidebar-border bg-card"
-        >
+        <section aria-labelledby="open-decisions-heading" className={tableCard}>
           <div className="flex min-h-[3.25rem] flex-wrap items-center justify-between gap-3 px-4 py-2.5">
             <h2 id="open-decisions-heading" className="text-[17px] font-medium">
               Open decisions
@@ -857,7 +721,7 @@ export function NeedsAttention({ decisions }: { decisions: Decision[] }) {
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full border-collapse">
-                <thead className="border-y border-sidebar-border bg-sidebar text-neutral-500 dark:text-neutral-400">
+                <thead className={tableHead}>
                   <tr>
                     <th scope="col" className="w-0 py-2.5 pr-1 pl-4">
                       <SelectBox
@@ -927,9 +791,8 @@ export function NeedsAttention({ decisions }: { decisions: Decision[] }) {
                         onClick={() => setSelectedId(decision.id)}
                         aria-selected={isSelected}
                         className={cn(
-                          "cursor-pointer border-b border-sidebar-border transition-colors last:border-b-0 hover:bg-sidebar",
-                          (isSelected || isChecked) &&
-                            "bg-blue-50 hover:bg-blue-50 dark:bg-blue-500/10 dark:hover:bg-blue-500/10",
+                          tableRow,
+                          (isSelected || isChecked) && tableRowSelected,
                         )}
                       >
                         <td className="py-2 pr-1 pl-4">
@@ -943,7 +806,7 @@ export function NeedsAttention({ decisions }: { decisions: Decision[] }) {
                         </td>
                         <td className="py-2 pr-3 pl-2">
                           <div className="flex max-w-52 items-center gap-2.5">
-                            <ClientAvatar name={decision.client_name} />
+                            <InitialsAvatar name={decision.client_name} />
                             <span className="truncate text-[15px] font-medium">
                               {decision.client_name}
                             </span>
@@ -974,7 +837,7 @@ export function NeedsAttention({ decisions }: { decisions: Decision[] }) {
                           <ReasonPill reason={decision.reason} />
                         </td>
                         <td className="hidden px-3 py-2 text-[15px] whitespace-nowrap tabular-nums @5xl:table-cell">
-                          {formatDate(decision.updated_at)}
+                          {formatShortDate(decision.updated_at)}
                         </td>
                         <td className="hidden px-3 py-2 @6xl:table-cell">
                           <span className="inline-flex rounded-md bg-sidebar px-2 py-1 font-mono text-xs whitespace-nowrap text-foreground dark:bg-sidebar-accent">
@@ -1036,10 +899,7 @@ export function NeedsAttention({ decisions }: { decisions: Decision[] }) {
             className="fixed inset-0 z-30 bg-black/30 xl:hidden"
             onClick={() => setSelectedId(null)}
           />
-          <aside
-            aria-label="Decision details"
-            className="settings-dialog-scroll fixed inset-y-0 right-0 z-40 flex w-full max-w-[480px] flex-col overflow-y-auto overscroll-contain border-l border-sidebar-border bg-card shadow-xl dark:bg-background xl:sticky xl:top-5 xl:z-auto xl:max-h-[calc(100dvh-2.5rem)] xl:w-auto xl:max-w-none xl:rounded-[28px] xl:border xl:shadow-none"
-          >
+          <aside aria-label="Decision details" className={panelAside}>
             <DecisionDetail
               decision={selected}
               onClose={() => setSelectedId(null)}

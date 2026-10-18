@@ -14,6 +14,7 @@ import {
   settingsButton,
   settingsPrimaryButton,
 } from "@/components/settings/settings-ui";
+import { panelFooter } from "@/components/dashboard/table-ui";
 import { cn } from "@/lib/utils";
 import type { OwnerDecisionRecord } from "@/lib/dashboard/work-management-types";
 
@@ -188,7 +189,7 @@ export function DecisionActions({
           </button>
         )}
       </section>
-      <div className="sticky bottom-0 z-10 mt-auto grid gap-2 border-t border-sidebar-border bg-card/95 px-6 py-3.5 backdrop-blur dark:bg-background/95">
+      <div className={panelFooter}>
         {error && (
           <p role="alert" className="text-sm text-crit">
             {error}
