@@ -106,9 +106,9 @@ export function QuickSearch({
   return (
     <Dialog.Root open={open} onOpenChange={handleOpenChange}>
       <Dialog.Trigger className={className}>
-        <Search aria-hidden className="size-[18px] shrink-0" />
+        <Search aria-hidden className="size-5 shrink-0" />
         <span className="flex-1 text-left">Quick Search</span>
-        <kbd className="rounded-md bg-black/10 px-1.5 py-0.5 font-sans text-xs font-semibold text-neutral-500 dark:bg-white/10 dark:text-neutral-400">
+        <kbd className="rounded-md bg-black/10 px-1 py-0.5 font-sans text-[11px] leading-none font-semibold text-neutral-500 dark:bg-white/10 dark:text-neutral-400">
           ⌘K
         </kbd>
       </Dialog.Trigger>

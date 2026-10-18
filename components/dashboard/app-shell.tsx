@@ -35,7 +35,7 @@ const searchPages = [
 ];
 
 const navItem =
-  "flex w-full items-center gap-3 rounded-xl border border-transparent px-3 py-2 text-left text-[15px] font-medium whitespace-nowrap text-neutral-500 outline-none transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground focus-visible:ring-[3px] focus-visible:ring-sidebar-ring/40 dark:text-neutral-400";
+  "flex w-full items-center gap-2 rounded-xl border border-transparent px-3 py-[7px] text-left text-[15px] font-medium whitespace-nowrap text-neutral-500 outline-none transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground focus-visible:ring-[3px] focus-visible:ring-sidebar-ring/40 dark:text-neutral-400";
 const navItemActive =
   "border-[#1f5ae6] bg-gradient-to-b from-[#4a82ff] to-[#2563eb] text-sidebar-primary-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.25),0_1px_2px_rgba(37,99,235,0.35)] hover:bg-transparent hover:text-sidebar-primary-foreground dark:text-sidebar-primary-foreground";
 
@@ -59,11 +59,11 @@ function ProfileMenu({ name, email }: { name: string; email: string }) {
     <DropdownMenu.Root>
       <DropdownMenu.Trigger
         aria-label="Account"
-        className="flex w-full min-w-0 items-center gap-3 rounded-2xl bg-sidebar-accent p-2.5 text-left outline-none hover:bg-[#e3e3e3] focus-visible:ring-[3px] focus-visible:ring-sidebar-ring/40 dark:hover:bg-[#333333]"
+        className="flex w-full min-w-0 items-center gap-2 rounded-2xl bg-sidebar-accent px-3 py-2 text-left outline-none hover:bg-[#e3e3e3] focus-visible:ring-[3px] focus-visible:ring-sidebar-ring/40 dark:hover:bg-[#333333]"
       >
         <span
           aria-hidden
-          className="grid size-10 shrink-0 place-items-center rounded-full bg-gradient-to-b from-[#4a82ff] to-[#2563eb] text-sm font-semibold text-white"
+          className="grid size-8 shrink-0 place-items-center rounded-full bg-gradient-to-b from-[#4a82ff] to-[#2563eb] text-sm font-semibold text-white"
         >
           {initials(displayName)}
         </span>
@@ -79,9 +79,9 @@ function ProfileMenu({ name, email }: { name: string; email: string }) {
         </span>
         <span
           aria-hidden
-          className="grid size-6 shrink-0 place-items-center rounded-md bg-black/10 text-neutral-600 dark:bg-white/10 dark:text-neutral-300"
+          className="mr-1 grid size-4 shrink-0 place-items-center rounded bg-black/10 text-neutral-600 dark:bg-white/10 dark:text-neutral-300"
         >
-          <ChevronDown className="size-4" />
+          <ChevronDown className="size-3.5" />
         </span>
       </DropdownMenu.Trigger>
       <DropdownMenu.Portal>
@@ -138,17 +138,17 @@ export function AppShell({
   const workspace = organization || "Workspace";
 
   return (
-    <div className="grid min-h-screen grid-cols-[248px_minmax(0,1fr)] md:grid-cols-[304px_minmax(0,1fr)]">
+    <div className="grid min-h-screen grid-cols-[248px_minmax(0,1fr)] md:grid-cols-[284px_minmax(0,1fr)]">
       <aside className="min-w-0 self-stretch bg-background">
         <div className="sticky top-0 h-dvh p-2 md:p-3">
-          <div className="flex h-full flex-col gap-4 overflow-y-auto rounded-[28px] border border-sidebar-border bg-sidebar p-3 shadow-[0_1px_2px_rgba(0,0,0,0.04)]">
+          <div className="flex h-full flex-col gap-3 overflow-y-auto rounded-[28px] border border-sidebar-border bg-sidebar p-3 shadow-[0_1px_2px_rgba(0,0,0,0.04)]">
             <Link
               href="/app"
-              className="flex min-w-0 items-center gap-2.5 rounded-xl p-1 outline-none focus-visible:ring-[3px] focus-visible:ring-sidebar-ring/40"
+              className="mb-0.5 flex min-w-0 items-center gap-2.5 rounded-xl outline-none focus-visible:ring-[3px] focus-visible:ring-sidebar-ring/40"
             >
               <span
                 aria-hidden
-                className="grid size-9 shrink-0 place-items-center rounded-full bg-[#dcdcdc] text-base font-semibold text-neutral-600 dark:bg-neutral-700 dark:text-neutral-200"
+                className="grid size-8 shrink-0 place-items-center rounded-full bg-[#dcdcdc] text-[15px] font-semibold text-neutral-600 dark:bg-neutral-700 dark:text-neutral-200"
               >
                 {workspace.charAt(0).toUpperCase()}
               </span>
@@ -158,9 +158,9 @@ export function AppShell({
             </Link>
             <QuickSearch
               pages={searchPages}
-              className="flex w-full items-center gap-3 rounded-full bg-sidebar-accent px-3.5 py-2 text-[15px] text-neutral-500 outline-none transition-colors hover:text-sidebar-foreground focus-visible:ring-[3px] focus-visible:ring-sidebar-ring/40 dark:text-neutral-400"
+              className="flex w-full items-center gap-2 rounded-full bg-sidebar-accent px-2 py-1.5 text-[15px] text-neutral-500 outline-none transition-colors hover:text-sidebar-foreground focus-visible:ring-[3px] focus-visible:ring-sidebar-ring/40 dark:text-neutral-400"
             />
-            <nav aria-label="Main" className="flex flex-col gap-1">
+            <nav aria-label="Main" className="flex flex-col gap-0.5">
               {nav.map((item) => {
                 const active = isActive(pathname, item.href);
                 const Icon = item.icon;
@@ -178,7 +178,7 @@ export function AppShell({
               })}
             </nav>
             {projectId && (
-              <nav aria-label="Project shortcuts" className="grid gap-1">
+              <nav aria-label="Project shortcuts" className="grid gap-0.5">
                 <p className="px-3 pb-1 text-xs font-medium tracking-wide text-neutral-400">
                   CURRENT PROJECT
                 </p>
@@ -200,8 +200,8 @@ export function AppShell({
                 </Link>
               </nav>
             )}
-            <div className="mt-auto flex flex-col gap-1">
-              <div className="pb-3">
+            <div className="mt-auto flex flex-col gap-0.5">
+              <div className="pb-2.5">
                 <ThemeToggle />
               </div>
               <SettingsButton
@@ -214,7 +214,7 @@ export function AppShell({
                   pathname === "/app/settings" && navItemActive,
                 )}
               />
-              <div className="pt-2">
+              <div className="pt-2.5">
                 <ProfileMenu name={name} email={email || ""} />
               </div>
             </div>
