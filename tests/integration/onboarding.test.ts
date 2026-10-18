@@ -213,6 +213,17 @@ beforeAll(async () => {
       "utf8",
     ),
   );
+  for (const migration of [
+    "202610170007_work_management.sql",
+    "202610170010_delete_projects.sql",
+  ]) {
+    await db.exec(
+      await readFile(
+        new URL(`../../supabase/migrations/${migration}`, import.meta.url),
+        "utf8",
+      ),
+    );
+  }
   for (const [id, email] of [
     [owner, "owner@example.test"],
     [other, "other@example.test"],
@@ -1109,7 +1120,9 @@ describe("Photon Pro shared-line client connection", () => {
     const row = await db.query<{
       people: Record<string, unknown>;
       setup_step: number;
-    }>("select people,setup_step from projects where id=$1", [saved.project.id]);
+    }>("select people,setup_step from projects where id=$1", [
+      saved.project.id,
+    ]);
     expect(row.rows[0].setup_step).toBe(4);
     expect(row.rows[0].people).toEqual({
       ...sharedPeople("+12065550302"),
@@ -1240,5 +1253,122 @@ it("saves manual-approval defaults without targets while requiring targets for a
   expect(row.rows[0].policy).toMatchObject({
     targets: [],
     mode: "review_only",
+  });
+});
+
+describe("project deletion transaction", () => {
+  it("deletes a populated project atomically, releases its chat and records private file cleanup", async () => {
+    await user(owner);
+    const p = await readyProject(() => sharedPeople("+12065550991"), false);
+    await admin();
+    const docs = (
+      await db.query<{ id: string }>(
+        "select id from documents where project_id=$1",
+        [p.id],
+      )
+    ).rows;
+    await db.query("update documents set storage_path=$1 where id=$2", [
+      `${p.id}/agreement.pdf`,
+      docs[0].id,
+    ]);
+    await db.query(
+      "update projects set current_agreement_document_id=$1 where id=$2",
+      [docs[0].id, p.id],
+    );
+    await db.query("insert into jobs(document_id) values($1)", [docs[0].id]);
+    await db.query(
+      "insert into project_tasks(project_id,task_code,title,origin) values($1,'T-delete','Delete with project','manual')",
+      [p.id],
+    );
+    await db.query(
+      "insert into owner_decisions(project_id,decision_code,request_code,reason,title) values($1,'D-delete','R-delete','scope_addition','Delete with project')",
+      [p.id],
+    );
+    await user(owner);
+    const result = await db.query<{ result: { deleted: boolean } }>(
+      "select delete_project($1,$2) result",
+      [p.id, basics.name],
+    );
+    expect(result.rows[0].result.deleted).toBe(true);
+    for (const table of [
+      "projects",
+      "documents",
+      "scope_versions",
+      "policy_versions",
+      "chat_bindings",
+      "project_members",
+      "audit_events",
+      "project_tasks",
+      "owner_decisions",
+    ]) {
+      const column = table === "projects" ? "id" : "project_id";
+      expect(
+        (await db.query(`select * from ${table} where ${column}=$1`, [p.id]))
+          .rows,
+      ).toHaveLength(0);
+    }
+    const receipt = (
+      await db.query<{ storage_paths: string[]; status: string }>(
+        "select * from project_deletion_cleanup where project_id=$1",
+        [p.id],
+      )
+    ).rows[0];
+    expect(receipt.storage_paths).toEqual([`${p.id}/agreement.pdf`]);
+    expect(receipt.status).toBe("pending");
+    expect(
+      (await db.query("select delete_project($1,$2)", [p.id, basics.name]))
+        .rows,
+    ).toHaveLength(1);
+    await user(other);
+    await expect(
+      db.query("select delete_project($1,$2)", [p.id, basics.name]),
+    ).rejects.toThrow();
+    expect(
+      (
+        await db.query(
+          "select * from project_deletion_cleanup where project_id=$1",
+          [p.id],
+        )
+      ).rows,
+    ).toHaveLength(0);
+  });
+  it("rejects wrong names, another owner and in-progress sends without deleting records", async () => {
+    await user(owner);
+    const p = await readyProject(() => sharedPeople("+12065550992"), false);
+    await expect(
+      db.query("select delete_project($1,'wrong name')", [p.id]),
+    ).rejects.toThrow(/exact project name/);
+    await user(other);
+    await expect(
+      db.query("select delete_project($1,$2)", [p.id, basics.name]),
+    ).rejects.toThrow();
+    await admin();
+    await db.query(
+      "update chat_bindings set test_state='sending' where project_id=$1",
+      [p.id],
+    );
+    await user(owner);
+    await expect(
+      db.query("select delete_project($1,$2)", [p.id, basics.name]),
+    ).rejects.toThrow(/in progress/);
+    expect(
+      (await db.query("select id from projects where id=$1", [p.id])).rows,
+    ).toHaveLength(1);
+    expect(
+      (
+        await db.query(
+          "select * from project_deletion_cleanup where project_id=$1",
+          [p.id],
+        )
+      ).rows,
+    ).toHaveLength(0);
+  });
+  it("can delete an unfinished draft without setup or activation", async () => {
+    await user(owner);
+    const p = await project();
+    await db.query("select delete_project($1,$2)", [p.id, basics.name]);
+    expect(
+      (await db.query("select id from projects where id=$1", [p.id])).rows,
+    ).toHaveLength(0);
   });
 });

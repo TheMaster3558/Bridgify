@@ -1,3 +1,4 @@
+import { cleanupDeletedProject } from "../lib/db/project-deletion";
 import { adminDb } from "../lib/db/admin";
 import { extractAgreement } from "../lib/ai/extract-agreement";
 import { AgreementAnalysisError } from "../lib/ai/agreement-errors";
@@ -90,6 +91,7 @@ for (const key of ["GEMINI_API_KEY", "GEMINI_MODEL"])
 async function main() {
   while (!stopping) {
     try {
+      await cleanupDeletedProject(client).catch(() => undefined);
       if (!(await once())) await sleep(2000);
     } catch {
       console.error("Worker dependency unavailable; retrying.");

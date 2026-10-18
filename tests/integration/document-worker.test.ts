@@ -8,7 +8,14 @@ it("boots the actual worker in this package's module format, polls, and shuts do
   const claim = new Promise<void>((resolve) => {
     claimed = resolve;
   });
+  let cleanupPolled = false;
   const server = createServer((request, response) => {
+    if (request.url?.startsWith("/rest/v1/project_deletion_cleanup?")) {
+      cleanupPolled = true;
+      response.writeHead(200, { "Content-Type": "application/json" });
+      response.end("[]");
+      return;
+    }
     expect(request.url).toBe("/rest/v1/rpc/claim_document_job");
     response.writeHead(200, { "Content-Type": "application/json" });
     response.end("null"); // Test-only empty queue: no source reads or Gemini calls.
@@ -56,6 +63,7 @@ it("boots the actual worker in this package's module format, polls, and shuts do
     child.kill("SIGTERM");
     const [code, signal] = await exited;
     expect(code).toBe(0);
+    expect(cleanupPolled).toBe(true);
     expect(signal).toBeNull();
     expect(errors).not.toContain("Top-level await");
   } finally {

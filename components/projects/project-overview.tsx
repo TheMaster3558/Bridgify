@@ -1,3 +1,4 @@
+import { DeleteProject } from "./delete-project";
 import Link from "next/link";
 import type { Bundle } from "@/lib/domain/types";
 import { LifecycleControls } from "@/components/setup/lifecycle-controls";
@@ -197,6 +198,15 @@ export function ProjectOverview({
           />
         </div>
       </details>
+      <div className="flex items-center justify-between gap-4 rounded-xl border border-destructive/30 p-5">
+        <div>
+          <h2 className="font-medium">Delete project</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Permanently remove this project and its saved records.
+          </p>
+        </div>
+        <DeleteProject id={p.id} name={p.name} />
+      </div>
     </main>
   );
 }

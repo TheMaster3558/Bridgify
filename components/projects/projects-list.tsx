@@ -1,11 +1,16 @@
 "use client";
 
+import { DeleteProject } from "./delete-project";
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { formatAgreedDate, type ProjectStatus } from "@/lib/projects/draft";
+import { formatAgreedDate } from "@/lib/projects/draft";
+import {
+  projectListStatus,
+  type ProjectListStatus,
+} from "@/lib/projects/status";
 import { cn } from "@/lib/utils";
 
 const PAGE_SIZE = 25;
@@ -23,10 +28,11 @@ export type WorkspaceProject = {
   updated_at: string;
 };
 
-const FILTERS: { id: "all" | ProjectStatus; label: string }[] = [
+const FILTERS: { id: "all" | ProjectListStatus; label: string }[] = [
   { id: "all", label: "All states" },
   { id: "active", label: "Active" },
   { id: "draft", label: "Draft" },
+  { id: "paused", label: "Paused" },
   { id: "completed", label: "Completed" },
   { id: "archived", label: "Archived" },
 ];
@@ -68,14 +74,18 @@ export function ProjectsList({
   const workspaceFiltered = useMemo(() => {
     const needle = query.trim().toLowerCase();
     return workspaceProjects.filter((project) => {
-      const matchesState = filter === "all" || project.status === filter;
+      const matchesState =
+        filter === "all" || projectListStatus(project.status) === filter;
       const matchesName =
         !needle || project.name.toLowerCase().includes(needle);
       return matchesState && matchesName;
     });
   }, [workspaceProjects, query, filter]);
 
-  const pageCount = Math.max(1, Math.ceil(workspaceFiltered.length / PAGE_SIZE));
+  const pageCount = Math.max(
+    1,
+    Math.ceil(workspaceFiltered.length / PAGE_SIZE),
+  );
   const currentPage = Math.min(page, pageCount);
   const visible = workspaceFiltered.slice(
     (currentPage - 1) * PAGE_SIZE,
@@ -180,17 +190,12 @@ export function ProjectsList({
                           {project.name}
                         </Link>
                       </td>
-                      <td className="px-3 py-3">{project.client_name || "—"}</td>
+                      <td className="px-3 py-3">
+                        {project.client_name || "—"}
+                      </td>
                       <td className="px-3 py-3">
                         <StatusPill
-                          status={
-                            project.status === "active" ||
-                            project.status === "draft" ||
-                            project.status === "completed" ||
-                            project.status === "archived"
-                              ? project.status
-                              : "draft"
-                          }
+                          status={projectListStatus(project.status)}
                         />
                       </td>
                       <td className="px-3 py-3 text-muted-foreground">
@@ -204,21 +209,24 @@ export function ProjectsList({
                         {workspaceValue(project)}
                       </td>
                       <td className="px-3 py-3">
-                        {project.status === "draft" ? (
-                          <Link
-                            href={workspaceHref(project)}
-                            className="text-sm underline"
-                          >
-                            Resume setup
-                          </Link>
-                        ) : (
-                          <Link
-                            href={workspaceHref(project)}
-                            className="text-sm underline"
-                          >
-                            Open
-                          </Link>
-                        )}
+                        <div className="flex items-center gap-3">
+                          {project.status === "draft" ? (
+                            <Link
+                              href={workspaceHref(project)}
+                              className="text-sm underline"
+                            >
+                              Resume setup
+                            </Link>
+                          ) : (
+                            <Link
+                              href={workspaceHref(project)}
+                              className="text-sm underline"
+                            >
+                              Open
+                            </Link>
+                          )}
+                          <DeleteProject id={project.id} name={project.name} />
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -262,7 +270,7 @@ export function ProjectsList({
   );
 }
 
-function StatusPill({ status }: { status: ProjectStatus }) {
+function StatusPill({ status }: { status: ProjectListStatus }) {
   return (
     <span
       className={cn(
@@ -270,10 +278,11 @@ function StatusPill({ status }: { status: ProjectStatus }) {
         status === "active" && "bg-ok-soft text-ok",
         status === "draft" && "bg-secondary text-muted-foreground",
         status === "completed" && "bg-info-soft text-info",
+        status === "paused" && "bg-warn-soft text-warn",
         status === "archived" && "bg-muted text-muted-foreground",
       )}
     >
-      {status}
+      {status === "unknown" ? "Unavailable" : status}
     </span>
   );
 }
