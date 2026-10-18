@@ -33,6 +33,9 @@ export function AppShell({
   organization: string;
 }) {
   const pathname = usePathname();
+  const projectId = pathname.match(
+    /^\/app\/projects\/([0-9a-f-]{36})(?:\/|$)/i,
+  )?.[1];
 
   return (
     <div className="min-h-screen md:pl-[236px]">
@@ -64,6 +67,31 @@ export function AppShell({
             );
           })}
         </nav>
+        {projectId && (
+          <nav
+            aria-label="Project shortcuts"
+            className="grid gap-1 border-t pt-4"
+          >
+            <p className="px-2.5 pb-1 text-xs font-medium text-muted-foreground">
+              CURRENT PROJECT
+            </p>
+            <Link
+              href={`/app/projects/${projectId}/conversation`}
+              aria-current={
+                pathname === `/app/projects/${projectId}/conversation`
+                  ? "page"
+                  : undefined
+              }
+              className={cn(
+                "rounded-md px-2.5 py-2 text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground",
+                pathname === `/app/projects/${projectId}/conversation` &&
+                  "bg-accent text-foreground",
+              )}
+            >
+              Conversation
+            </Link>
+          </nav>
+        )}
         <div className="mt-auto px-2">
           <AccountMenu
             email={email || ""}

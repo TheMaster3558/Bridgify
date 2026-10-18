@@ -1,24 +1,36 @@
-import { randomUUID } from "node:crypto";
-import { authenticatedUserId } from "@/lib/auth/user";
-import { IntakeError } from "@/lib/assistant/intake-error";
-import { getConversationHistory } from "@/lib/db/conversation-history";
-import { getDatabase } from "@/lib/db/postgres";
-
+import { readJson } from "@/lib/body";
+import {
+  ownerMessageSchema,
+  sendProjectMessage,
+} from "@/lib/db/send-project-message";
+import { api, idempotency } from "@/lib/api";
+import { getProjectChatHistory } from "@/lib/db/project-chat-history";
 export const runtime = "nodejs";
-export async function GET(request: Request, context: { params: Promise<{ projectId: string }> }) {
-  const requestId = randomUUID();
-  const headers = { "Cache-Control": "private, no-store" };
-  try {
-    const userId = await authenticatedUserId(request);
-    if (!userId) throw new IntakeError("unauthenticated", 401);
-    const { projectId } = await context.params;
-    const cursor = new URL(request.url).searchParams.get("cursor") ?? undefined;
-    const data = await getConversationHistory(getDatabase(), { userId, projectId, cursor });
-    return Response.json({ data, requestId }, { headers });
-  } catch (error) {
-    const known = error instanceof IntakeError;
-    return Response.json({ error: { code: known ? error.code : "history_unavailable",
-      message: known ? error.code : "Conversation history is temporarily unavailable." }, requestId },
-    { status: known ? error.status : 503, headers });
-  }
+export const maxDuration = 30;
+export async function GET(
+  request: Request,
+  context: { params: Promise<{ projectId: string }> },
+) {
+  return api(request, async (client) =>
+    getProjectChatHistory(
+      client,
+      (await context.params).projectId,
+      new URL(request.url).searchParams.get("cursor") || undefined,
+    ),
+  );
+}
+
+export async function POST(
+  request: Request,
+  context: { params: Promise<{ projectId: string }> },
+) {
+  return api(request, async (client, user) =>
+    sendProjectMessage(
+      client,
+      user.id,
+      (await context.params).projectId,
+      idempotency(request),
+      ownerMessageSchema.parse(await readJson(request)),
+    ),
+  );
 }
