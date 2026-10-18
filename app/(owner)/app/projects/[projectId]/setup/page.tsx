@@ -16,7 +16,8 @@ export default async function Page({
   if (!z.uuid().safeParse(id).success) notFound();
   const bundle = (await projectBundle(client, id)) as Bundle;
   const raw = Number((await searchParams).step || bundle.project.setup_step);
-  const step = Number.isInteger(raw) && raw >= 1 && raw <= 5 ? raw : 1;
+  const requested = Number.isInteger(raw) && raw >= 1 && raw <= 5 ? raw : 1;
+  const step = Math.min(requested, bundle.project.setup_step);
   return (
     <ProjectWizard
       key={`${id}-${step}-${bundle.documents[0]?.id}-${bundle.documents[0]?.status}`}

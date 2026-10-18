@@ -1,5 +1,6 @@
 import { adminDb } from "../lib/db/admin";
 import { extractAgreement } from "../lib/ai/extract-agreement";
+import { AgreementAnalysisError } from "../lib/ai/agreement-errors";
 import {
   pdfSpans,
   textSpans,
@@ -65,7 +66,9 @@ async function once() {
     const unsupported = error instanceof UnsupportedAgreement;
     const safeMessage = unsupported
       ? error.message
-      : "Agreement extraction failed. Check worker/Gemini configuration and retry. No scope has been confirmed.";
+      : error instanceof AgreementAnalysisError
+        ? error.message
+        : "Agreement extraction failed. Check worker/Gemini configuration and retry. No scope has been confirmed.";
     await client.rpc("finish_document_job", {
       p_job: job.id,
       p_lease: job.lease_token,
@@ -84,11 +87,19 @@ if (process.env.WORKER_ENABLED !== "true")
 for (const key of ["GEMINI_API_KEY", "GEMINI_MODEL"])
   if (!process.env[key])
     throw new Error(`${key} is required by the document worker.`);
-while (!stopping) {
-  try {
-    if (!(await once())) await sleep(2000);
-  } catch {
-    console.error("Worker dependency unavailable; retrying.");
-    await sleep(5000);
+async function main() {
+  while (!stopping) {
+    try {
+      if (!(await once())) await sleep(2000);
+    } catch {
+      console.error("Worker dependency unavailable; retrying.");
+      await sleep(5000);
+    }
   }
 }
+void main().catch(() => {
+  console.error(
+    "Document worker stopped unexpectedly. Check worker configuration.",
+  );
+  process.exitCode = 1;
+});

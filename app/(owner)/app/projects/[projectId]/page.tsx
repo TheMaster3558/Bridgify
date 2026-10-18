@@ -59,11 +59,15 @@ export default async function Page({
           <h2 className="text-xl font-semibold">Client connection</h2>
           <p>
             Client:{" "}
-            {b.members.length ? "Invitation accepted" : "Invitation required"}
+            {p.people
+              ? `${p.people.client_name} · ${p.people.client_sender_id}`
+              : "Choose a Photon user"}
           </p>
           <p>
-            Group:{" "}
-            {b.binding?.verified_at ? "Verified" : "Verification required"}
+            iMessage:{" "}
+            {p.people
+              ? `${p.people.client_name} (${p.people.client_sender_id})`
+              : "Choose the client from your Photon users"}
           </p>
           <p>Introduction: {b.binding?.test_state || "Not sent"}</p>
           {b.binding?.hold_reason && (

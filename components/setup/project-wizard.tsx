@@ -7,7 +7,8 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { INTRODUCTION, centsFromInput } from "@/lib/domain/security";
 import type { Bundle } from "@/lib/domain/types";
-import type { Term } from "@/lib/schemas/onboarding";
+import { AgreementStep } from "./agreement-step";
+import { PhotonClientPicker } from "./photon-client-picker";
 const steps = [
   "Basics",
   "Agreement",
@@ -67,12 +68,7 @@ export function ProjectWizard({
     doc = bundle?.documents[0];
   const [pending, setPending] = useState(false),
     [error, setError] = useState(""),
-    [notice, setNotice] = useState(""),
-    [invite, setInvite] = useState("");
-  const existing = bundle?.scope.find((s) => s.version === p?.scope_version);
-  const [terms, setTerms] = useState<Term[]>(
-    existing?.terms || doc?.extraction?.terms || [],
-  );
+    [notice, setNotice] = useState("");
   const router = useRouter(),
     keys = useRef(new Map<string, string>());
   useEffect(() => {
@@ -173,7 +169,9 @@ export function ProjectWizard({
           <Link
             aria-current={step === index + 1 ? "step" : undefined}
             key={label}
-            href={p ? `${base}?step=${index + 1}` : base}
+            href={
+              p ? `${base}?step=${Math.min(index + 1, p.setup_step)}` : base
+            }
             className={`rounded-lg border p-3 text-sm ${step === index + 1 ? "border-primary bg-accent font-semibold" : "text-muted-foreground"}`}
           >
             {index + 1}. {label}
@@ -203,7 +201,7 @@ export function ProjectWizard({
                     original_amount_cents: centsFromInput(
                       String(form.get("price")),
                     ),
-                    currency: "USD",
+                    currency: String(form.get("currency")).toUpperCase(),
                     timezone: form.get("timezone"),
                     agreed_due_date: form.get("due") || null,
                   },
@@ -223,9 +221,14 @@ export function ProjectWizard({
                 value={p?.client_name}
               />
               <Field
-                label="Original agreed price (USD)"
+                label="Original agreed price"
                 name="price"
                 value={p ? (p.original_amount_cents / 100).toFixed(2) : "0.00"}
+              />
+              <Field
+                label="ISO currency"
+                name="currency"
+                value={p?.currency || "USD"}
               />
               <Field
                 label="Project timezone (IANA)"
@@ -247,382 +250,37 @@ export function ProjectWizard({
             </fieldset>
           </form>
         )}
-        {step === 2 && p && (
-          <div className="grid gap-6">
-            <form
-              className="grid gap-4"
-              onSubmit={(e) => {
-                e.preventDefault();
-                const form = new FormData(e.currentTarget);
-                form.set("expectedVersion", String(p.version));
-                void run(async () => {
-                  await send(`/api/v1/projects/${p.id}/documents`, form);
-                  router.push(`${base}?step=2`);
-                  router.refresh();
-                });
-              }}
-            >
-              <fieldset disabled={pending || locked} className="grid gap-4">
-                <label className="grid gap-2">
-                  Paste the complete agreement
-                  <Textarea
-                    name="text"
-                    rows={7}
-                    placeholder="Included work, exclusions, revision terms, dates and responsibilities…"
-                  />
-                </label>
-                <label className="grid gap-2">
-                  Or upload a text PDF (5 MB, 50 pages maximum)
-                  <Input name="file" type="file" accept="application/pdf" />
-                </label>
-                <p className="text-xs text-muted-foreground">
-                  30,000 characters maximum. Text is never silently shortened.
-                  Scans and pages without usable text are unsupported. Files
-                  remain private.
-                </p>
-                <Button type="submit">
-                  {doc ? "Import replacement agreement" : "Import agreement"}
-                </Button>
-              </fieldset>
-            </form>
-            {doc && (
-              <div className="grid gap-4">
-                <p role="status">
-                  Extraction: <strong>{doc.status}</strong>
-                </p>
-                {doc.error && <p role="alert">{doc.error}</p>}
-                {["queued", "processing"].includes(doc.status) && (
-                  <p>
-                    Processing in the background. You can leave and return. The
-                    document worker must be running.
-                  </p>
-                )}
-                {doc.extraction && (
-                  <>
-                    <div className="rounded-md bg-muted p-4 text-sm">
-                      <p>
-                        Review every term and its evidence. Correct the
-                        extracted wording and category where necessary. Removing
-                        a term does not override the original agreement. Missing
-                        terms can be added from source pages below.
-                      </p>
-                      <ul className="mt-2 list-disc pl-5">
-                        {doc.extraction.warnings.map((w, i) => (
-                          <li key={i}>{w}</li>
-                        ))}
-                      </ul>
-                    </div>
-                    <div className="grid gap-4">
-                      {terms.map((term, index) => {
-                        const span = bundle?.spans.find(
-                          (s) => s.id === term.span_id,
-                        );
-                        return (
-                          <div
-                            key={index}
-                            className="grid gap-3 rounded-lg border p-4"
-                          >
-                            <label>
-                              Term type{" "}
-                              <select
-                                aria-label={`Term ${index + 1} category`}
-                                className="ml-2 rounded border p-2"
-                                disabled={locked}
-                                value={term.kind}
-                                onChange={(e) =>
-                                  setTerms(
-                                    terms.map((t, i) =>
-                                      i === index
-                                        ? {
-                                            ...t,
-                                            kind: e.target
-                                              .value as Term["kind"],
-                                          }
-                                        : t,
-                                    ),
-                                  )
-                                }
-                              >
-                                {[
-                                  "inclusion",
-                                  "exclusion",
-                                  "revision",
-                                  "date",
-                                  "responsibility",
-                                ].map((k) => (
-                                  <option key={k}>{k}</option>
-                                ))}
-                              </select>
-                            </label>
-                            <label className="grid gap-2">
-                              Confirmed wording
-                              <Textarea
-                                disabled={locked}
-                                value={term.text}
-                                onChange={(e) =>
-                                  setTerms(
-                                    terms.map((t, i) =>
-                                      i === index
-                                        ? { ...t, text: e.target.value }
-                                        : t,
-                                    ),
-                                  )
-                                }
-                              />
-                            </label>
-                            <blockquote className="border-l-2 pl-3 text-sm">
-                              Page {span?.page}: “{term.quote}”
-                            </blockquote>
-                            <button
-                              className="w-fit text-sm underline"
-                              type="button"
-                              disabled={locked}
-                              onClick={() =>
-                                setTerms(terms.filter((_, i) => i !== index))
-                              }
-                            >
-                              Remove draft term
-                            </button>
-                          </div>
-                        );
-                      })}
-                    </div>
-                    {bundle?.spans
-                      .filter((s) => s.document_id === doc.id)
-                      .map((span) => (
-                        <details key={span.id} className="rounded border p-4">
-                          <summary>Complete source · page {span.page}</summary>
-                          <pre className="my-4 max-h-80 overflow-auto whitespace-pre-wrap font-sans text-sm">
-                            {span.text}
-                          </pre>
-                          <form
-                            className="grid gap-3"
-                            onSubmit={(e) => {
-                              e.preventDefault();
-                              const form = new FormData(e.currentTarget);
-                              const quote = String(form.get("quote"));
-                              if (!span.text.includes(quote)) {
-                                setError(
-                                  "The quote must exactly match this source page.",
-                                );
-                                return;
-                              }
-                              setTerms([
-                                ...terms,
-                                {
-                                  kind: form.get("kind") as Term["kind"],
-                                  text: String(form.get("wording")),
-                                  quote,
-                                  span_id: span.id,
-                                },
-                              ]);
-                              e.currentTarget.reset();
-                            }}
-                          >
-                            <label>
-                              Category{" "}
-                              <select
-                                name="kind"
-                                className="rounded border p-2"
-                              >
-                                {[
-                                  "inclusion",
-                                  "exclusion",
-                                  "revision",
-                                  "date",
-                                  "responsibility",
-                                ].map((k) => (
-                                  <option key={k}>{k}</option>
-                                ))}
-                              </select>
-                            </label>
-                            <Field label="Exact source quote" name="quote" />
-                            <Field label="Confirmed wording" name="wording" />
-                            <Button disabled={locked} variant="outline">
-                              Add missing term
-                            </Button>
-                          </form>
-                        </details>
-                      ))}
-                    <form
-                      className="grid gap-4"
-                      onSubmit={(e) => {
-                        e.preventDefault();
-                        const form = new FormData(e.currentTarget);
-                        void run(() =>
-                          save(
-                            "scope",
-                            {
-                              document_id: doc.id,
-                              terms,
-                              reviewed_all_terms: form.get("reviewed") === "on",
-                            },
-                            3,
-                          ),
-                        );
-                      }}
-                    >
-                      <Check name="reviewed">
-                        I reviewed the full agreement, all extracted categories,
-                        missing terms and source references. These terms
-                        faithfully represent the agreement.
-                      </Check>
-                      <Button
-                        disabled={pending || locked || doc.status !== "ready"}
-                      >
-                        Confirm baseline & continue
-                      </Button>
-                    </form>
-                  </>
-                )}
-              </div>
-            )}
-          </div>
+        {step === 2 && bundle && (
+          <AgreementStep key={doc?.id + "-" + doc?.status} bundle={bundle} />
         )}
         {step === 3 && p && (
           <div className="grid gap-7">
-            <div className="grid gap-3">
-              <h3 className="font-semibold">
-                1. Invite the designated requester and approver
-              </h3>
-              <p className="text-sm text-muted-foreground">
-                Share the generated link with the client. They must sign in with
-                this email and accept before you map their messaging identity.
-                Replacing an invitation revokes the prior link and identity
-                binding.
-              </p>
-              {bundle?.invitations.map((i) => (
-                <p key={i.email} className="text-sm">
-                  {i.email} ·{" "}
-                  {i.accepted_at ? "Accepted" : "Waiting for acceptance"} ·
-                  expires {new Date(i.expires_at).toLocaleDateString()}
-                </p>
-              ))}
-              <form
-                className="flex flex-wrap gap-3"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  const email = new FormData(e.currentTarget).get("email");
-                  void run(async () => {
-                    const result = await send(
-                      `/api/v1/projects/${p.id}/invitations`,
-                      { expectedVersion: p.version, invitation: { email } },
-                    );
-                    setInvite(result.invitationUrl);
-                    router.refresh();
+            <PhotonClientPicker
+              people={p.people}
+              disabled={pending || locked}
+              onConnect={(photonUserId) =>
+                void run(async () => {
+                  await send(`/api/v1/projects/${p.id}/chat-binding`, {
+                    expectedVersion: p.version,
+                    people: { photon_user_id: photonUserId },
                   });
-                }}
-              >
-                <Input
-                  className="max-w-sm"
-                  aria-label="Client email"
-                  name="email"
-                  type="email"
-                  required
-                  placeholder="client@example.com"
-                />
-                <Button disabled={pending || locked}>
-                  Create invitation link
-                </Button>
-              </form>
-              {invite && (
-                <div className="break-all rounded border p-3">
-                  <p className="text-sm">
-                    Share this invitation with the designated client:
-                  </p>
-                  <a className="text-sm underline" href={invite}>
-                    {invite}
-                  </a>
-                </div>
-              )}
-              <Button variant="outline" onClick={() => router.refresh()}>
-                Refresh client acceptance
-              </Button>
-            </div>
-            <form
-              className="grid gap-4"
-              onSubmit={(e) => {
-                e.preventDefault();
-                const form = new FormData(e.currentTarget);
-                void run(() =>
-                  save(
-                    "people",
-                    {
-                      owner_sender_id: form.get("owner"),
-                      client_sender_id: form.get("client"),
-                      bot_sender_id: form.get("bot"),
-                      instance_id: form.get("instance"),
-                      chat_guid: form.get("chat"),
-                      identities_confirmed: form.get("confirmed") === "on",
-                    },
-                    3,
-                  ),
-                );
-              }}
-            >
-              <h3 className="font-semibold">
-                2. Map identities to the exact project group
-              </h3>
-              <fieldset
-                disabled={pending || locked || !bundle?.members.length}
-                className="grid gap-4"
-              >
-                <Field
-                  label="Owner iMessage sender ID (canonical email or E.164)"
-                  name="owner"
-                  value={p.people?.owner_sender_id}
-                />
-                <Field
-                  label="Invited client iMessage sender ID"
-                  name="client"
-                  value={p.people?.client_sender_id}
-                />
-                <p className="text-xs text-muted-foreground">
-                  This explicitly maps the accepted application user{" "}
-                  {bundle?.members[0]?.user_id ||
-                    "(client acceptance required)"}{" "}
-                  to the client sender ID.
-                </p>
-                <Field
-                  label="Provisioned bot sender ID"
-                  name="bot"
-                  value={p.people?.bot_sender_id}
-                />
-                <Field
-                  label="Exact Photon instance ID"
-                  name="instance"
-                  value={p.people?.instance_id}
-                />
-                <Field
-                  label="Exact provider chat GUID"
-                  name="chat"
-                  value={p.people?.chat_guid}
-                />
-                <Check name="confirmed">
-                  I verified these identities with the participants. Email and
-                  iMessage identities can differ. No display name establishes
-                  authority.
-                </Check>
-                <Button>Save identity mapping</Button>
-              </fieldset>
-            </form>
+                  router.refresh();
+                })
+              }
+            />
             <div className="grid gap-4">
-              <h3 className="font-semibold">
-                3. Verify and introduce the assistant
-              </h3>
+              <h3 className="font-semibold">2. Introduce the assistant</h3>
               <blockquote className="rounded border p-4 text-sm">
                 {INTRODUCTION}
               </blockquote>
               <p className="text-sm text-muted-foreground">
-                With participant consent, this sends the introduction to the
-                saved group. The server checks live membership and waits for its
-                authenticated webhook echo. An uncertain send requires provider
-                inspection.
+                With your client&apos;s consent, this texts the introduction to{" "}
+                {p.people?.client_name || "the connected client"} through
+                Photon. An uncertain send must be checked with the client before
+                retrying.
               </p>
               <p className="text-sm">
-                Test: {bundle?.binding?.test_state || "Not sent"} · Group
-                verification:{" "}
-                {bundle?.binding?.verified_at ? "Verified" : "Pending"}
+                Introduction: {bundle?.binding?.test_state || "Not sent"}
               </p>
               {bundle?.binding?.hold_reason && (
                 <p role="alert">{bundle.binding.hold_reason}</p>
@@ -645,11 +303,11 @@ export function ProjectWizard({
                   })
                 }
               >
-                Send introduction & test linked group
+                Send introduction text
               </Button>
               <div className="flex gap-4">
                 <Button variant="outline" onClick={() => router.refresh()}>
-                  Refresh verification
+                  Refresh status
                 </Button>
                 <Button asChild>
                   <Link href={`${base}?step=4`}>Continue to automation</Link>
@@ -793,7 +451,7 @@ export function ProjectWizard({
               <dd>
                 {new Intl.NumberFormat("en-US", {
                   style: "currency",
-                  currency: "USD",
+                  currency: p.currency,
                 }).format(p.original_amount_cents / 100)}
               </dd>
               <dt>Timezone</dt>
@@ -806,12 +464,22 @@ export function ProjectWizard({
               </dd>
               <dt>Client identity</dt>
               <dd>
-                {bundle?.members.length
-                  ? "Accepted and registered"
+                {p.people
+                  ? `${p.people.client_name} · ${p.people.client_sender_id}`
                   : "Required"}
               </dd>
-              <dt>Chat verification</dt>
-              <dd>{bundle?.binding?.verified_at ? "Verified" : "Required"}</dd>
+              <dt>iMessage</dt>
+              <dd>
+                {p.people
+                  ? `${p.people.client_name} · ${p.people.client_sender_id}`
+                  : "Required"}
+              </dd>
+              <dt>Introduction</dt>
+              <dd>
+                {bundle?.binding?.test_state === "sent"
+                  ? "Sent"
+                  : "Send introduction first"}
+              </dd>
               <dt>Policy</dt>
               <dd>
                 {p.policy
