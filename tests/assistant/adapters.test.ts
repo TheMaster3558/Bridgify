@@ -44,6 +44,22 @@ test("interpretations require exact quotes and project-scoped IDs", () => {
   }
 });
 
+test("color requests tolerate descriptive locators without granting policy permission", () => {
+  const raw = output();
+  raw.intents[0].payload.locator = "heading";
+  const result = validateInterpretation(raw, { ...context, targets: [{ ...context.targets[0], operations: [] }] });
+  assert.equal(result.intents[0].payload.locator, null);
+  assert.equal(result.intents[0].operation, "change_color");
+  const mixed = output(); mixed.intents[0].payload.replacementText = "Unrelated text change";
+  assert.throws(() => validateInterpretation(mixed,context));
+});
+
+test("status references are restricted to the same project's saved requests", () => {
+  const raw = output(); raw.intents[0].intent = "status_question"; raw.intents[0].statusRequestId = "r1";
+  assert.throws(() => validateInterpretation(raw,context));
+  assert.equal(validateInterpretation(raw,{ ...context,requestStatuses: [{ id:"r1",title:"Heading",state:"owner_review",taskStatus:null }] }).intents[0].statusRequestId,"r1");
+});
+
 test("model output cannot inject recipients, authority or unsupported operations", () => {
   assert.throws(() => validateInterpretation({ ...output(), recipient: "private-chat" }, context));
   const data = output();

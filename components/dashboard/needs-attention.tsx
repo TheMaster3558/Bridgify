@@ -18,12 +18,14 @@ const severityStyle: Record<OwnerDecisionRecord["severity"], string> = {
 };
 
 export function NeedsAttention({ decisions }: { decisions: OwnerDecisionRecord[] }) {
+  const [resolvedIds, setResolvedIds] = useState<string[]>([]);
+  const activeDecisions = decisions.filter(d => !resolvedIds.includes(d.id));
   const [filter, setFilter] = useState("all");
   const [selectedId, setSelectedId] = useState<string | null>(decisions[0]?.id ?? null);
-  const reasons = useMemo(() => [...new Set(decisions.map((decision) => decision.reason))], [decisions]);
+  const reasons = useMemo(() => [...new Set(activeDecisions.map((decision) => decision.reason))], [activeDecisions]);
   const visible = useMemo(
-    () => decisions.filter((decision) => filter === "all" || decision.reason === filter),
-    [decisions, filter],
+    () => activeDecisions.filter((decision) => filter === "all" || decision.reason === filter),
+    [activeDecisions, filter],
   );
   const selected = visible.find((decision) => decision.id === selectedId) ?? visible[0];
 
@@ -35,7 +37,7 @@ export function NeedsAttention({ decisions }: { decisions: OwnerDecisionRecord[]
       </header>
 
       <div className="flex flex-wrap gap-2" aria-label="Filter decisions">
-        <button type="button" aria-pressed={filter === "all"} onClick={() => setFilter("all")} className={cn("rounded-full border px-3 py-1.5 text-xs font-medium transition-colors", filter === "all" ? "border-foreground bg-foreground text-background" : "bg-card text-muted-foreground hover:text-foreground")}>All ({decisions.length})</button>
+        <button type="button" aria-pressed={filter === "all"} onClick={() => setFilter("all")} className={cn("rounded-full border px-3 py-1.5 text-xs font-medium transition-colors", filter === "all" ? "border-foreground bg-foreground text-background" : "bg-card text-muted-foreground hover:text-foreground")}>All ({activeDecisions.length})</button>
         {reasons.map((reason) => (
           <button key={reason} type="button" aria-pressed={filter === reason} onClick={() => setFilter(reason)} className={cn("rounded-full border px-3 py-1.5 text-xs font-medium capitalize transition-colors", filter === reason ? "border-foreground bg-foreground text-background" : "bg-card text-muted-foreground hover:text-foreground")}>
             {reasonLabel(reason)}
@@ -68,7 +70,7 @@ export function NeedsAttention({ decisions }: { decisions: OwnerDecisionRecord[]
                 <section className="grid content-start gap-2"><h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Why it was escalated</h3><p className="text-sm leading-relaxed">{selected.explanation || "Owner review is required."}</p>{selected.missing_details.length > 0 && <div><p className="mb-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Missing details</p><ul className="list-disc space-y-1 pl-5 text-sm">{selected.missing_details.map((item) => <li key={item}>{item}</li>)}</ul></div>}</section>
               </div>
               <section className="grid gap-2"><h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Suggested options</h3>{selected.suggested_options.length ? <div className="divide-y rounded-md border">{selected.suggested_options.map((option, index) => <div key={`${option.title}-${index}`} className="px-3 py-2.5"><p className="text-sm font-medium">{option.title}{index === 0 && <Badge className="ml-2" variant="secondary">Suggested</Badge>}</p><p className="mt-0.5 text-xs text-muted-foreground">{option.description}</p></div>)}</div> : <p className="rounded-md border p-3 text-sm text-muted-foreground">No suggested options recorded.</p>}</section>
-              <DecisionActions key={selected.id} decision={selected} />
+              <DecisionActions key={selected.id} decision={selected} onResolved={id => setResolvedIds(previous => [...previous, id])} />
               {selected.internal_note && <section className="grid gap-2 rounded-md border border-warn/30 bg-warn-soft p-3 text-sm"><h3 className="text-xs font-semibold uppercase tracking-wider text-warn">Private note · owner only</h3><p>{selected.internal_note}</p></section>}
               <section className="grid gap-2"><h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Resolution history</h3>{selected.history.length ? <div className="grid gap-1 text-xs text-muted-foreground">{selected.history.map((item, index) => <p key={`${selected.id}-history-${index}`}>{item}</p>)}</div> : <p className="text-xs text-muted-foreground">No history recorded yet.</p>}</section>
             </div>
