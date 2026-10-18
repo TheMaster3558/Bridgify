@@ -1,7 +1,7 @@
 import { readJson } from "@/lib/body";
 import { z } from "zod";
 import { api, projectCommand } from "@/lib/api";
-import { peopleSchema } from "@/lib/schemas/onboarding";
+import { resolveProjectPeople } from "@/lib/photon/people";
 export async function POST(
   request: Request,
   context: { params: Promise<{ projectId: string }> },
@@ -10,7 +10,7 @@ export async function POST(
     const body = z
       .object({
         expectedVersion: z.number().int().positive(),
-        people: peopleSchema,
+        people: z.unknown(),
       })
       .parse(await readJson(request));
     return projectCommand(
@@ -18,7 +18,7 @@ export async function POST(
       z.uuid().parse((await context.params).projectId),
       "people",
       body.expectedVersion,
-      body.people,
+      await resolveProjectPeople(body.people),
       client,
     );
   });

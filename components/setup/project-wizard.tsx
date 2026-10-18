@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { PhotonClientPicker } from "./photon-client-picker";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -487,7 +488,7 @@ export function ProjectWizard({
               </h3>
               <p className="text-sm text-muted-foreground">
                 Share the generated link with the client. They must sign in with
-                this email and accept before you map their messaging identity.
+                this email and accept before you connect their iMessage.
                 Replacing an invitation revokes the prior link and identity
                 binding.
               </p>
@@ -539,90 +540,33 @@ export function ProjectWizard({
                 Refresh client acceptance
               </Button>
             </div>
-            <form
-              className="grid gap-4"
-              onSubmit={(e) => {
-                e.preventDefault();
-                const form = new FormData(e.currentTarget);
-                void run(() =>
-                  save(
-                    "people",
-                    {
-                      owner_sender_id: form.get("owner"),
-                      client_sender_id: form.get("client"),
-                      bot_sender_id: form.get("bot"),
-                      instance_id: form.get("instance"),
-                      chat_guid: form.get("chat"),
-                      identities_confirmed: form.get("confirmed") === "on",
-                    },
-                    3,
-                  ),
-                );
-              }}
-            >
-              <h3 className="font-semibold">
-                2. Map identities to the exact project group
-              </h3>
-              <fieldset
-                disabled={pending || locked || !bundle?.members.length}
-                className="grid gap-4"
-              >
-                <Field
-                  label="Owner iMessage sender ID (canonical email or E.164)"
-                  name="owner"
-                  value={p.people?.owner_sender_id}
-                />
-                <Field
-                  label="Invited client iMessage sender ID"
-                  name="client"
-                  value={p.people?.client_sender_id}
-                />
-                <p className="text-xs text-muted-foreground">
-                  This explicitly maps the accepted application user{" "}
-                  {bundle?.members[0]?.user_id ||
-                    "(client acceptance required)"}{" "}
-                  to the client sender ID.
-                </p>
-                <Field
-                  label="Provisioned bot sender ID"
-                  name="bot"
-                  value={p.people?.bot_sender_id}
-                />
-                <Field
-                  label="Exact Photon instance ID"
-                  name="instance"
-                  value={p.people?.instance_id}
-                />
-                <Field
-                  label="Exact provider chat GUID"
-                  name="chat"
-                  value={p.people?.chat_guid}
-                />
-                <Check name="confirmed">
-                  I verified these identities with the participants. Email and
-                  iMessage identities can differ. No display name establishes
-                  authority.
-                </Check>
-                <Button>Save identity mapping</Button>
-              </fieldset>
-            </form>
+            <PhotonClientPicker
+              people={p.people}
+              accepted={!!bundle?.members.length}
+              disabled={pending || locked}
+              onConnect={(photonUserId) =>
+                void run(async () => {
+                  await send(`/api/v1/projects/${p.id}/chat-binding`, {
+                    expectedVersion: p.version,
+                    people: { photon_user_id: photonUserId },
+                  });
+                  router.refresh();
+                })
+              }
+            />
             <div className="grid gap-4">
-              <h3 className="font-semibold">
-                3. Verify and introduce the assistant
-              </h3>
+              <h3 className="font-semibold">3. Introduce the assistant</h3>
               <blockquote className="rounded border p-4 text-sm">
                 {INTRODUCTION}
               </blockquote>
               <p className="text-sm text-muted-foreground">
-                With participant consent, this sends the introduction to the
-                saved group. The server checks live membership and waits for its
-                authenticated webhook echo. An uncertain send requires provider
-                inspection.
+                With your client&apos;s consent, this texts the introduction to{" "}
+                {p.people?.client_name || "the connected client"} through
+                Photon. An uncertain send must be checked with the client before
+                retrying.
               </p>
               <p className="text-sm">
-                Test: {bundle?.binding?.test_state || "Not sent"} · Group
-                verification:{" "}
-                {bundle?.binding?.verified_at ? "Verified" : "Pending"}
+                Introduction: {bundle?.binding?.test_state || "Not sent"}
               </p>
               {bundle?.binding?.hold_reason && (
                 <p role="alert">{bundle.binding.hold_reason}</p>
@@ -645,11 +589,11 @@ export function ProjectWizard({
                   })
                 }
               >
-                Send introduction & test linked group
+                Send introduction text
               </Button>
               <div className="flex gap-4">
                 <Button variant="outline" onClick={() => router.refresh()}>
-                  Refresh verification
+                  Refresh status
                 </Button>
                 <Button asChild>
                   <Link href={`${base}?step=4`}>Continue to automation</Link>

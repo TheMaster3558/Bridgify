@@ -41,21 +41,20 @@ export const scopeSchema = z.object({
   terms: z.array(termSchema).min(1).max(100),
   reviewed_all_terms: z.literal(true),
 });
-export const peopleSchema = z
-  .object({
-    owner_sender_id: z.string().trim().min(1).max(200),
-    client_sender_id: z.string().trim().min(1).max(200),
-    bot_sender_id: z.string().trim().min(1).max(200),
-    instance_id: z.string().trim().min(1).max(200),
-    chat_guid: z.string().trim().min(1).max(300),
-    identities_confirmed: z.literal(true),
-  })
-  .refine(
-    (v) =>
-      new Set([v.owner_sender_id, v.client_sender_id, v.bot_sender_id]).size ===
-      3,
-    "Owner, client and bot must have distinct sender identities",
-  );
+// The owner only chooses a Photon user; contact details are read from Photon on the server.
+export const peopleSelectionSchema = z.object({
+  photon_user_id: z.string().trim().min(1).max(200),
+});
+export const peopleSchema = z.object({
+  channel: z.literal("photon_shared"),
+  photon_user_id: z.string().trim().min(1).max(200),
+  client_name: z.string().trim().min(1).max(200),
+  client_email: z.string().trim().max(254).nullable(),
+  client_sender_id: z.string().trim().min(1).max(200),
+  agent_number: z.string().trim().max(200).nullable(),
+  instance_id: z.string().trim().min(1).max(200),
+  chat_guid: z.string().trim().min(1).max(300),
+});
 export const policySchema = z
   .object({
     mode: z.enum(["enabled", "review_only"]),
@@ -90,12 +89,11 @@ export const lifecycleSchema = z.object({
 });
 export const mutationSchema = z.object({
   expectedVersion: z.number().int().positive(),
-  section: z.enum(["basics", "people", "policy", "scope", "lifecycle"]),
+  section: z.enum(["basics", "policy", "scope", "lifecycle"]),
   payload: z.unknown(),
 });
 export const sectionSchemas = {
   basics: basicsSchema,
-  people: peopleSchema,
   policy: policySchema,
   scope: scopeSchema,
   lifecycle: lifecycleSchema,

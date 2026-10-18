@@ -62,8 +62,10 @@ export default async function Page({
             {b.members.length ? "Invitation accepted" : "Invitation required"}
           </p>
           <p>
-            Group:{" "}
-            {b.binding?.verified_at ? "Verified" : "Verification required"}
+            iMessage:{" "}
+            {p.people
+              ? `${p.people.client_name} (${p.people.client_sender_id})`
+              : "Choose the client from your Photon users"}
           </p>
           <p>Introduction: {b.binding?.test_state || "Not sent"}</p>
           {b.binding?.hold_reason && (

@@ -82,14 +82,24 @@ async function inviteProject() {
   await user(owner);
   return invite.project;
 }
-async function readyProject() {
+const sharedPeople = (phone: string) => ({
+  channel: "photon_shared",
+  photon_user_id: `photon-${phone}`,
+  client_name: "Invited client",
+  client_email: "client@example.test",
+  client_sender_id: phone,
+  agent_number: "+12065550100",
+  instance_id: "spectrum-project",
+  chat_guid: `any;-;${phone}`,
+});
+async function readyProject(
+  peopleFor: (id: string) => object = (id) => ({
+    ...people,
+    chat_guid: `any;+;${id}`,
+  }),
+) {
   let p = await inviteProject();
-  p = (
-    await command(p.id, p.version, "people", {
-      ...people,
-      chat_guid: `any;+;${p.id}`,
-    })
-  ).project;
+  p = (await command(p.id, p.version, "people", peopleFor(p.id))).project;
   await admin();
   const doc = crypto.randomUUID(),
     span = crypto.randomUUID();
@@ -143,6 +153,15 @@ beforeAll(async () => {
     await readFile(
       new URL(
         "../../supabase/migrations/202610170002_password_auth.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    ),
+  );
+  await db.exec(
+    await readFile(
+      new URL(
+        "../../supabase/migrations/202610170005_photon_pro_people.sql",
         import.meta.url,
       ),
       "utf8",
@@ -604,5 +623,93 @@ describe("actual Postgres onboarding migration", () => {
         [client],
       );
     }
+  });
+});
+describe("Photon Pro shared-line client connection", () => {
+  it("connects the accepted client to their Photon user without group identities", async () => {
+    const p = await project();
+    await expect(
+      command(p.id, p.version, "people", sharedPeople("+12065550301")),
+    ).rejects.toThrow(/accept the invitation/);
+    const invited = await inviteProject();
+    await expect(
+      command(invited.id, invited.version, "people", {
+        ...sharedPeople("+12065550302"),
+        chat_guid: "any;+;some-group",
+      }),
+    ).rejects.toThrow(/Photon users/);
+    const saved = await command(invited.id, invited.version, "people", {
+      ...sharedPeople("+12065550302"),
+      bot_sender_id: "ignored",
+    });
+    const row = await db.query<{ people: Record<string, unknown>; setup_step: number }>(
+      "select people,setup_step from projects where id=$1",
+      [saved.project.id],
+    );
+    expect(row.rows[0].setup_step).toBe(4);
+    expect(row.rows[0].people).toEqual({
+      ...sharedPeople("+12065550302"),
+      client_user_id: client,
+      owner_user_id: owner,
+    });
+    await db.query("select begin_chat_test($1,$2,$3::jsonb,'hash')", [
+      saved.project.id,
+      saved.project.version,
+      JSON.stringify(["+12065550302"]),
+    ]);
+    await admin();
+    const binding = await db.query<{ chat_guid: string; instance_id: string }>(
+      "select chat_guid,instance_id from chat_bindings where project_id=$1",
+      [saved.project.id],
+    );
+    expect(binding.rows[0]).toEqual({
+      chat_guid: "any;-;+12065550302",
+      instance_id: "spectrum-project",
+    });
+    await user(owner);
+  });
+  it("activates after the accepted introduction send, with no group webhook echo", async () => {
+    const p = await readyProject(() => sharedPeople("+12065550303"));
+    await admin();
+    await db.query(
+      "update chat_bindings set webhook_verified_at=null,test_state='unknown' where project_id=$1",
+      [p.id],
+    );
+    await user(owner);
+    await expect(
+      command(p.id, p.version, "lifecycle", {
+        status: "active",
+        reason: "Activate",
+        disclosed: true,
+      }),
+    ).rejects.toThrow(/introduction/);
+    await admin();
+    await db.query(
+      "update chat_bindings set test_state='sent' where project_id=$1",
+      [p.id],
+    );
+    await user(owner);
+    await expect(
+      command(p.id, p.version, "lifecycle", {
+        status: "active",
+        reason: "Activate",
+        disclosed: false,
+      }),
+    ).rejects.toThrow(/agreed to assistant processing/);
+    const active = await command(p.id, p.version, "lifecycle", {
+      status: "active",
+      reason: "Activate",
+      disclosed: true,
+    });
+    expect(active.project.status).toBe("active");
+    expect(active.project.activation_cutoff).toBeTruthy();
+    await expect(
+      command(active.project.id, active.project.version, "people", sharedPeople("+12065550304")),
+    ).rejects.toThrow(/immutable/);
+    const paused = await command(active.project.id, active.project.version, "lifecycle", {
+      status: "paused",
+      reason: "Pause",
+    });
+    expect(paused.project.status).toBe("paused");
   });
 });

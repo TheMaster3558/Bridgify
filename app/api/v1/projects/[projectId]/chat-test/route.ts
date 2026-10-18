@@ -3,7 +3,13 @@ import { z } from "zod";
 import { api, checked, ApiError } from "@/lib/api";
 import { adminDb } from "@/lib/db/admin";
 import { peopleSchema } from "@/lib/schemas/onboarding";
-import { photon, membershipHash } from "@/lib/photon/connection";
+import { membershipHash } from "@/lib/photon/connection";
+import {
+  PhotonSetupError,
+  dmChatGuid,
+  readSpectrumCredentials,
+  sendPhotonText,
+} from "@/lib/photon/spectrum";
 import { INTRODUCTION } from "@/lib/domain/security";
 export async function POST(
   request: Request,
@@ -18,78 +24,92 @@ export async function POST(
       await client.from("projects").select("*").eq("id", id).maybeSingle(),
     );
     if (!project) throw new ApiError(404, "NOT_FOUND", "Project unavailable.");
-    const people = peopleSchema.parse(project.people);
-    if (people.bot_sender_id !== process.env.PHOTON_BOT_SENDER_ID)
+    const people = peopleSchema.safeParse(project.people);
+    if (!people.success)
       throw new ApiError(
         422,
-        "BOT_IDENTITY",
-        "Bot identity must match the provisioned sending account.",
+        "SETUP_REQUIRED",
+        "Choose the client from your Photon users first.",
       );
-    const im = photon(people.instance_id);
+    const { client_sender_id, chat_guid, instance_id } = people.data;
     try {
-      const chat = await im.chats.get(people.chat_guid);
-      const members = chat.participants.map((p) => p.address);
-      const expected = [people.owner_sender_id, people.client_sender_id];
-      // Photon may omit the sending account from remote participants. Add only the provisioned bot identity.
-      const all = [...new Set([...members, people.bot_sender_id])];
-      if (
-        !chat.isGroup ||
-        chat.guid !== people.chat_guid ||
-        !expected.every((id) => members.includes(id)) ||
-        all.length !== 3
-      )
-        throw new ApiError(
-          422,
-          "MEMBERSHIP",
-          "The exact group must contain the confirmed owner, client and provisioned bot, with no unknown participants.",
+      if (readSpectrumCredentials().projectId !== instance_id)
+        throw new PhotonSetupError(
+          "This client was saved under a different Photon project. Choose them again.",
         );
-      checked(
-        await client.rpc("begin_chat_test", {
-          p_project: id,
-          p_expected: expectedVersion,
-          p_participants: all,
-          p_hash: membershipHash(all),
-        }),
-      );
-      const admin = adminDb();
-      try {
-        const sent = await im.messages.sendText(
-          people.chat_guid,
-          INTRODUCTION,
-          { clientMessageId: `bridgify-setup-${id}-${crypto.randomUUID()}` },
-        );
-        const { error } = await admin
-          .from("chat_bindings")
-          .update({
-            test_state: "sent",
-            test_message_guid: sent.guid,
-            disclosed_message_guid: sent.guid,
-          })
-          .eq("project_id", id)
-          .eq("test_state", "sending");
-        if (error) throw new Error("commit");
-        return {
-          message:
-            "Assistant introduction sent. Verification completes when the authenticated gateway returns the bot echo. Confirm participant consent before activation.",
-        };
-      } catch {
-        await admin
-          .from("chat_bindings")
-          .update({
-            test_state: "unknown",
-            hold_reason:
-              "Test delivery is unknown. Inspect provider records before retrying.",
-          })
-          .eq("project_id", id)
-          .eq("test_state", "sending");
-        throw new ApiError(
-          503,
-          "DELIVERY_UNKNOWN",
-          "Test delivery is unknown. Do not resend until provider records have been inspected.",
-        );
-      }
-    } finally {
-      await im.close();
+    } catch (error) {
+      if (error instanceof PhotonSetupError)
+        throw new ApiError(422, "PHOTON_SETUP", error.message);
+      throw error;
     }
+    if (chat_guid !== dmChatGuid(client_sender_id))
+      throw new ApiError(
+        422,
+        "SETUP_REQUIRED",
+        "Choose the client from your Photon users again.",
+      );
+    const participants = [client_sender_id];
+    const begin = await client.rpc("begin_chat_test", {
+      p_project: id,
+      p_expected: expectedVersion,
+      p_participants: participants,
+      p_hash: membershipHash(participants),
+    });
+    if (begin.error?.code === "23505")
+      throw new ApiError(
+        409,
+        "CHAT_IN_USE",
+        "This Photon user is already connected to another project. On the Pro plan each client has one conversation with the agent.",
+      );
+    checked(begin);
+    const admin = adminDb();
+    const result = await sendPhotonText(client_sender_id, INTRODUCTION);
+    if (result.state === "failed") {
+      await admin
+        .from("chat_bindings")
+        .update({ test_state: "failed" })
+        .eq("project_id", id)
+        .eq("test_state", "sending");
+      throw new ApiError(
+        502,
+        "PHOTON_REJECTED",
+        "Photon could not send the introduction. Check the Photon project credentials and that this person is still on your Users page, then try again.",
+      );
+    }
+    if (result.state === "unknown") {
+      await admin
+        .from("chat_bindings")
+        .update({
+          test_state: "unknown",
+          hold_reason:
+            "Introduction delivery is unknown. If the client did not receive it, choose them again to reset and resend.",
+        })
+        .eq("project_id", id)
+        .eq("test_state", "sending");
+      throw new ApiError(
+        503,
+        "DELIVERY_UNKNOWN",
+        "Photon did not confirm the introduction. Check with the client before sending again.",
+      );
+    }
+    const { error } = await admin
+      .from("chat_bindings")
+      .update({
+        test_state: "sent",
+        test_message_guid: result.messageId,
+        disclosed_message_guid: result.messageId,
+        verified_at: new Date().toISOString(),
+      })
+      .eq("project_id", id)
+      .eq("test_state", "sending");
+    if (error)
+      throw new ApiError(
+        503,
+        "DATABASE",
+        "The introduction was sent but could not be recorded. Refresh before retrying.",
+      );
+    return {
+      message: `Introduction sent to ${people.data.client_name}. Photon accepted it; confirm the client received it before activating.`,
+    };
   });
 }

@@ -52,17 +52,25 @@ describe("onboarding policy boundaries", () => {
       basicsSchema.safeParse({ ...basics, timezone: "Mars/City" }).success,
     ).toBe(false);
   });
-  it("never treats a shared display name as a unique identity", () =>
+  it("accepts only a Photon shared-line client record", () => {
+    const people = {
+      channel: "photon_shared",
+      photon_user_id: "user-1",
+      client_name: "Client",
+      client_email: null,
+      client_sender_id: "+12065550002",
+      agent_number: "+12065550100",
+      instance_id: "spectrum-project",
+      chat_guid: "any;-;+12065550002",
+    };
+    expect(peopleSchema.safeParse(people).success).toBe(true);
     expect(
-      peopleSchema.safeParse({
-        owner_sender_id: "same",
-        client_sender_id: "same",
-        bot_sender_id: "bot",
-        instance_id: "i",
-        chat_guid: "g",
-        identities_confirmed: true,
-      }).success,
-    ).toBe(false));
+      peopleSchema.safeParse({ ...people, channel: "dedicated" }).success,
+    ).toBe(false);
+    expect(
+      peopleSchema.safeParse({ ...people, client_sender_id: "" }).success,
+    ).toBe(false);
+  });
   it("disables automatic revision rounds", () =>
     expect(
       policySchema.safeParse({
