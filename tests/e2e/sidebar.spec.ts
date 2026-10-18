@@ -7,9 +7,13 @@ let javascript: string, css: string;
 test.beforeAll(async () => {
   const shell = (
     await Promise.all(
-      ["app-shell", "quick-search", "settings-button", "theme-toggle"].map(
-        (file) => readFile(`components/dashboard/${file}.tsx`, "utf8"),
-      ),
+      [
+        "app-shell.tsx",
+        "nav-styles.ts",
+        "quick-search.tsx",
+        "settings-button.tsx",
+        "theme-toggle.tsx",
+      ].map((file) => readFile(`components/dashboard/${file}`, "utf8")),
     )
   ).join("\n");
   const styles = await compile(await readFile("app/globals.css", "utf8"), {

@@ -2,8 +2,9 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { FolderKanban, Search } from "lucide-react";
+import { CornerDownLeft, FolderKanban, Search } from "lucide-react";
 import { Dialog } from "radix-ui";
+import { navItem, navItemActive } from "@/components/dashboard/nav-styles";
 import { cn } from "@/lib/utils";
 
 export type SearchPage = {
@@ -15,6 +16,9 @@ export type SearchPage = {
 type Result = SearchPage & { group: "Pages" | "Projects"; detail?: string };
 
 type Project = { id: string; name: string; client_name?: string };
+
+const hintKey =
+  "inline-flex h-5 min-w-5 items-center justify-center rounded-md bg-black/10 px-1 font-sans text-[11px] font-semibold dark:bg-white/10";
 
 export function QuickSearch({
   pages,
@@ -114,15 +118,15 @@ export function QuickSearch({
       </Dialog.Trigger>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-40 bg-black/40" />
-        <Dialog.Content className="fixed top-[15vh] left-1/2 z-40 w-[min(560px,calc(100%-2rem))] -translate-x-1/2 overflow-hidden rounded-2xl border bg-popover text-popover-foreground shadow-lg outline-none">
+        <Dialog.Content className="fixed top-[15vh] left-1/2 z-40 flex w-[min(560px,calc(100%-2rem))] -translate-x-1/2 flex-col gap-2 overflow-hidden rounded-[28px] border border-sidebar-border bg-sidebar p-3 text-sidebar-foreground shadow-xl outline-none">
           <Dialog.Title className="sr-only">Quick Search</Dialog.Title>
           <Dialog.Description className="sr-only">
             Search pages and projects.
           </Dialog.Description>
-          <div className="flex items-center gap-3 border-b px-4">
+          <div className="flex items-center gap-2 rounded-full bg-sidebar-accent px-3 focus-within:ring-[3px] focus-within:ring-sidebar-ring/40">
             <Search
               aria-hidden
-              className="size-[18px] shrink-0 text-muted-foreground"
+              className="size-5 shrink-0 text-neutral-500 dark:text-neutral-400"
             />
             <input
               autoFocus
@@ -138,13 +142,13 @@ export function QuickSearch({
               aria-activedescendant={
                 results[active] ? `quick-search-${active}` : undefined
               }
-              className="h-12 flex-1 bg-transparent text-[15px] outline-none placeholder:text-muted-foreground"
+              className="h-10 min-w-0 flex-1 bg-transparent text-[15px] text-sidebar-foreground outline-none placeholder:text-neutral-500 dark:placeholder:text-neutral-400"
             />
           </div>
           <ul
             id="quick-search-results"
             role="listbox"
-            className="max-h-[min(400px,60vh)] overflow-y-auto p-2"
+            className="flex max-h-[min(400px,60vh)] flex-col gap-0.5 overflow-y-auto"
           >
             {results.map((result, index) => {
               const Icon = result.icon;
@@ -157,7 +161,7 @@ export function QuickSearch({
                 >
                   {(index === 0 ||
                     results[index - 1].group !== result.group) && (
-                    <p className="px-2 pt-2 pb-1 text-xs font-medium text-muted-foreground">
+                    <p className="px-3 pt-2 pb-1.5 text-sm font-medium text-neutral-500 dark:text-neutral-400">
                       {result.group}
                     </p>
                   )}
@@ -166,18 +170,18 @@ export function QuickSearch({
                     tabIndex={-1}
                     onMouseMove={() => setSelected(index)}
                     onClick={() => go(result)}
-                    className={cn(
-                      "flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left text-sm",
-                      index === active && "bg-accent text-accent-foreground",
-                    )}
+                    className={cn(navItem, index === active && navItemActive)}
                   >
-                    <Icon
-                      aria-hidden
-                      className="size-4 shrink-0 text-muted-foreground"
-                    />
+                    <Icon aria-hidden className="size-[18px] shrink-0" />
                     <span className="truncate">{result.label}</span>
                     {result.detail && (
-                      <span className="ml-auto truncate text-xs text-muted-foreground">
+                      <span
+                        className={cn(
+                          "ml-auto truncate text-sm font-normal text-neutral-400 dark:text-neutral-500",
+                          index === active &&
+                            "text-white/80 dark:text-white/80",
+                        )}
+                      >
                         {result.detail}
                       </span>
                     )}
@@ -186,11 +190,28 @@ export function QuickSearch({
               );
             })}
             {results.length === 0 && (
-              <li className="px-2 py-6 text-center text-sm text-muted-foreground">
+              <li className="px-3 py-6 text-center text-[15px] text-neutral-500 dark:text-neutral-400">
                 {projects === null ? "Loading…" : "No results."}
               </li>
             )}
           </ul>
+          <div className="flex items-center gap-4 border-t border-sidebar-border px-3 pt-2.5 pb-0.5 text-xs text-neutral-500 dark:text-neutral-400">
+            <span className="flex items-center gap-1.5">
+              <kbd className={hintKey}>↑</kbd>
+              <kbd className={hintKey}>↓</kbd>
+              to navigate
+            </span>
+            <span className="flex items-center gap-1.5">
+              <kbd className={hintKey}>
+                <CornerDownLeft aria-hidden className="size-3" />
+              </kbd>
+              to open
+            </span>
+            <span className="flex items-center gap-1.5">
+              <kbd className={hintKey}>esc</kbd>
+              to close
+            </span>
+          </div>
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>
