@@ -10,6 +10,10 @@ import {
   readSpectrumCredentials,
   sendPhotonText,
 } from "@/lib/photon/spectrum";
+import {
+  PHOTON_TARGET_NOT_ALLOWED,
+  PHOTON_AUTHENTICATION_FAILED,
+} from "@/lib/photon/authorization-error";
 export async function POST(
   request: Request,
   context: { params: Promise<{ projectId: string }> },
@@ -66,13 +70,29 @@ export async function POST(
     if (result.state === "failed") {
       await admin
         .from("chat_bindings")
-        .update({ test_state: "failed" })
+        .update({
+          test_state: "failed",
+          ...(result.reason
+            ? {
+                hold_reason:
+                  result.reason === "target_not_allowed"
+                    ? PHOTON_TARGET_NOT_ALLOWED
+                    : PHOTON_AUTHENTICATION_FAILED,
+              }
+            : {}),
+        })
         .eq("project_id", id)
         .eq("test_state", "sending");
       throw new ApiError(
-        502,
-        "PHOTON_REJECTED",
-        "Photon could not send the introduction. Check the Photon project credentials and that this person is still on your Users page, then try again.",
+        result.reason ? 422 : 502,
+        result.reason === "target_not_allowed"
+          ? "PHOTON_TARGET_NOT_ALLOWED"
+          : "PHOTON_REJECTED",
+        result.reason === "target_not_allowed"
+          ? PHOTON_TARGET_NOT_ALLOWED
+          : result.reason === "authentication"
+            ? PHOTON_AUTHENTICATION_FAILED
+            : "Photon could not send the introduction. Check the Photon project credentials and that this person is still on your Users page, then try again.",
       );
     }
     if (result.state === "unknown") {

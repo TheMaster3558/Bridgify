@@ -10,6 +10,11 @@ import {
   readSpectrumCredentials,
 } from "./spectrum";
 import type { ProjectChatMessage } from "./history-contract";
+import {
+  photonAuthorizationFailure,
+  PHOTON_TARGET_NOT_ALLOWED,
+  PHOTON_AUTHENTICATION_FAILED,
+} from "./authorization-error";
 
 export type ChatConnection = {
   projectId: string;
@@ -241,6 +246,17 @@ export async function readPhotonHistory(
     }
   } catch (error) {
     if (error instanceof ApiError) throw error;
+    const authorization = photonAuthorizationFailure(error);
+    if (authorization)
+      throw new ApiError(
+        422,
+        authorization === "target_not_allowed"
+          ? "PHOTON_TARGET_NOT_ALLOWED"
+          : "PHOTON_AUTHORIZATION",
+        authorization === "target_not_allowed"
+          ? PHOTON_TARGET_NOT_ALLOWED
+          : PHOTON_AUTHENTICATION_FAILED,
+      );
     // Do not expose SDK exceptions, tokens, phone numbers or message bodies in logs/errors.
     throw new ApiError(
       503,

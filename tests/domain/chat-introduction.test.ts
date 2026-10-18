@@ -1,4 +1,4 @@
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 const f = vi.hoisted(() => ({
   project: vi.fn(),
   rpc: vi.fn(),
@@ -14,7 +14,15 @@ vi.mock("@/lib/api", () => ({
       rpc: f.rpc,
     }),
   checked: (result: { data: unknown }) => result.data,
-  ApiError: class extends Error {},
+  ApiError: class extends Error {
+    constructor(
+      public status: number,
+      public code: string,
+      message: string,
+    ) {
+      super(message);
+    }
+  },
 }));
 vi.mock("@/lib/db/admin", () => ({
   adminDb: () => ({ from: () => ({ update: f.update }) }),
@@ -38,7 +46,7 @@ function request(introduction: string) {
     body: JSON.stringify({ expectedVersion: 1, introduction }),
   });
 }
-it("sends the edited introduction and records exactly what the client received", async () => {
+beforeEach(() => {
   f.project.mockResolvedValue({
     data: {
       people: {
@@ -58,6 +66,8 @@ it("sends the edited introduction and records exactly what the client received",
   const chain = { eq: vi.fn() };
   chain.eq.mockReturnValueOnce(chain).mockResolvedValueOnce({ error: null });
   f.update.mockReturnValue(chain);
+});
+it("sends the edited introduction and records exactly what the client received", async () => {
   await POST(
     request("Hello! I help organize requests for your website project."),
     context,
@@ -78,4 +88,33 @@ it("rejects an empty introduction before contacting Photon or starting a send", 
   await expect(POST(request("  "), context)).rejects.toThrow();
   expect(f.rpc).not.toHaveBeenCalled();
   expect(f.send).not.toHaveBeenCalled();
+});
+it("records recipient authorization rejection as failed with an actionable error instead of blocking as unknown", async () => {
+  f.send.mockResolvedValue({ state: "failed", reason: "target_not_allowed" });
+  await expect(
+    POST(request("Project introduction"), context),
+  ).rejects.toMatchObject({
+    status: 422,
+    code: "PHOTON_TARGET_NOT_ALLOWED",
+    message: expect.stringContaining("shared-line assignment"),
+  });
+  expect(f.update).toHaveBeenCalledWith({
+    test_state: "failed",
+    hold_reason: expect.stringContaining("recipient authorization"),
+  });
+  expect(f.send).toHaveBeenCalledTimes(1);
+});
+it("preserves unknown delivery and its retry hold for an ambiguous provider result", async () => {
+  f.send.mockResolvedValue({ state: "unknown" });
+  await expect(
+    POST(request("Project introduction"), context),
+  ).rejects.toMatchObject({
+    status: 503,
+    code: "DELIVERY_UNKNOWN",
+  });
+  expect(f.update).toHaveBeenCalledWith({
+    test_state: "unknown",
+    hold_reason: expect.stringContaining("unknown"),
+  });
+  expect(f.send).toHaveBeenCalledTimes(1);
 });

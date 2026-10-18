@@ -27,6 +27,22 @@ A timed-out, failed, or unreadable create response is reconciled with a fresh pr
 
 Tests cover the exact request/response adapter, duplicate reuse, lost-response reconciliation, malformed provider responses, validation, authentication/origin/project authorization, creation/selection, retry and saved binding across reload. Provider fixtures exist only in tests. No live Photon contact was created, and no live invitation or message was sent during verification.
 
+## Introduction and recipient authorization errors
+
+Photon's user directory and iMessage gateway authorization are separate checks.
+A user can appear in the picker with an assigned shared number while the gateway
+returns `Target not allowed for this project`. If a fresh project token can read
+an existing client's history but is denied for this client, check the affected
+recipient's shared-line assignment with Photon. If the user is already listed
+correctly, ask Photon support to check authorization for that project and user.
+Changing Supabase credentials does not repair a Photon recipient restriction.
+
+Bridgify reports a typed Photon authorization rejection as a failed introduction,
+with an actionable error. Timeouts and missing receipts remain unknown; confirm
+with the client before reconnecting or retrying an unknown send. A later history
+permission error does not prove that an earlier introduction was never delivered.
+The app does not resend introductions or reset unknown receipts automatically.
+
 ## Delete a Photon user
 
 Open the three-dot menu on a user in **People & chat**, select **Delete user**, and type the displayed phone number to confirm. Cancelling makes no request. A confirmed deletion removes the provider user from the list and clears an unsaved selection. Provider failures keep the user and confirmation dialog available for retry.

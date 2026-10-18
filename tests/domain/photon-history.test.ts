@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { Message } from "@photon-ai/advanced-imessage/grpc";
+import {
+  AuthenticationError,
+  type Message,
+} from "@photon-ai/advanced-imessage/grpc";
 const f = vi.hoisted(() => ({
   tokens: vi.fn(),
   create: vi.fn(),
@@ -22,7 +25,10 @@ vi.mock("@/lib/api", () => ({
 vi.mock("@spectrum-ts/core", () => ({
   cloud: { issueImessageTokens: f.tokens },
 }));
-vi.mock("@photon-ai/advanced-imessage/grpc", () => ({
+vi.mock("@photon-ai/advanced-imessage/grpc", async (importOriginal) => ({
+  ...(await importOriginal<
+    typeof import("@photon-ai/advanced-imessage/grpc")
+  >()),
   createClient: f.create,
 }));
 vi.mock("@/lib/photon/spectrum", () => ({
@@ -180,6 +186,22 @@ describe("Photon project history", () => {
       code: "PHOTON_HISTORY",
     });
     await expect(result).rejects.not.toThrow(/private message/);
+    expect(f.close).toHaveBeenCalledTimes(1);
+  });
+  it("explains a registered client's recipient authorization rejection without leaking provider details", async () => {
+    f.list.mockRejectedValue(
+      new AuthenticationError(
+        "[spectrum-imessage] Target not allowed for this project; private-provider-token",
+        { code: "internalError", grpcCode: 7, retryable: false },
+      ),
+    );
+    const result = readPhotonHistory(connection);
+    await expect(result).rejects.toMatchObject({
+      status: 422,
+      code: "PHOTON_TARGET_NOT_ALLOWED",
+    });
+    await expect(result).rejects.toThrow(/shared-line assignment/);
+    await expect(result).rejects.not.toThrow(/private-provider-token/);
     expect(f.close).toHaveBeenCalledTimes(1);
   });
 });

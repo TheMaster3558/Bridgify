@@ -2,6 +2,10 @@ import "server-only";
 import { Spectrum } from "@spectrum-ts/core";
 import { imessage } from "@spectrum-ts/imessage";
 import { z } from "zod";
+import {
+  photonAuthorizationFailure,
+  type PhotonAuthorizationFailure,
+} from "./authorization-error";
 
 const SPECTRUM_API = "https://spectrum.photon.codes";
 
@@ -100,14 +104,14 @@ export async function findPhotonUser(id: string) {
 
 export type PhotonSendResult =
   | { state: "sent"; messageId: string }
-  | { state: "failed" }
+  | { state: "failed"; reason?: PhotonAuthorizationFailure }
   | { state: "unknown" };
 
 /**
  * Sends one text to a user's DM on the project's shared line. Message streams
  * are never subscribed, so this does not compete with a running listener.
- * Failures before the send call are "failed"; anything after may have been
- * accepted by Photon and is "unknown".
+ * Failures before the send call and explicit authorization rejections are
+ * "failed". Other send failures may have been accepted and remain "unknown".
  */
 export async function sendPhotonText(
   address: string,
@@ -122,21 +126,25 @@ export async function sendPhotonText(
       options: { logLevel: "error" },
       telemetry: false,
     });
-  } catch {
-    return { state: "failed" };
+  } catch (error) {
+    const reason = photonAuthorizationFailure(error);
+    return { state: "failed", ...(reason ? { reason } : {}) };
   }
   try {
     try {
       space = await imessage(app).space.create(address);
-    } catch {
-      return { state: "failed" };
+    } catch (error) {
+      const reason = photonAuthorizationFailure(error);
+      return { state: "failed", ...(reason ? { reason } : {}) };
     }
     try {
       const sent = (await space.send(text)) as { id?: string } | undefined;
       return sent?.id
         ? { state: "sent", messageId: sent.id }
         : { state: "unknown" };
-    } catch {
+    } catch (error) {
+      const reason = photonAuthorizationFailure(error);
+      if (reason) return { state: "failed", reason };
       return { state: "unknown" };
     }
   } finally {
