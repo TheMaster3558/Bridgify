@@ -82,17 +82,16 @@ export function OwnerMessageComposer({
     }
   }
   return (
-    <section
-      className="grid gap-3 rounded-lg border bg-card p-4"
-      aria-label="Send a message"
-    >
-      <label htmlFor="owner-message" className="font-medium">
-        Message {clientName}
-      </label>
-      <p className="text-sm text-muted-foreground">
-        Send directly to the client from the same Photon address as your
-        assistant.
-      </p>
+    <section className="grid gap-2" aria-label="Send a message">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <label htmlFor="owner-message" className="text-sm font-medium">
+          Message {clientName}
+        </label>
+        <p className="text-xs text-muted-foreground">
+          Send directly to the client from the same Photon address as your
+          assistant.
+        </p>
+      </div>
       <Textarea
         id="owner-message"
         placeholder="Sure, will do"
@@ -100,11 +99,13 @@ export function OwnerMessageComposer({
         onChange={(e) => setText(e.target.value)}
         maxLength={4000}
         disabled={sending || !!attempt}
-        rows={3}
+        rows={2}
+        className="min-h-16 resize-y rounded-2xl border-sidebar-border bg-background px-4 py-3"
       />
       <div className="flex flex-wrap items-center gap-3">
         <Button
           type="button"
+          className="rounded-full px-5"
           disabled={sending || (!attempt && !text.trim())}
           onClick={() => void send()}
         >
@@ -117,6 +118,7 @@ export function OwnerMessageComposer({
         {attempt && !sending && (
           <Button
             variant="outline"
+            className="rounded-full"
             type="button"
             onClick={() => {
               setAttempt(null);
@@ -127,7 +129,7 @@ export function OwnerMessageComposer({
             Compose another message
           </Button>
         )}
-        <span className="text-xs text-muted-foreground">
+        <span className="ml-auto text-xs text-muted-foreground tabular-nums">
           {text.length}/4,000
         </span>
       </div>

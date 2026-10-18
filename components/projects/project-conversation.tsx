@@ -109,161 +109,246 @@ export function ProjectConversation({ projectId }: { projectId: string }) {
     };
   }, [load]);
   const setup = `/app/projects/${projectId}/setup?step=3`;
+  const dayLabel = (value: string, timezone: string) => {
+    try {
+      return new Intl.DateTimeFormat("en-US", {
+        timeZone: timezone,
+        weekday: "long",
+        month: "short",
+        day: "numeric",
+      }).format(new Date(value));
+    } catch {
+      return value.slice(0, 10);
+    }
+  };
+  const clockTime = (value: string, timezone: string) => {
+    try {
+      return new Intl.DateTimeFormat("en-US", {
+        timeZone: timezone,
+        hour: "numeric",
+        minute: "2-digit",
+      }).format(new Date(value));
+    } catch {
+      return value;
+    }
+  };
   return (
-    <main className="mx-auto grid w-full max-w-4xl gap-5 p-4 md:p-8">
-      <div className="flex flex-wrap items-start justify-between gap-4">
+    <main className="mx-auto grid w-full max-w-[1280px] gap-4 p-5 md:p-6">
+      <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <p className="text-sm text-muted-foreground">
-            {history?.projectName || "Project"}
-          </p>
-          <h1 className="font-display text-3xl font-semibold">
+          <h1 className="font-display text-2xl font-semibold">
             iMessage conversation
           </h1>
+          <p className="mt-1 max-w-[60ch] text-sm text-muted-foreground">
+            Messages between the connected client and your Photon agent. Use the
+            message box below to reply to the client yourself.
+          </p>
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2">
           <Link
-            className="text-sm underline"
+            className="inline-flex h-9 items-center rounded-full px-3 text-sm font-medium text-muted-foreground hover:text-foreground"
             href={`/app/projects/${projectId}`}
           >
             Project overview
           </Link>
           <Button
             variant="outline"
+            className="rounded-full"
             disabled={loading || loadingOlder}
             onClick={() => void load(undefined, true)}
           >
             Refresh messages
           </Button>
         </div>
-      </div>
-      <p className="text-sm text-muted-foreground">
-        Messages between the connected client and your Photon agent. Use the
-        message box below to reply to the client yourself.
-      </p>
+      </header>
       {error && (
-        <div role="alert" className="rounded-lg border border-destructive p-4">
+        <div
+          role="alert"
+          className="rounded-2xl bg-crit-soft px-4 py-3 text-sm text-crit"
+        >
           <p>{error}</p>
           {history?.messages.length ? (
-            <p className="mt-2 text-sm">
+            <p className="mt-1">
               Previously loaded messages remain below. The latest messages could
               not be refreshed.
             </p>
           ) : null}
-          <Link className="mt-2 inline-block text-sm underline" href={setup}>
+          <Link className="mt-1 inline-block font-medium underline" href={setup}>
             Check client connection
           </Link>
         </div>
       )}
-      <p
-        role="status"
-        aria-live="polite"
-        className="text-xs text-muted-foreground"
-      >
-        {loading && !history
-          ? "Loading iMessage history…"
-          : history?.fetchedAt
-            ? `Last updated ${formatTime(history.fetchedAt, history.timezone)} · Updates every 5 seconds while this page is visible.`
-            : ""}
-      </p>
       {history && !history.connected && (
-        <section className="grid gap-3 rounded-lg border p-6">
+        <section className="grid justify-items-center gap-2 rounded-2xl border border-dashed border-sidebar-border bg-card/60 px-6 py-14 text-center">
           <h2 className="font-semibold">Connect a Photon client first</h2>
-          <p>
+          <p className="max-w-[48ch] text-sm text-muted-foreground">
             Choose the project&apos;s client in People & chat. Their existing
             iMessage conversation will appear here after you connect them.
           </p>
-          <Link className="underline" href={setup}>
+          <Link className="mt-1 text-sm font-medium text-primary hover:underline" href={setup}>
             Connect client in People & chat
           </Link>
         </section>
       )}
-      {history?.connected && (
-        <>
-          <div className="rounded-lg border bg-card p-4">
-            <p className="font-medium">{history.clientName} ↔ Bridgify agent</p>
-            {history.agentAddress && (
-              <p className="text-sm text-muted-foreground">
-                Agent address: {history.agentAddress}
+      {(history?.connected || (loading && !history)) && (
+        <section
+          aria-label="Conversation"
+          className="mx-auto grid w-full max-w-[880px] overflow-hidden rounded-[28px] border border-sidebar-border bg-card"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-sidebar-border bg-sidebar/60 px-5 py-3">
+            <div className="min-w-0">
+              <p className="truncate font-medium">
+                {history ? `${history.clientName} ↔ Bridgify agent` : "Loading conversation"}
               </p>
-            )}
-            <p className="mt-1 text-xs text-muted-foreground">
-              Times shown in {history.timezone}. Includes existing messages
-              available from Photon, including messages before project
-              activation.
+              {history?.agentAddress && (
+                <p className="text-xs text-muted-foreground">
+                  Agent address: {history.agentAddress}
+                </p>
+              )}
+            </div>
+            <p
+              role="status"
+              aria-live="polite"
+              className="flex items-center gap-2 text-xs text-muted-foreground"
+            >
+              {loading && !history ? (
+                "Loading iMessage history…"
+              ) : history?.fetchedAt ? (
+                <>
+                  <span
+                    aria-hidden
+                    className="size-2 animate-pulse rounded-full bg-ok motion-reduce:animate-none"
+                  />
+                  <span>
+                    Last updated {formatTime(history.fetchedAt, history.timezone)}{" "}
+                    · Updates every 5 seconds while this page is visible.
+                  </span>
+                </>
+              ) : (
+                ""
+              )}
             </p>
           </div>
-          {history.nextCursor && (
-            <Button
-              className="justify-self-center"
-              variant="outline"
-              disabled={loadingOlder || loading}
-              onClick={() => void load(history.nextCursor!)}
-            >
-              {loadingOlder ? "Loading older messages…" : "Load older messages"}
-            </Button>
-          )}
-          {!history.messages.length && !error && (
-            <p className="rounded-lg border p-6">
-              No messages yet. Once the client texts the Photon agent, their
-              messages and the agent&apos;s replies will appear here.
-            </p>
-          )}
-          <ol aria-label="iMessage history" className="grid gap-4">
-            {history.messages.map((message) => (
-              <li
-                key={message.id}
-                id={`message-${message.id}`}
-                className={`max-w-[90%] rounded-2xl border p-4 ${message.direction === "outbound" ? "justify-self-end bg-primary text-primary-foreground" : "justify-self-start bg-card"}`}
+          <div className="grid gap-1 px-4 py-5 sm:px-6">
+            {history && (
+              <p className="mb-3 text-center text-xs text-muted-foreground">
+                Times shown in {history.timezone}. Includes existing messages
+                available from Photon, including messages before project
+                activation.
+              </p>
+            )}
+            {history?.nextCursor && (
+              <Button
+                className="mb-3 justify-self-center rounded-full"
+                variant="outline"
+                size="sm"
+                disabled={loadingOlder || loading}
+                onClick={() => void load(history.nextCursor!)}
               >
-                <div className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
-                  <strong>
-                    {message.sender === "agent"
-                      ? "Bridgify"
-                      : message.sender === "client"
-                        ? history.clientName
-                        : "Unidentified participant"}
-                  </strong>
-                  <time dateTime={message.sentAt}>
-                    {formatTime(message.sentAt, history.timezone)}
-                  </time>
-                </div>
-                <p className="whitespace-pre-wrap break-words">
-                  {message.deleted
-                    ? "Message was deleted in iMessage."
-                    : message.text ||
-                      (!message.attachments.length ? "Non-text message" : "")}
-                </p>
-                {message.attachments.map((attachment, index) => (
-                  <p key={index} className="mt-2 text-sm">
-                    Attachment: {attachment.name} (
-                    {attachment.mimeType || "file"})
-                  </p>
-                ))}
-                <div className="mt-2 flex gap-3 text-xs opacity-80">
-                  {message.editedAt && <span>Edited</span>}
-                  {message.delivery && (
-                    <span className="capitalize">{message.delivery}</span>
-                  )}
-                </div>
-                <details className="mt-2 text-xs opacity-80">
-                  <summary className="cursor-pointer">
-                    Message reference
-                  </summary>
-                  <p className="mt-1 break-all">{message.id}</p>
-                </details>
-              </li>
-            ))}
-          </ol>
-          {history.connectionKey && (
-            <OwnerMessageComposer
-              key={history.connectionKey}
-              projectId={projectId}
-              connectionKey={history.connectionKey}
-              clientName={history.clientName || "client"}
-              onSent={() => void load()}
-            />
+                {loadingOlder ? "Loading older messages…" : "Load older messages"}
+              </Button>
+            )}
+            {history && !history.messages.length && !error && (
+              <p className="py-10 text-center text-sm text-muted-foreground">
+                No messages yet. Once the client texts the Photon agent, their
+                messages and the agent&apos;s replies will appear here.
+              </p>
+            )}
+            {history && (
+              <ol aria-label="iMessage history" className="grid gap-1">
+                {history.messages.map((message, index) => {
+                  const previous = history.messages[index - 1];
+                  const outbound = message.direction === "outbound";
+                  const newDay =
+                    !previous ||
+                    dayLabel(previous.sentAt, history.timezone) !==
+                      dayLabel(message.sentAt, history.timezone);
+                  const grouped =
+                    !newDay &&
+                    previous?.direction === message.direction &&
+                    previous?.sender === message.sender;
+                  return (
+                    <li
+                      key={message.id}
+                      id={`message-${message.id}`}
+                      className="grid gap-1"
+                    >
+                      {newDay && (
+                        <p className="my-3 text-center text-xs font-medium text-muted-foreground">
+                          {dayLabel(message.sentAt, history.timezone)}
+                        </p>
+                      )}
+                      <div
+                        className={`group/msg grid max-w-[78%] gap-1 ${outbound ? "justify-self-end justify-items-end" : "justify-self-start justify-items-start"} ${grouped ? "" : "mt-2"}`}
+                      >
+                        {!grouped && (
+                          <p className="flex items-center gap-2 px-1 text-xs text-muted-foreground">
+                            <strong className="font-medium text-foreground">
+                              {message.sender === "agent"
+                                ? "Bridgify"
+                                : message.sender === "client"
+                                  ? history.clientName
+                                  : "Unidentified participant"}
+                            </strong>
+                            <time dateTime={message.sentAt}>
+                              {clockTime(message.sentAt, history.timezone)}
+                            </time>
+                          </p>
+                        )}
+                        <div
+                          className={`rounded-[20px] px-4 py-2.5 ${outbound ? "rounded-br-md bg-primary text-primary-foreground" : "rounded-bl-md bg-sidebar-accent text-foreground"}`}
+                        >
+                          <p className="whitespace-pre-wrap break-words">
+                            {message.deleted
+                              ? "Message was deleted in iMessage."
+                              : message.text ||
+                                (!message.attachments.length
+                                  ? "Non-text message"
+                                  : "")}
+                          </p>
+                          {message.attachments.map((attachment, i) => (
+                            <p key={i} className="mt-1 text-sm opacity-80">
+                              Attachment: {attachment.name} (
+                              {attachment.mimeType || "file"})
+                            </p>
+                          ))}
+                        </div>
+                        <div className="flex items-center gap-2 px-1 text-[11px] text-muted-foreground">
+                          {grouped && (
+                            <time dateTime={message.sentAt}>
+                              {clockTime(message.sentAt, history.timezone)}
+                            </time>
+                          )}
+                          {message.editedAt && <span>Edited</span>}
+                          {message.delivery && (
+                            <span className="capitalize">{message.delivery}</span>
+                          )}
+                          <details className="relative opacity-0 transition-opacity group-hover/msg:opacity-100 focus-within:opacity-100 open:opacity-100">
+                            <summary className="cursor-pointer list-none opacity-70 hover:opacity-100">
+                              Message reference
+                            </summary>
+                            <p className="mt-1 max-w-64 break-all">{message.id}</p>
+                          </details>
+                        </div>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ol>
+            )}
+          </div>
+          {history?.connectionKey && (
+            <div className="sticky bottom-0 border-t border-sidebar-border bg-card/95 p-4 backdrop-blur">
+              <OwnerMessageComposer
+                key={history.connectionKey}
+                projectId={projectId}
+                connectionKey={history.connectionKey}
+                clientName={history.clientName || "client"}
+                onSent={() => void load()}
+              />
+            </div>
           )}
-        </>
+        </section>
       )}
     </main>
   );
