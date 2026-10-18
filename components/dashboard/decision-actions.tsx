@@ -18,7 +18,7 @@ export function DecisionActions({
   const [error, setError] = useState("");
   const [taskTitle, setTaskTitle] = useState(decision.title ?? "");
   const canApprove =
-    Boolean(decision.automation_request_id) &&
+    !decision.task_change_kind && Boolean(decision.automation_request_id) &&
     !["unknown_participant", "delivery_unknown"].includes(decision.reason);
   async function resolve(action: "approve" | "decline" | "dismiss" | "delete") {
     setBusy(true);
@@ -65,6 +65,7 @@ export function DecisionActions({
           className="min-h-20 rounded border bg-background p-2"
         />
       </label>
+      {decision.task_change_kind && <a className="underline text-sm" href={`/app/projects/${decision.project_id}/automation`}>Review and apply this {decision.task_change_kind} to an existing task</a>}
       {canApprove && (
         <label className="grid gap-1 text-sm">
           Task to approve

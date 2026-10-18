@@ -1,3 +1,4 @@
+import { listPhotonUsers } from "@/lib/photon/spectrum";
 import "server-only";
 import { GoogleGenAI } from "@google/genai";
 import {
@@ -70,6 +71,9 @@ export async function probePhoton(): Promise<
   Exclude<ConnectionState, "unconfigured">
 > {
   if (!photonConfigured(process.env)) return "unavailable";
+  if(process.env.SPECTRUM_PROJECT_ID && process.env.SPECTRUM_PROJECT_SECRET) {
+    try {await listPhotonUsers();return "reachable";}catch{return "unavailable";}
+  }
   let client: ReturnType<typeof createHttpClient> | undefined;
   try {
     const config = readPhotonConfig();
@@ -194,12 +198,12 @@ export async function loadIntegrationHealth(
 ): Promise<IntegrationHealth> {
   const inbound = checked(
     await client
-      .from("inbox_events")
-      .select("received_at")
-      .order("received_at", { ascending: false })
+      .from("automation_events")
+      .select("created_at")
+      .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle(),
-  ) as { received_at: string } | null;
+  ) as { created_at: string } | null;
   const bindings =
     (checked(
       await client.from("chat_bindings").select("webhook_verified_at, test_state"),
@@ -233,7 +237,7 @@ export async function loadIntegrationHealth(
   return buildIntegrationHealth({
     now: new Date().toISOString(),
     env: process.env,
-    lastInboundAt: inbound?.received_at ?? null,
+    lastInboundAt: inbound?.created_at ?? null,
     webhookVerified: bindings.some((binding) => binding.webhook_verified_at),
     deliveryUnknown:
       bindings.filter((binding) => binding.test_state === "unknown").length +

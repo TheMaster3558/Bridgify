@@ -17,6 +17,7 @@ import { AutomationSetup } from "./automation-setup";
 import type { Bundle } from "@/lib/domain/types";
 import { AgreementStep } from "./agreement-step";
 import { PhotonClientPicker } from "./photon-client-picker";
+import { activationIssues } from "@/lib/projects/activation-readiness";
 const steps = [
   "Basics",
   "Agreement",
@@ -40,6 +41,7 @@ export function ProjectWizard({
     bundle?.binding?.introduction_text || INTRODUCTION,
   );
   const [consented, setConsented] = useState(false);
+  const consentInput = useRef<HTMLInputElement>(null);
   const [errorTarget, setErrorTarget] = useState("");
   const [continuation, setContinuation] = useState<{
     step: number;
@@ -163,16 +165,8 @@ export function ProjectWizard({
     if (step === 3) router.push(`${base}?step=4`);
     else continuation?.proceed();
   }
-  const readyToActivate = !!(
-    p?.scope_version &&
-    p.policy_version &&
-    p.policy &&
-    p.people &&
-    bundle?.binding?.test_state === "sent" &&
-    bundle.binding.verified_at &&
-    bundle.binding.disclosed_message_guid &&
-    !bundle.binding.hold_reason
-  );
+  const activationBlockers = bundle ? activationIssues(bundle) : [];
+  const readyToActivate = !!p && !activationBlockers.length;
   function stepError(target: string) {
     return error && errorTarget === target ? (
       <p
@@ -456,9 +450,9 @@ export function ProjectWizard({
         {step === 5 && p && (
           <div className="grid gap-5">
             <p className="rounded border bg-muted p-4 text-sm">
-              These settings prepare the assistant to receive project messages.
-              Request analysis, task creation and proposal replies are not
-              available in this release.
+              Once activated, the assistant evaluates new client messages
+              against the confirmed agreement and these settings, creates tasks
+              or review items, and sends appropriate updates through iMessage.
             </p>
             <dl className="grid grid-cols-2 gap-3 text-sm">
               <dt>Client</dt>
@@ -518,17 +512,43 @@ export function ProjectWizard({
               </div>
             )}
             {!readyToActivate && (
-              <p className="rounded border p-3 text-sm">
-                Before activating, confirm the agreement, connect your client,
-                send the introduction and save your automation settings. Use the
-                steps above to finish setup.
-              </p>
+              <div
+                className="rounded border p-3 text-sm"
+                aria-label="Steps needed to activate"
+              >
+                <p className="font-medium">Finish these steps to activate:</p>
+                <ul className="mt-2 grid gap-2">
+                  {activationBlockers.map((issue) => (
+                    <li key={issue.message}>
+                      <Link
+                        className="underline"
+                        href={`${base}?step=${issue.step}`}
+                      >
+                        {issue.message}
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </div>
             )}
             <form
               className={`grid gap-4 rounded-lg ${errorTarget === "activation" && error ? "border border-destructive p-4" : ""}`}
               onSubmit={(e) => {
                 e.preventDefault();
-                if (!consented || !readyToActivate || pending || locked) return;
+                if (pending || locked) return;
+                if (!readyToActivate || !consented) {
+                  setErrorTarget("activation");
+                  setError(
+                    !readyToActivate
+                      ? activationBlockers
+                          .map((issue) => issue.message)
+                          .join(" ")
+                      : "Confirm that your client received the introduction and agreed to assistant processing before activating.",
+                  );
+                  if (readyToActivate && !consented)
+                    consentInput.current?.focus();
+                  return;
+                }
                 const f = new FormData(e.currentTarget);
                 void run(async () => {
                   await save(
@@ -547,6 +567,7 @@ export function ProjectWizard({
               <label className="flex items-start gap-3 rounded border p-3 text-sm">
                 <input
                   type="checkbox"
+                  ref={consentInput}
                   name="disclosed"
                   checked={consented}
                   onChange={(e) => setConsented(e.target.checked)}
@@ -558,13 +579,12 @@ export function ProjectWizard({
                   introduction, and know how to ask the owner to pause.
                 </span>
               </label>
-              <Button
-                disabled={pending || locked || !consented || !readyToActivate}
-              >
-                Activate{" "}
-                {p.policy?.mode === "enabled"
-                  ? "automation"
-                  : "in review-only mode"}
+              <Button disabled={pending || locked}>
+                {locked
+                  ? "Already activated"
+                  : p.policy?.mode === "enabled"
+                    ? "Activate automation"
+                    : "Activate in review-only mode"}
               </Button>
             </form>
             {stepError("activation")}

@@ -1,7 +1,11 @@
+import { getDatabase } from "@/lib/db/postgres";
+import { after } from "next/server";
+import { runAutomationBatch } from "@/lib/assistant/run-batch";
 import { z } from "zod";
 import { api, checked, idempotency } from "@/lib/api";
 import { readJson } from "@/lib/body";
 
+export const maxDuration = 60;
 export async function POST(
   request: Request,
   context: { params: Promise<{ decisionId: string }> },
@@ -17,7 +21,7 @@ export async function POST(
       })
       .strict()
       .parse(await readJson(request));
-    return checked(
+    const result = checked(
       await client.rpc("resolve_automation_review", {
         p_decision: id,
         p_action: input.action,
@@ -27,5 +31,13 @@ export async function POST(
         p_task_title: input.taskTitle ?? null,
       }),
     );
+    after(async () => {
+      const project = await getDatabase().query<{ project_id: string }>(
+        "select project_id from owner_decisions where id=$1",
+        [id],
+      );
+      if (project.rows[0]) await runAutomationBatch(project.rows[0].project_id);
+    });
+    return result;
   });
 }

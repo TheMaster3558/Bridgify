@@ -89,11 +89,34 @@ describe("project setup validation", () => {
       }),
     );
     expect(Object.keys(errors).sort()).toEqual([
+      "acceptance_guidance",
       "allowance",
       "allowance_mode",
-      "operations",
-      "targets",
     ]);
+  });
+  it("accepts automatic guidance without preselected change types or advanced targets", () => {
+    expect(DEFAULT_SETUP_POLICY.operations).toEqual([]);
+    expect(
+      validatePolicy(
+        form({
+          ...policy,
+          mode: "enabled",
+          allowance: "3",
+          targets: "",
+          acceptance_guidance:
+            "Accept small content and layout changes covered by the agreement.",
+        }),
+      ),
+    ).toEqual({});
+    expect(
+      policySchema.safeParse({
+        ...DEFAULT_SETUP_POLICY,
+        mode: "enabled",
+        allowance: 3,
+        permission_mode: "guidance",
+        acceptance_guidance: "Accept small content and layout changes.",
+      }).success,
+    ).toBe(true);
   });
   it("validates edited introduction text on the server", () => {
     expect(

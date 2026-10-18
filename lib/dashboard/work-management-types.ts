@@ -34,6 +34,7 @@ export type DashboardTask = {
 };
 
 export type OwnerDecisionRecord = {
+  task_change_kind?: string | null;
   automation_request_id?: string | null;
   id: string;
   project_id: string;

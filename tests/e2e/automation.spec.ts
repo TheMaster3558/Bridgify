@@ -70,9 +70,7 @@ test("owner approval works immediately without a private note or custom reply", 
   page,
 }) => {
   await page.goto("https://automation.test/decision");
-  await expect(
-    page.getByRole("button", { name: "Accept work" }),
-  ).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Accept work" })).toBeEnabled();
   const request = page.waitForRequest(
     (r) => r.method() === "POST" && r.url().includes("/api/v1/decisions/"),
   );
@@ -121,6 +119,51 @@ test("project creation saves independent reply preferences with manual approval"
   });
 });
 
+test("automatic guidance saves with optional advanced targets and no preselected change type", async ({
+  page,
+}) => {
+  await page.goto("https://automation.test/settings");
+  expect(await page.locator('input[name="operations"]').count()).toBe(0);
+  await page
+    .getByLabel("How should the assistant handle requests?")
+    .selectOption("enabled");
+  await page.getByLabel("Included change requests").fill("3");
+  const guidance = page.getByLabel(
+    "What may the assistant accept automatically?",
+  );
+  await expect(guidance).toHaveValue(/layout/);
+  await guidance.fill(
+    "Accept small content, image and layout changes already covered by the agreement.",
+  );
+  await expect(
+    page.getByRole("button", { name: "Save automation & continue" }),
+  ).toBeEnabled();
+  const request = page.waitForRequest((r) => r.url().endsWith("/saved-policy"));
+  await page
+    .getByRole("button", { name: "Save automation & continue" })
+    .click();
+  expect((await request).postDataJSON()).toMatchObject({
+    permission_mode: "guidance",
+    operations: [],
+    targets: [],
+    acceptance_guidance:
+      "Accept small content, image and layout changes already covered by the agreement.",
+  });
+});
+
+test("switching modes preserves owner-edited guidance", async ({ page }) => {
+  await page.goto("https://automation.test/settings");
+  await page
+    .getByLabel("Request review guidance (optional)")
+    .fill("Only accept changes to the supplied product photos.");
+  await page
+    .getByLabel("How should the assistant handle requests?")
+    .selectOption("enabled");
+  await expect(
+    page.getByLabel("What may the assistant accept automatically?"),
+  ).toHaveValue("Only accept changes to the supplied product photos.");
+});
+
 test("failed processing reviews allow approval with an owner-edited task title", async ({
   page,
 }) => {
@@ -152,9 +195,13 @@ test("delete works without an approval note and submits a backend action", async
   });
 });
 
-test("the review disappears from the list only after a successful backend save",async({page})=>{
+test("the review disappears from the list only after a successful backend save", async ({
+  page,
+}) => {
   await page.goto("https://automation.test/reviews");
-  await page.getByRole("button",{name:"Delete review"}).click();
-  await expect(page.getByText("No decisions are waiting for review.")).toBeVisible();
-  await expect(page.getByRole("button",{name:"All (0)"})).toBeVisible();
+  await page.getByRole("button", { name: "Delete review" }).click();
+  await expect(
+    page.getByText("No decisions are waiting for review."),
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "All (0)" })).toBeVisible();
 });

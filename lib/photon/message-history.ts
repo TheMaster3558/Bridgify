@@ -173,6 +173,7 @@ async function sharedToken(projectId: string, projectSecret: string) {
 export async function readPhotonHistory(
   connection: ChatConnection,
   cursor?: string,
+  receiptId?: string,
 ) {
   let credentials: ReturnType<typeof readSpectrumCredentials>;
   try {
@@ -224,7 +225,7 @@ export async function readPhotonHistory(
       tls: true,
     });
     try {
-      const page = await client.messages.listInChat(connection.chatGuid, {
+      const page = receiptId ? {messages: [await client.messages.get(receiptId)], nextPageToken: undefined} : await client.messages.listInChat(connection.chatGuid, {
         pageSize: 50,
         ...(pageToken ? { pageToken } : {}),
       });

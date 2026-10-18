@@ -55,6 +55,7 @@ export function maskIdentifier(value: string | null | undefined) {
 
 export function photonConfigured(env: Environment) {
   return Boolean(
+    (env.SPECTRUM_PROJECT_ID?.trim() && env.SPECTRUM_PROJECT_SECRET?.trim()) ||
     env.PHOTON_HTTP_ADDRESS?.trim() &&
     env.PHOTON_TOKEN?.trim() &&
     env.PHOTON_INSTANCE_ID?.trim() &&
@@ -68,6 +69,7 @@ export function geminiConfigured(env: Environment) {
 
 export function webhookConfigured(env: Environment) {
   return (
+    (env.PHOTON_WEBHOOK_PROTOCOL === "spectrum-cloud-v0" && !!env.PHOTON_WEBHOOK_SIGNING_SECRET && !!env.PHOTON_WEBHOOK_INSTANCE_ID) ||
     env.PHOTON_WEBHOOK_MODE === "normalized-gateway-v1" &&
     (env.PHOTON_GATEWAY_SECRET?.length ?? 0) >= 32
   );
@@ -215,7 +217,7 @@ export function buildIntegrationHealth(input: {
       connection,
       connectionLabel: connectionLabels[connection],
       checkedAt: photonReady ? input.photonCheckedAt : null,
-      maskedInstanceId: maskIdentifier(input.env.PHOTON_INSTANCE_ID),
+      maskedInstanceId: maskIdentifier(input.env.SPECTRUM_PROJECT_ID || input.env.PHOTON_INSTANCE_ID),
       maskedBotIdentity: maskIdentifier(input.env.PHOTON_BOT_SENDER_ID),
       webhook,
       webhookLabel: webhookLabels[webhook],

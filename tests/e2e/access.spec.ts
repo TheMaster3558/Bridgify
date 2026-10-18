@@ -40,14 +40,12 @@ test("private owner routes require authentication", async ({ page }) => {
   await page.goto("/app/projects/new");
   await expect(page).toHaveURL(/\/login\?next=%2Fapp%2Fprojects%2Fnew/);
 });
-test("proposal navigation preserves the exact revision before authentication", async ({
-  page,
-}) => {
-  await page.goto("/proposals/55555555-5555-4555-8555-555555555555?revision=7");
-  await expect(page).toHaveURL(
-    /\/login\?next=%2Fproposals%2F55555555-5555-4555-8555-555555555555%3Frevision%3D7/,
-  );
-  await expect(page.getByText("SECRET OWNER NOTE")).toHaveCount(0);
+test("retired client pages expose no login or proposal terms", async ({page}) => {
+  for (const path of ["/access","/invitations/old","/proposals/55555555-5555-4555-8555-555555555555?revision=7"]) {
+    const response = await page.goto(path);
+    expect(response?.status()).toBe(404);
+    await expect(page.getByText("SECRET OWNER NOTE")).toHaveCount(0);
+  }
 });
 test("expired password reset links offer recovery without asking for a password", async ({
   page,
@@ -64,10 +62,10 @@ test("expired password reset links offer recovery without asking for a password"
   ).toBeVisible();
   await expect(page.getByLabel("Password", { exact: true })).toHaveCount(0);
 });
-test("signup submits passwords and preserves an invitation destination", async ({
+test("signup submits passwords and preserves an owner project destination", async ({
   page,
 }) => {
-  const next = "/invitations/" + "a".repeat(64);
+  const next = "/app/projects/55555555-5555-4555-8555-555555555555";
   let submitted: Record<string, string> | undefined;
   await page.route("**/api/auth/password", async (route) => {
     submitted = route.request().postDataJSON();
@@ -81,7 +79,7 @@ test("signup submits passwords and preserves an invitation destination", async (
     });
   });
   await page.goto(`/login?mode=signup&next=${encodeURIComponent(next)}`);
-  await page.getByLabel("Email", { exact: true }).fill("invited@example.test");
+  await page.getByLabel("Email", { exact: true }).fill("owner@example.test");
   await page.getByLabel("Password", { exact: true }).fill("example password");
   await page
     .getByLabel("Confirm password", { exact: true })
@@ -94,12 +92,12 @@ test("signup submits passwords and preserves an invitation destination", async (
   );
   expect(submitted).toEqual({
     action: "signup",
-    email: "invited@example.test",
+    email: "owner@example.test",
     password: "example password",
     password_confirmation: "example password",
     next,
   });
   await expect(page.getByLabel("Email", { exact: true })).toHaveValue(
-    "invited@example.test",
+    "owner@example.test",
   );
 });

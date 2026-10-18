@@ -148,6 +148,42 @@ beforeAll(async () => {
 afterAll(async () => {
   await db?.close();
 });
+
+async function draftConnection(
+  name: string,
+  address: string,
+  actor = owner,
+  organization = org,
+  instance = "reconnect-instance",
+) {
+  await admin();
+  const id = crypto.randomUUID();
+  await db.query(
+    `insert into projects(id,organization_id,owner_id,name,client_name,original_amount_cents,timezone,people)
+    values($1,$2,$3,$4,'Client',1000,'UTC',$5)`,
+    [
+      id,
+      organization,
+      actor,
+      name,
+      JSON.stringify({
+        channel: "photon_shared",
+        instance_id: instance,
+        chat_guid: `any;-;${address}`,
+        client_sender_id: address,
+      }),
+    ],
+  );
+  await user(actor);
+  return id;
+}
+async function beginIntroduction(id: string, address: string) {
+  return db.query("select begin_chat_test($1,1,$2::jsonb,'hash')", [
+    id,
+    JSON.stringify([address]),
+  ]);
+}
+
 describe("active-project deletion with the full deployed automation schema", () => {
   it("reproduces the old FK failure and upgrades deletion without replaying migrations or losing other projects", async () => {
     const target = await seed(),
@@ -273,5 +309,121 @@ describe("active-project deletion with the full deployed automation schema", () 
     await expect(
       db.query("select delete_project($1,'Website')", [target.p]),
     ).resolves.toBeDefined();
+  });
+});
+
+describe("reconnecting a client after project deletion", () => {
+  it("identifies an owner's existing draft and retains its in-flight reservation", async () => {
+    const address = "+12065550601";
+    const first = await draftConnection("Existing draft", address);
+    await beginIntroduction(first, address);
+    const second = await draftConnection("New draft", address);
+    await expect(beginIntroduction(second, address)).rejects.toMatchObject({
+      code: "23505",
+      hint: "chat_binding_reserved",
+      message: expect.stringContaining(
+        '"Existing draft" (draft; introduction sending)',
+      ),
+    });
+    await admin();
+    expect(
+      (
+        await db.query(
+          "select project_id,test_state from chat_bindings where instance_id='reconnect-instance' and chat_guid=$1",
+          [`any;-;${address}`],
+        )
+      ).rows,
+    ).toEqual([{ project_id: first, test_state: "sending" }]);
+    await user();
+    await expect(
+      db.query("select delete_project($1,'Existing draft')", [first]),
+    ).rejects.toThrow(/send is still in progress/);
+  });
+
+  it("does not disclose another workspace's project details or release its binding", async () => {
+    const address = "+12065550602";
+    const first = await draftConnection(
+      "Private project name",
+      address,
+      other,
+      otherOrg,
+    );
+    await beginIntroduction(first, address);
+    const second = await draftConnection("New project", address);
+    const error = await beginIntroduction(second, address).catch(
+      (error: Error & { code: string }) => error,
+    );
+    expect(error).toMatchObject({
+      code: "23505",
+      hint: "chat_binding_reserved",
+    });
+    expect((error as Error).message).not.toContain("Private project name");
+    await expect(
+      db.query("select delete_project($1,'Private project name')", [first]),
+    ).rejects.toMatchObject({ code: "42501" });
+  });
+
+  it("keeps unrelated unique violations distinct from conversation conflicts", async () => {
+    const instance = "unrelated-index-instance";
+    await admin();
+    await db.exec(
+      "create unique index test_binding_hash on chat_bindings(membership_hash) where instance_id='unrelated-index-instance'",
+    );
+    const first = await draftConnection(
+      "First",
+      "+12065550603",
+      owner,
+      org,
+      instance,
+    );
+    await beginIntroduction(first, "+12065550603");
+    const second = await draftConnection(
+      "Second",
+      "+12065550604",
+      owner,
+      org,
+      instance,
+    );
+    await expect(
+      beginIntroduction(second, "+12065550604"),
+    ).rejects.toMatchObject({ code: "23505", constraint: "test_binding_hash" });
+    await admin();
+    await db.exec("drop index test_binding_hash");
+  });
+
+  it("allows the same exact instance/chat to be connected after deletion even while file cleanup is pending", async () => {
+    // Install the deletion fix here too so this test is independent of ordering
+    // within the legacy-before-upgrade regression suite below.
+    await admin();
+    await db.exec(await readFile(`supabase/migrations/${fix}`, "utf8"));
+    const address = "+12065550605";
+    const old = await draftConnection("Deleted project", address);
+    await beginIntroduction(old, address);
+    await admin();
+    await db.query(
+      "update chat_bindings set test_state='sent',test_message_guid='original-intro' where project_id=$1",
+      [old],
+    );
+    await user();
+    await db.query("select delete_project($1,'Deleted project')", [old]);
+    expect(
+      (
+        await db.query(
+          "select status from project_deletion_cleanup where project_id=$1",
+          [old],
+        )
+      ).rows,
+    ).toEqual([{ status: "pending" }]);
+    const next = await draftConnection("Replacement project", address);
+    await beginIntroduction(next, address);
+    await admin();
+    expect(
+      (
+        await db.query(
+          "select project_id,test_state from chat_bindings where instance_id='reconnect-instance' and chat_guid=$1",
+          [`any;-;${address}`],
+        )
+      ).rows,
+    ).toEqual([{ project_id: next, test_state: "sending" }]);
   });
 });
