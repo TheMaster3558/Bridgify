@@ -1,79 +1,57 @@
-import Link from "next/link";
-import { RecentProjects } from "@/components/projects/recent-projects";
+import { HomeOverview } from "@/components/dashboard/home-overview";
 import { requireOwner } from "@/lib/auth/session";
-import { workSummary } from "@/lib/dashboard/summary";
-import { checked } from "@/lib/api";
+import { loadClientPhotos } from "@/lib/clients/photo-urls";
+import { homeOverview } from "@/lib/dashboard/home";
+
+function text(metadata: unknown, key: string) {
+  const value =
+    metadata && typeof metadata === "object"
+      ? (metadata as Record<string, unknown>)[key]
+      : undefined;
+  return typeof value === "string" ? value : "";
+}
+
+function validZone(zone: string) {
+  if (!zone) return undefined;
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: zone });
+    return zone;
+  } catch {
+    return undefined;
+  }
+}
+
+function organizationName(value: unknown): string {
+  const org = Array.isArray(value) ? value[0] : value;
+  return org && typeof org === "object" && "name" in org
+    ? String(org.name)
+    : "";
+}
+
 export default async function Page() {
-  const { client } = await requireOwner();
-  const s = await workSummary(client);
-  const issues =
-    checked(
-      await client
-        .from("projects")
-        .select("id,name,status")
-        .in("status", ["paused"])
-        .order("updated_at", { ascending: false })
-        .limit(5),
-    ) ?? [];
-  const cards = [
-    {
-      label: "Actionable tasks",
-      value: s.ready + s.inProgress + s.blocked,
-      href: "/app/tasks",
-    },
-    {
-      label: "Needs your decision",
-      value: s.decisions,
-      href: "/app/decisions",
-    },
-    {
-      label: "Awaiting client response",
-      value: s.proposals,
-      href: "/app/proposals?status=awaiting_client",
-    },
-    {
-      label: "Delivery / processing issues",
-      value: s.unknown + s.failed,
-      href: "/app/decisions",
-    },
-  ];
+  const { client, user, membership } = await requireOwner();
+  // Charts and dates follow the owner's own timezone from Settings.
+  const timeZone = validZone(text(user.user_metadata, "timezone"));
+  const data = await homeOverview(client, new Date(), timeZone);
+  const clientPhotos = await loadClientPhotos(client, [
+    ...data.decisions.items.map((d) => d.project.client_name),
+    ...data.handled.map((h) => h.project.client_name),
+    ...data.work.map((w) => w.project.client_name),
+  ]);
+  const firstName = text(user.user_metadata, "display_name")
+    .trim()
+    .split(/\s+/)[0];
   return (
-    <main className="mx-auto grid max-w-5xl gap-8 p-6 md:p-10">
-      <h1 className="font-display text-3xl font-semibold">Your workspace</h1>
-      <section className="grid gap-4 sm:grid-cols-2">
-        {cards.map((c) => (
-          <Link
-            className="rounded-xl border bg-card p-5"
-            href={c.href}
-            key={c.label}
-          >
-            <h2>{c.label}</h2>
-            <p className="text-3xl font-semibold">{c.value}</p>
-          </Link>
-        ))}
-      </section>
-      <p>
-        {s.ready} ready · {s.inProgress} in progress · {s.blocked} blocked ·{" "}
-        {s.queued} replies queued
-      </p>
-      {issues.length > 0 && (
-        <section>
-          <h2 className="font-semibold">Paused projects</h2>
-          <ul>
-            {issues.map((p) => (
-              <li key={p.id}>
-                <Link
-                  className="underline"
-                  href={`/app/projects/${p.id}/automation`}
-                >
-                  {p.name}
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-      <RecentProjects />
-    </main>
+    <HomeOverview
+      data={data}
+      clientPhotos={clientPhotos}
+      organization={organizationName(membership.organizations)}
+      greeting={firstName ? `Welcome ${firstName}` : "Welcome back"}
+      refreshedAt={new Intl.DateTimeFormat("en-US", {
+        hour: "numeric",
+        minute: "2-digit",
+        timeZone,
+      }).format(new Date(data.now))}
+    />
   );
 }
