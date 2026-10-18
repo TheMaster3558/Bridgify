@@ -1,3 +1,4 @@
+import type { WorkSummary } from "@/lib/dashboard/summary";
 import { DeleteProject } from "./delete-project";
 import Link from "next/link";
 import type { Bundle } from "@/lib/domain/types";
@@ -38,9 +39,13 @@ function Row({
 export function ProjectOverview({
   bundle,
   owner,
+  summary,
+  accounting,
 }: {
   bundle: Bundle;
   owner: string;
+  summary?:WorkSummary;
+  accounting?:{requestsUsed:number;roundsUsed:number;grossRequests:number;requestRefunds:number};
 }) {
   const p = bundle.project,
     root = `/app/projects/${p.id}`;
@@ -113,8 +118,9 @@ export function ProjectOverview({
             </span>
           }
         >
+          {accounting && <p className="mb-3">{p.policy?.allowance ?? 0} included {p.policy?.allowance_mode === "manual_rounds" ? "rounds" : "requests"} · {p.policy?.allowance_mode === "manual_rounds" ? accounting.roundsUsed : accounting.requestsUsed} used · {Math.max(0,(p.policy?.allowance??0)-(p.policy?.allowance_mode === "manual_rounds"?accounting.roundsUsed:accounting.requestsUsed))} remaining · {accounting.requestRefunds} request refunds</p>}
           <p className="text-sm text-muted-foreground">
-            {revisions?.allowance != null
+            {accounting ? "Acceptance uses a revision. Cancellation preserves usage unless explicitly refunded." : revisions?.allowance != null
               ? "Allowance from the owner-confirmed agreement. Revision consumption and reservations are not connected yet."
               : "No revision allowance is available from a confirmed agreement."}
           </p>
@@ -148,26 +154,20 @@ export function ProjectOverview({
           }
         >
           <div className="flex min-h-36 flex-col items-center justify-center gap-2 text-center">
-            <p className="font-medium">Work summary not connected</p>
-            <p className="text-sm text-muted-foreground">
-              Project tasks will appear here when the work integration is
-              available.
-            </p>
+            <p className="font-medium">{summary ? `${summary.ready} ready · ${summary.inProgress} in progress · ${summary.blocked} blocked` : "No work summary available"}</p>
           </div>
         </Panel>
         <Panel
           title="Open decisions"
           action={
-            <Link className={linkClass} href="/app/decisions">
+            <Link className={linkClass} href={`/app/decisions?project=${p.id}`}>
               Review decisions
             </Link>
           }
         >
           <div className="flex min-h-36 flex-col items-center justify-center gap-2 text-center">
-            <p className="font-medium">Decision summary not connected</p>
-            <p className="text-sm text-muted-foreground">
-              No project decision data is displayed here yet.
-            </p>
+            <p className="font-medium">{summary ? `${summary.decisions} open decisions · ${summary.proposals} proposals awaiting response` : "No decision summary available"}</p>
+            {summary && <p className="text-sm">{summary.queued} replies queued · {summary.unknown + summary.failed} delivery or processing issues</p>}
           </div>
         </Panel>
       </div>
