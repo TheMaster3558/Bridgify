@@ -135,7 +135,12 @@ export function ProjectWizard({
       p ? { expectedVersion: p.version, section, payload } : payload,
       p ? "PATCH" : "POST",
     );
-    router.push(`/app/projects/${result.project.id}/setup?step=${nextStep}`);
+    const destination =
+      section === "lifecycle" &&
+      ["active", "review_only"].includes(result.project.status)
+        ? `/app/projects/${result.project.id}`
+        : `/app/projects/${result.project.id}/setup?step=${nextStep}`;
+    router.push(destination);
     router.refresh();
   }
   const base = p ? `/app/projects/${p.id}/setup` : "/app/projects/new";

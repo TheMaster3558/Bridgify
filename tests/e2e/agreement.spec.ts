@@ -9,8 +9,8 @@ let javascript: string;
 test.beforeAll(async () => {
   const result = await build({
     stdin: {
-      contents: `import React from 'react'; import {createRoot} from 'react-dom/client'; import {ProjectWizard} from './components/setup/project-wizard';
-      const root=createRoot(document.getElementById('root')); window.__refresh=async()=>{const bundle=await fetch('/fixture-state').then(r=>r.json()); const step=Number(new URL(location.href).searchParams.get('step')||bundle?.project?.setup_step||1); root.render(<ProjectWizard key={(bundle?.project.id||'new')+'-'+step+'-'+bundle?.documents[0]?.status} bundle={bundle||undefined} step={step}/>);}; window.__navigate=(url)=>{history.pushState({},'',url);window.__refresh();};window.__refresh();`,
+      contents: `import React from 'react'; import {createRoot} from 'react-dom/client'; import {ProjectWizard} from './components/setup/project-wizard';import {ProjectsList} from './components/projects/projects-list';
+      const root=createRoot(document.getElementById('root')); window.__refresh=async()=>{const bundle=await fetch('/fixture-state').then(r=>r.json()); const step=Number(new URL(location.href).searchParams.get('step')||bundle?.project?.setup_step||1); if(location.pathname==='/app/projects'){root.render(<ProjectsList workspaceProjects={bundle?[bundle.project]:[]}/>);return;}root.render(<ProjectWizard key={(bundle?.project.id||'new')+'-'+step+'-'+bundle?.documents[0]?.status} bundle={bundle||undefined} step={step}/>);}; window.__navigate=(url)=>{history.pushState({},'',url);window.__refresh();};window.__refresh();`,
       resolveDir: process.cwd(),
       loader: "tsx",
     },
@@ -727,4 +727,139 @@ test("People headers cannot skip an unsent or uncertain introduction", async ({
   await expect(
     page.getByRole("button", { name: "4. Automation", exact: true }),
   ).toBeDisabled();
+});
+
+test("completed manual-approval setup redirects to overview and appears Active in Projects", async ({
+  page,
+}) => {
+  const bundle = setupBundle();
+  await fixture(page, bundle, 5, async (route) => {
+    if (route.request().method() !== "PATCH") return false;
+    const body = route.request().postDataJSON();
+    expect(body.section).toBe("lifecycle");
+    expect(body.payload.status).toBe("review_only");
+    bundle.project.status = "review_only";
+    bundle.project.activation_cutoff = new Date().toISOString();
+    bundle.project.version++;
+    await route.fulfill({ json: { data: { project: bundle.project } } });
+    return true;
+  });
+  await page.getByRole("checkbox").check();
+  await page
+    .getByRole("button", { name: "Activate in review-only mode" })
+    .click();
+  await expect(page).toHaveURL(
+    `https://agreement.test/app/projects/${bundle.project.id}`,
+  );
+  await page.goto("https://agreement.test/app/projects");
+  const row = page.getByRole("row").filter({ hasText: bundle.project.name });
+  await expect(row.getByText("active", { exact: true })).toBeVisible();
+  await expect(row.getByText("Review only", { exact: true })).toBeVisible();
+  await expect(
+    row.getByRole("link", { name: "Open", exact: true }),
+  ).toHaveAttribute("href", `/app/projects/${bundle.project.id}`);
+  await page.getByLabel("Filter by state").selectOption("active");
+  await expect(row).toBeVisible();
+  await page.getByLabel("Filter by state").selectOption("draft");
+  await expect(row).toHaveCount(0);
+});
+
+test("leaving setup midway or at review without activation keeps the project Draft", async ({
+  page,
+}) => {
+  const bundle = setupBundle();
+  await fixture(page, bundle, 4);
+  await page.goto("https://agreement.test/app/projects");
+  const row = page.getByRole("row").filter({ hasText: bundle.project.name });
+  await expect(row.getByText("draft", { exact: true })).toBeVisible();
+  await expect(row.getByRole("link", { name: "Resume setup" })).toBeVisible();
+  bundle.project.setup_step = 5;
+  await page.reload();
+  await expect(row.getByText("draft", { exact: true })).toBeVisible();
+});
+
+test("failed activation remains on review and keeps the stored project draft", async ({
+  page,
+}) => {
+  const bundle = setupBundle();
+  await fixture(page, bundle, 5, async (route) => {
+    if (route.request().method() !== "PATCH") return false;
+    await route.fulfill({
+      status: 503,
+      json: { error: { message: "Activation unavailable. Retry." } },
+    });
+    return true;
+  });
+  await page.getByRole("checkbox").check();
+  await page
+    .getByRole("button", { name: "Activate in review-only mode" })
+    .click();
+  await expect(page.getByText("Activation unavailable. Retry.")).toBeVisible();
+  await expect(page).toHaveURL(/setup\?step=5$/);
+  await page.goto("https://agreement.test/app/projects");
+  await expect(
+    page
+      .getByRole("row")
+      .filter({ hasText: bundle.project.name })
+      .getByText("draft", { exact: true }),
+  ).toBeVisible();
+});
+
+test("project deletion requires the exact name, supports cancel and preserves errors before a successful delete", async ({
+  page,
+}) => {
+  const bundle = setupBundle();
+  let calls = 0;
+  await fixture(page, bundle, 3, async (route) => {
+    if (route.request().method() !== "DELETE") return false;
+    calls++;
+    expect(route.request().postDataJSON()).toEqual({
+      name: bundle.project.name,
+    });
+    await route.fulfill(
+      calls === 1
+        ? {
+            status: 503,
+            json: { error: { message: "Delete unavailable. Retry." } },
+          }
+        : { json: { data: { deleted: true, storageCleanupPending: true } } },
+    );
+    return true;
+  });
+  await page.goto("https://agreement.test/app/projects");
+  const trigger = page.getByRole("button", {
+    name: `Delete project ${bundle.project.name}`,
+    exact: true,
+  });
+  await trigger.click();
+  const dialog = page.getByRole("dialog"),
+    confirm = dialog.getByRole("button", {
+      name: "Delete project permanently",
+    });
+  await expect(confirm).toBeDisabled();
+  await dialog
+    .getByLabel("Type the project name to confirm")
+    .fill("wrong name");
+  await expect(confirm).toBeDisabled();
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+  expect(calls).toBe(0);
+  await trigger.click();
+  await dialog
+    .getByLabel("Type the project name to confirm")
+    .fill(bundle.project.name);
+  await confirm.click();
+  await expect(dialog.getByRole("alert")).toHaveText(
+    "Delete unavailable. Retry.",
+  );
+  await confirm.click();
+  await expect(
+    dialog.getByRole("heading", { name: "Project deleted" }),
+  ).toBeVisible();
+  await expect(
+    dialog.getByText(
+      "The project was deleted. Private agreement file cleanup is pending.",
+    ),
+  ).toBeVisible();
+  await dialog.getByRole("button", { name: "Back to projects" }).click();
+  await expect(page).toHaveURL("https://agreement.test/app/projects");
 });
