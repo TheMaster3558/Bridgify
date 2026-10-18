@@ -48,6 +48,7 @@ export function AutomationSetup({
     initialAcceptanceGuidance(p.policy),
   );
   const [guidanceEdited, setGuidanceEdited] = useState(false);
+  const [guidanceVersion, setGuidanceVersion] = useState(0);
   const validate = useCallback(
     (form: FormData) => {
       const errors = validatePolicy(form);
@@ -61,7 +62,7 @@ export function AutomationSetup({
   return (
     <SetupForm
       validate={validate}
-      validationKey={`${mode}:${guidance}`}
+      validationKey={mode}
       onContinueState={onContinueState}
       disabled={locked}
       onSave={(form) => onSave(policyPayload(form))}
@@ -75,13 +76,16 @@ export function AutomationSetup({
           name="mode"
           value={mode}
           onChange={(e) => {
-            setMode(e.target.value as typeof mode);
-            if (!guidanceEdited)
+            const next = e.target.value as typeof mode;
+            setMode(next);
+            if (!guidanceEdited) {
               setGuidance(
-                e.target.value === "enabled"
+                next === "enabled"
                   ? AUTOMATIC_ACCEPTANCE_GUIDANCE
                   : MANUAL_ACCEPTANCE_GUIDANCE,
               );
+              setGuidanceVersion((version) => version + 1);
+            }
           }}
           className="rounded border p-2"
         >
@@ -101,14 +105,14 @@ export function AutomationSetup({
         hint="Edit this in your own words. The assistant uses this guidance and the agreement to decide whether to create a task, ask a question or put the request in your review queue. It accepts work for you to do; it does not edit the website."
       >
         <Textarea
+          key={guidanceVersion}
           name="acceptance_guidance"
           rows={5}
           maxLength={4000}
           required={mode === "enabled"}
-          value={guidance}
-          onChange={(e) => {
-            setGuidance(e.target.value);
-            setGuidanceEdited(true);
+          defaultValue={guidance}
+          onChange={() => {
+            if (!guidanceEdited) setGuidanceEdited(true);
           }}
         />
       </SetupField>

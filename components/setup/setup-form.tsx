@@ -23,6 +23,12 @@ const FormContext = createContext<{
   valid: boolean;
 }>({ errors: {}, pending: false, valid: false });
 
+function sameErrors(left: FieldErrors, right: FieldErrors) {
+  const leftKeys = Object.keys(left);
+  if (leftKeys.length !== Object.keys(right).length) return false;
+  return leftKeys.every((key) => left[key] === right[key]);
+}
+
 function checkForm(
   element: HTMLFormElement,
   validate: (form: FormData) => FieldErrors,
@@ -120,11 +126,19 @@ export function SetupForm({
   children: ReactNode;
 }) {
   const ref = useRef<HTMLFormElement>(null);
+  const validateTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingFields = useRef(new Set<string>());
   const [errors, setErrors] = useState<FieldErrors>({ initializing: "" });
   const [touched, setTouched] = useState<Record<string, boolean>>({});
   const [pending, setPending] = useState(false),
     [failure, setFailure] = useState("");
   const [serverErrors, setServerErrors] = useState<FieldErrors>({});
+  useEffect(
+    () => () => {
+      if (validateTimer.current) clearTimeout(validateTimer.current);
+    },
+    [],
+  );
   useSetupContinue(
     !disabled &&
       !pending &&
@@ -136,6 +150,28 @@ export function SetupForm({
   useEffect(() => {
     if (ref.current) setErrors(checkForm(ref.current, validate));
   }, [validate, validationKey]);
+  function applyFieldValidation(fieldNames: string[]) {
+    if (!ref.current) return;
+    const next = checkForm(ref.current, validate);
+    const broad = fieldNames.some(
+      (name) => name === "mode" || name === "allowance_mode",
+    );
+    setErrors((current) => (sameErrors(current, next) ? current : next));
+    setTouched((current) => {
+      let changed = false;
+      const touched = { ...current };
+      const names = broad
+        ? [...fieldNames, ...Object.keys(next)]
+        : fieldNames;
+      for (const name of names) {
+        if (!touched[name]) {
+          touched[name] = true;
+          changed = true;
+        }
+      }
+      return changed ? touched : current;
+    });
+  }
   const visibleErrors = {
     ...serverErrors,
     ...Object.fromEntries(
@@ -156,40 +192,61 @@ export function SetupForm({
         className={`grid gap-5 rounded-lg ${failure ? "border border-destructive p-4" : ""}`}
         onChange={(event) => {
           const target = event.target;
-          if (ref.current) {
-            const next = checkForm(ref.current, validate);
-            setErrors(next);
-            if (
+          if (
+            !(
               target instanceof HTMLInputElement ||
               target instanceof HTMLTextAreaElement ||
               target instanceof HTMLSelectElement
-            ) {
-              setTouched((current) => ({
-                ...current,
-                [target.name]: true,
-                ...(["mode", "allowance_mode"].includes(target.name)
-                  ? Object.fromEntries(
-                      Object.keys(next).map((key) => [key, true]),
-                    )
-                  : {}),
-              }));
-            }
-          }
-          setFailure("");
-          setServerErrors({});
+            ) ||
+            !target.name
+          )
+            return;
+          const fieldName = target.name;
+          const broad = fieldName === "mode" || fieldName === "allowance_mode";
+          pendingFields.current.add(fieldName);
+          setFailure((current) => (current ? "" : current));
+          setServerErrors((current) =>
+            Object.keys(current).length ? {} : current,
+          );
+          if (validateTimer.current) clearTimeout(validateTimer.current);
+          // Selects change the rules for other fields, so they validate now.
+          // Text waits until the keystroke burst pauses, then renders once.
+          validateTimer.current = setTimeout(() => {
+            validateTimer.current = null;
+            const fields = [...pendingFields.current];
+            pendingFields.current.clear();
+            applyFieldValidation(fields);
+          }, broad ? 0 : 160);
         }}
-        onBlur={(e) => {
-          const target = e.target;
-          const name =
-            target instanceof HTMLInputElement ||
-            target instanceof HTMLTextAreaElement ||
-            target instanceof HTMLSelectElement
-              ? target.name
-              : "";
-          if (name) setTouched((t) => ({ ...t, [name]: true }));
+        onBlur={(event) => {
+          const target = event.target;
+          if (
+            !(
+              target instanceof HTMLInputElement ||
+              target instanceof HTMLTextAreaElement ||
+              target instanceof HTMLSelectElement
+            ) ||
+            !target.name
+          )
+            return;
+          if (validateTimer.current) {
+            clearTimeout(validateTimer.current);
+            validateTimer.current = null;
+            const fields = [...pendingFields.current];
+            pendingFields.current.clear();
+            applyFieldValidation(fields.length ? fields : [target.name]);
+            return;
+          }
+          setTouched((current) =>
+            current[target.name] ? current : { ...current, [target.name]: true },
+          );
         }}
         onSubmit={async (e) => {
           e.preventDefault();
+          if (validateTimer.current) {
+            clearTimeout(validateTimer.current);
+            validateTimer.current = null;
+          }
           if (disabled || pending) return;
           const formElement = e.currentTarget,
             form = new FormData(formElement),

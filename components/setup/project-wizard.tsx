@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ComponentProps } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,7 +17,34 @@ import { AutomationSetup } from "./automation-setup";
 import type { Bundle } from "@/lib/domain/types";
 import { AgreementStep } from "./agreement-step";
 import { PhotonClientPicker } from "./photon-client-picker";
+import { CurrencyInput, TimeZoneInput } from "./suggestion-input";
 import { activationIssues } from "@/lib/projects/activation-readiness";
+function IntroductionDraft({
+  initial,
+  onText,
+  disabled,
+  ...props
+}: {
+  initial: string;
+  onText: (value: string) => void;
+  disabled?: boolean;
+} & Omit<ComponentProps<typeof Textarea>, "value" | "onChange" | "defaultValue">) {
+  const [text, setText] = useState(initial);
+  return (
+    <Textarea
+      rows={6}
+      maxLength={4000}
+      {...props}
+      value={text}
+      disabled={disabled}
+      onChange={(event) => {
+        setText(event.target.value);
+        onText(event.target.value);
+      }}
+    />
+  );
+}
+
 const steps = [
   "Basics",
   "Agreement",
@@ -37,9 +64,18 @@ export function ProjectWizard({
   const [pending, setPending] = useState(false),
     [error, setError] = useState(""),
     [notice, setNotice] = useState("");
-  const [introduction, setIntroduction] = useState(
+  const introductionRef = useRef(
     bundle?.binding?.introduction_text || INTRODUCTION,
   );
+  const [introductionEmpty, setIntroductionEmpty] = useState(
+    !introductionRef.current.trim(),
+  );
+  const onIntroduction = useCallback((text: string) => {
+    introductionRef.current = text;
+    const empty = !text.trim();
+    setIntroductionEmpty((current) => (current === empty ? current : empty));
+    setError((current) => (current ? "" : current));
+  }, []);
   const [consented, setConsented] = useState(false);
   const consentInput = useRef<HTMLInputElement>(null);
   const [errorTarget, setErrorTarget] = useState("");
@@ -269,39 +305,27 @@ export function ProjectWizard({
                 name="currency"
                 hint="Choose a three-letter currency code, such as USD or EUR."
               >
-                <Input
+                <CurrencyInput
                   name="currency"
                   defaultValue={p?.currency || "USD"}
-                  list="setup-currencies"
                   required
                   maxLength={3}
                 />
               </SetupField>
-              <datalist id="setup-currencies">
-                {Intl.supportedValuesOf("currency").map((code) => (
-                  <option key={code} value={code} />
-                ))}
-              </datalist>
               <SetupField
                 label="Project time zone"
                 name="timezone"
                 hint="Dates use this time zone. Search by region or city."
               >
-                <Input
+                <TimeZoneInput
                   name="timezone"
                   defaultValue={
                     p?.timezone ||
                     Intl.DateTimeFormat().resolvedOptions().timeZone
                   }
-                  list="setup-timezones"
                   required
                 />
               </SetupField>
-              <datalist id="setup-timezones">
-                {Intl.supportedValuesOf("timeZone").map((zone) => (
-                  <option key={zone} value={zone} />
-                ))}
-              </datalist>
               <SetupField
                 label="Agreed completion date (optional)"
                 name="due"
@@ -357,23 +381,18 @@ export function ProjectWizard({
                 errors={
                   errorTarget === "introduction" && error
                     ? { introduction: error }
-                    : introduction.trim()
-                      ? {}
-                      : {
+                    : introductionEmpty
+                      ? {
                           introduction:
                             "Write an introduction before sending it to your client.",
                         }
+                      : {}
                 }
                 hint="Personalize this message before sending. Explain what the assistant does and how your client can ask you to pause it."
               >
-                <Textarea
-                  value={introduction}
-                  onChange={(e) => {
-                    setIntroduction(e.target.value);
-                    setError("");
-                  }}
-                  rows={6}
-                  maxLength={4000}
+                <IntroductionDraft
+                  initial={introductionRef.current}
+                  onText={onIntroduction}
                   disabled={
                     pending ||
                     locked ||
@@ -405,8 +424,7 @@ export function ProjectWizard({
                 disabled={
                   pending ||
                   locked ||
-                  !introduction.trim() ||
-                  introduction.length > 4000 ||
+                  introductionEmpty ||
                   !p.people ||
                   (!!bundle?.binding &&
                     ["sending", "unknown"].includes(bundle.binding.test_state))
@@ -415,7 +433,10 @@ export function ProjectWizard({
                   void run(async () => {
                     const result = await send(
                       `/api/v1/projects/${p.id}/chat-test`,
-                      { expectedVersion: p.version, introduction },
+                      {
+                        expectedVersion: p.version,
+                        introduction: introductionRef.current,
+                      },
                     );
                     setNotice(result.message);
                     router.refresh();

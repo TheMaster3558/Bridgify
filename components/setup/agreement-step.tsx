@@ -1,5 +1,11 @@
 "use client";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ComponentProps,
+} from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -54,6 +60,69 @@ async function submit(url: string, body: unknown, key = crypto.randomUUID()) {
     );
   return json.data;
 }
+
+function DraftTextarea({
+  value,
+  onValue,
+  ...props
+}: {
+  value: string;
+  onValue: (value: string) => void;
+} & Omit<
+  ComponentProps<typeof Textarea>,
+  "value" | "onChange" | "defaultValue"
+>) {
+  const [text, setText] = useState(value);
+  const seen = useRef(value);
+  const onValueRef = useRef(onValue);
+  onValueRef.current = onValue;
+  if (value !== seen.current) {
+    seen.current = value;
+    if (value !== text) setText(value);
+  }
+  return (
+    <Textarea
+      {...props}
+      value={text}
+      onChange={(event) => {
+        setText(event.target.value);
+        onValueRef.current(event.target.value);
+      }}
+    />
+  );
+}
+
+function DraftInput({
+  value,
+  onValue,
+  transform,
+  ...props
+}: {
+  value: string;
+  onValue: (value: string) => void;
+  transform?: (value: string) => string;
+} & Omit<ComponentProps<typeof Input>, "value" | "onChange" | "defaultValue">) {
+  const [text, setText] = useState(value);
+  const seen = useRef(value);
+  const onValueRef = useRef(onValue);
+  onValueRef.current = onValue;
+  if (value !== seen.current) {
+    seen.current = value;
+    if (value !== text) setText(value);
+  }
+  return (
+    <Input
+      {...props}
+      value={text}
+      onChange={(event) => {
+        const next = transform ? transform(event.target.value) : event.target.value;
+        setText(next);
+        onValueRef.current(next);
+      }}
+    />
+  );
+}
+
 export function AgreementStep({
   bundle,
   onContinueState,
@@ -93,6 +162,9 @@ export function AgreementStep({
   const retry = useRef<{ body: unknown; key: string; snapshot: string } | null>(
     null,
   );
+  const paintTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lockedRef = useRef(false);
   const router = useRouter();
   const submissionKeys = useRef(new Map<string, string>());
   async function send(url: string, body: unknown, explicitKey?: string) {
@@ -124,6 +196,7 @@ export function AgreementStep({
     return submit(url, body, key);
   }
   const locked = !!p.activation_cutoff || p.status !== "draft";
+  lockedRef.current = locked;
   // Server writes are serialized and versioned. A lost response retries the exact idempotent command.
   async function flush() {
     if (inFlight.current) await inFlight.current;
@@ -173,22 +246,27 @@ export function AgreementStep({
   useEffect(() => {
     flushRef.current = flush;
   });
-  useEffect(() => {
-    if (
-      locked ||
-      !review ||
-      !reviewDraftSchema.safeParse(review).success ||
-      saved.current === JSON.stringify(review)
-    )
-      return;
-    const timer = setTimeout(() => {
+  function scheduleSave() {
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => {
+      saveTimer.current = null;
+      const current = latest.current;
+      if (lockedRef.current || !current) return;
+      if (!reviewDraftSchema.safeParse(current).success) return;
+      if (saved.current === JSON.stringify(current)) return;
       void flushRef.current().catch((e) => {
         setSaveState("Review not saved");
         setError(e.message);
       });
-    }, 500);
-    return () => clearTimeout(timer);
-  }, [review, locked]);
+    }, 600);
+  }
+  useEffect(
+    () => () => {
+      if (paintTimer.current) clearTimeout(paintTimer.current);
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+    },
+    [],
+  );
   useEffect(() => {
     const handler = (event: BeforeUnloadEvent) => {
       if (saved.current !== JSON.stringify(latest.current) || retry.current)
@@ -197,12 +275,32 @@ export function AgreementStep({
     window.addEventListener("beforeunload", handler);
     return () => window.removeEventListener("beforeunload", handler);
   }, []);
-  function change(next: AgreementReview) {
-    setError("");
-    latest.current = next;
-    setReview(next);
-    setConfirmed(false);
-    setSaveState("Unsaved changes");
+  function change(
+    next: AgreementReview | ((current: AgreementReview) => AgreementReview),
+    paint: "now" | "idle" = "now",
+  ) {
+    if (!latest.current) return;
+    const resolved = typeof next === "function" ? next(latest.current) : next;
+    latest.current = resolved;
+    setError((value) => (value ? "" : value));
+    setConfirmed((value) => (value ? false : value));
+    setSaveState((value) =>
+      value === "Unsaved changes" ? value : "Unsaved changes",
+    );
+    if (paint === "now") {
+      if (paintTimer.current) {
+        clearTimeout(paintTimer.current);
+        paintTimer.current = null;
+      }
+      setReview(resolved);
+    } else {
+      if (paintTimer.current) clearTimeout(paintTimer.current);
+      paintTimer.current = setTimeout(() => {
+        paintTimer.current = null;
+        setReview(latest.current);
+      }, 400);
+    }
+    scheduleSave();
   }
   async function run(label: string, fn: () => Promise<void>) {
     setBusy(label);
@@ -218,20 +316,23 @@ export function AgreementStep({
   function commercial<K extends keyof AgreementReview["commercial"]>(
     key: K,
     patch: Partial<AgreementReview["commercial"][K]>,
+    paint: "now" | "idle" = "now",
   ) {
-    if (!review) return;
-    change({
-      ...review,
-      commercial: {
-        ...review.commercial,
-        [key]: { ...review.commercial[key], ...patch },
-      },
-      ...(key === "price"
-        ? { price_choice: "" as const }
-        : key === "due_date"
-          ? { date_choice: "" as const }
-          : {}),
-    });
+    change(
+      (current) => ({
+        ...current,
+        commercial: {
+          ...current.commercial,
+          [key]: { ...current.commercial[key], ...patch },
+        },
+        ...(key === "price"
+          ? { price_choice: "" as const }
+          : key === "due_date"
+            ? { date_choice: "" as const }
+            : {}),
+      }),
+      paint,
+    );
   }
   const spans = bundle.spans.filter((s) => s.document_id === doc?.id);
   const errors = review ? agreementErrors(review, spans, p) : {};
@@ -325,11 +426,11 @@ export function AgreementStep({
             errors={errors}
             hint="Copy the exact words from the source page. Do not paraphrase this excerpt."
           >
-            <Textarea
+            <DraftTextarea
               value={field.quote || ""}
               maxLength={4000}
-              onChange={(e) =>
-                commercial(key, { quote: e.target.value || null })
+              onValue={(quote) =>
+                commercial(key, { quote: quote || null }, "idle")
               }
             />
           </FieldFeedback>
@@ -508,16 +609,19 @@ export function AgreementStep({
                         name={`terms.${i}.text`}
                         errors={errors}
                       >
-                        <Textarea
+                        <DraftTextarea
                           value={term.text}
                           maxLength={2000}
-                          onChange={(e) =>
-                            change({
-                              ...review,
-                              terms: review.terms.map((t, n) =>
-                                n === i ? { ...t, text: e.target.value } : t,
-                              ),
-                            })
+                          onValue={(text) =>
+                            change(
+                              (current) => ({
+                                ...current,
+                                terms: current.terms.map((t, n) =>
+                                  n === i ? { ...t, text } : t,
+                                ),
+                              }),
+                              "idle",
+                            )
                           }
                         />
                       </FieldFeedback>
@@ -537,9 +641,9 @@ export function AgreementStep({
                             className="rounded border p-2"
                             value={term.kind}
                             onChange={(e) =>
-                              change({
-                                ...review,
-                                terms: review.terms.map((t, n) =>
+                              change((current) => ({
+                                ...current,
+                                terms: current.terms.map((t, n) =>
                                   n === i
                                     ? {
                                         ...t,
@@ -547,7 +651,7 @@ export function AgreementStep({
                                       }
                                     : t,
                                 ),
-                              })
+                              }))
                             }
                           >
                             {termGroups.map((g) => (
@@ -567,10 +671,10 @@ export function AgreementStep({
                         type="button"
                         className="justify-self-start text-sm text-muted-foreground underline"
                         onClick={() =>
-                          change({
-                            ...review,
-                            terms: review.terms.filter((_, n) => n !== i),
-                          })
+                          change((current) => ({
+                            ...current,
+                            terms: current.terms.filter((_, n) => n !== i),
+                          }))
                         }
                       >
                         Remove draft term
@@ -595,14 +699,18 @@ export function AgreementStep({
                     onChange={(e) => {
                       setPriceInput(e.target.value);
                       if (!e.target.value.trim())
-                        commercial("price", { amount_cents: null });
+                        commercial("price", { amount_cents: null }, "idle");
                       else {
                         try {
-                          commercial("price", {
-                            amount_cents: centsFromInput(e.target.value),
-                          });
+                          commercial(
+                            "price",
+                            {
+                              amount_cents: centsFromInput(e.target.value),
+                            },
+                            "idle",
+                          );
                         } catch {
-                          setConfirmed(false);
+                          setConfirmed((value) => (value ? false : value));
                         }
                       }
                     }}
@@ -614,13 +722,16 @@ export function AgreementStep({
                   errors={errors}
                   hint="For example, USD, EUR or GBP. Leave blank if not stated."
                 >
-                  <Input
+                  <DraftInput
                     value={review.commercial.price.currency || ""}
                     maxLength={3}
-                    onChange={(e) =>
-                      commercial("price", {
-                        currency: e.target.value.toUpperCase() || null,
-                      })
+                    transform={(value) => value.toUpperCase()}
+                    onValue={(currency) =>
+                      commercial(
+                        "price",
+                        { currency: currency || null },
+                        "idle",
+                      )
                     }
                   />
                 </FieldFeedback>
@@ -637,11 +748,11 @@ export function AgreementStep({
                     className="rounded border p-2"
                     value={review.price_choice}
                     onChange={(e) =>
-                      change({
-                        ...review,
+                      change((current) => ({
+                        ...current,
                         price_choice: e.target
                           .value as AgreementReview["price_choice"],
-                      })
+                      }))
                     }
                   >
                     <option value="">Choose a price…</option>
@@ -682,11 +793,11 @@ export function AgreementStep({
                     className="rounded border p-2"
                     value={review.date_choice}
                     onChange={(e) =>
-                      change({
-                        ...review,
+                      change((current) => ({
+                        ...current,
                         date_choice: e.target
                           .value as AgreementReview["date_choice"],
-                      })
+                      }))
                     }
                   >
                     <option value="">Choose a date…</option>
@@ -718,10 +829,15 @@ export function AgreementStep({
                   onChange={(e) => {
                     const value = e.target.value;
                     setRevisionInput(value);
-                    if (!value) commercial("revision", { allowance: null });
+                    if (!value)
+                      commercial("revision", { allowance: null }, "idle");
                     else if (/^\d+$/.test(value))
-                      commercial("revision", { allowance: Number(value) });
-                    else setConfirmed(false);
+                      commercial(
+                        "revision",
+                        { allowance: Number(value) },
+                        "idle",
+                      );
+                    else setConfirmed((current) => (current ? false : current));
                   }}
                 />
               </FieldFeedback>
@@ -771,18 +887,21 @@ export function AgreementStep({
                     name={`issues.${i}.resolution`}
                     errors={errors}
                   >
-                    <Textarea
+                    <DraftTextarea
                       aria-label={`Resolution ${i + 1}`}
                       maxLength={2000}
                       placeholder="Describe your clarification, or acknowledge that this is not stated in the agreement."
                       value={issue.resolution}
-                      onChange={(e) =>
-                        change({
-                          ...review,
-                          issues: review.issues.map((v, n) =>
-                            n === i ? { ...v, resolution: e.target.value } : v,
-                          ),
-                        })
+                      onValue={(resolution) =>
+                        change(
+                          (current) => ({
+                            ...current,
+                            issues: current.issues.map((v, n) =>
+                              n === i ? { ...v, resolution } : v,
+                            ),
+                          }),
+                          "idle",
+                        )
                       }
                     />
                   </FieldFeedback>
@@ -809,7 +928,10 @@ export function AgreementStep({
                     span={span}
                     disabled={review.terms.length >= 100}
                     onAdd={(term) =>
-                      change({ ...review, terms: [...review.terms, term] })
+                      change((current) => ({
+                        ...current,
+                        terms: [...current.terms, term],
+                      }))
                     }
                   />
                 </details>

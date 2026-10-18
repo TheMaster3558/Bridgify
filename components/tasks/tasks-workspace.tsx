@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -419,6 +419,7 @@ export function TasksWorkspace({
   const [project, setProject] = useState("all");
   const [assignee, setAssignee] = useState("all");
   const [query, setQuery] = useState("");
+  const deferredQuery = useDeferredValue(query);
   const [selectedId, setSelectedId] = useState<string | null>(initialTaskId ?? null);
   const [checkedIds, setCheckedIds] = useState<string[]>([]);
   const [saved, setSaved] = useState<Record<string, Task>>({});
@@ -452,7 +453,7 @@ export function TasksWorkspace({
     return result;
   }, [allTasks]);
   const scoped = useMemo(() => {
-    const needle = query.trim().toLowerCase();
+    const needle = deferredQuery.trim().toLowerCase();
     return allTasks.filter(
       (task) =>
         (project === "all" || task.project_id === project) &&
@@ -461,7 +462,7 @@ export function TasksWorkspace({
           task.title.toLowerCase().includes(needle) ||
           task.task_code.toLowerCase().includes(needle)),
     );
-  }, [allTasks, project, assignee, query]);
+  }, [allTasks, project, assignee, deferredQuery]);
   const visibleTasks = useMemo(() => {
     if (serverManaged) return allTasks;
     const direction = sort.dir === "asc" ? 1 : -1;
@@ -643,7 +644,7 @@ export function TasksWorkspace({
                 className="min-w-0 flex-1 bg-transparent text-[15px] text-foreground outline-none placeholder:text-neutral-500 dark:placeholder:text-neutral-400"
                 onChange={(event) => {
                   setQuery(event.target.value);
-                  setCheckedIds([]);
+                  setCheckedIds((current) => (current.length ? [] : current));
                 }}
               />
             </label>

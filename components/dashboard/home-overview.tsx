@@ -1,7 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState, type ComponentType, type ReactNode } from "react";
+import {
+  useDeferredValue,
+  useMemo,
+  useState,
+  type ComponentType,
+  type ReactNode,
+} from "react";
 import { DropdownMenu } from "radix-ui";
 import {
   AlertTriangle,
@@ -892,8 +898,9 @@ function WorkTable({
   const [status, setStatus] = useState("all");
   const [priority, setPriority] = useState("all");
   const [query, setQuery] = useState("");
+  const deferredQuery = useDeferredValue(query);
   const rows = useMemo(() => {
-    const q = query.trim().toLowerCase();
+    const q = deferredQuery.trim().toLowerCase();
     return work.filter(
       (t) =>
         (status === "all" || t.status === status) &&
@@ -904,7 +911,7 @@ function WorkTable({
             .toLowerCase()
             .includes(q)),
     );
-  }, [work, status, priority, query]);
+  }, [work, status, priority, deferredQuery]);
   return (
     <section
       aria-labelledby="home-work-heading"

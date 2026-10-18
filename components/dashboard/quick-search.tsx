@@ -65,7 +65,7 @@ export function QuickSearch({
         .catch(() => {
           if (!controller.signal.aborted) setProjects([]);
         });
-    }, 200);
+    }, 400);
     return () => {
       clearTimeout(timer);
       controller.abort();

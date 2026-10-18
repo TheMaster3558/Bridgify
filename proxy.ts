@@ -16,6 +16,14 @@ export async function proxy(request: NextRequest) {
     }
     return NextResponse.next();
   }
+  // API routes authenticate themselves and can persist refreshed cookies.
+  // Checking the user here as well added a second Supabase round trip to
+  // every keystroke-driven request (search, review autosave, sign-in).
+  if (request.nextUrl.pathname.startsWith("/api/")) {
+    const response = NextResponse.next();
+    response.headers.set("Cache-Control", "private, no-store");
+    return response;
+  }
   let response = NextResponse.next({ request });
   const client = createServerClient(url, key, {
     cookies: {

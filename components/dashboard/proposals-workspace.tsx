@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   AlertCircle,
@@ -456,6 +456,7 @@ export function ProposalsWorkspace({
   const [view, setView] = useState<"list" | "board">("list");
   const [project, setProject] = useState("all");
   const [query, setQuery] = useState("");
+  const deferredQuery = useDeferredValue(query);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [sort, setSort] = useState<{ key: SortKey; dir: "asc" | "desc" }>({
     key: "default",
@@ -472,7 +473,7 @@ export function ProposalsWorkspace({
     [proposals],
   );
   const scoped = useMemo(() => {
-    const needle = query.trim().toLowerCase();
+    const needle = deferredQuery.trim().toLowerCase();
     return proposals.filter(
       (proposal) =>
         (project === "all" || proposal.project_id === project) &&
@@ -480,7 +481,7 @@ export function ProposalsWorkspace({
           proposalTitle(proposal).toLowerCase().includes(needle) ||
           proposalCode(proposal.proposal_id).toLowerCase().includes(needle)),
     );
-  }, [proposals, project, query]);
+  }, [proposals, project, deferredQuery]);
   const counts = useMemo(() => {
     const result: Record<string, number> = { all: scoped.length };
     for (const proposal of scoped) {

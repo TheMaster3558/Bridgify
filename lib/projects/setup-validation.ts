@@ -10,6 +10,7 @@ import {
 } from "@/lib/schemas/agreement";
 
 export type FieldErrors = Record<string, string>;
+const currencyCodes = new Set(Intl.supportedValuesOf("currency"));
 export const DEFAULT_SETUP_POLICY = {
   mode: "review_only",
   allowance_mode: "per_request",
@@ -84,7 +85,7 @@ export function validateBasics(form: FormData): FieldErrors {
   const currency = String(form.get("currency") || "")
     .trim()
     .toUpperCase();
-  if (!Intl.supportedValuesOf("currency").includes(currency))
+  if (!currencyCodes.has(currency))
     errors.currency = "Choose a currency code, such as USD, EUR or GBP.";
   const timezone = String(form.get("timezone") || "").trim();
   if (!timezone || !basicsSchema.shape.timezone.safeParse(timezone).success)
@@ -261,7 +262,7 @@ export function agreementErrors(
       "Enter the contract price, or clear both price and currency if neither is specified.";
   if (
     price.currency &&
-    !Intl.supportedValuesOf("currency").includes(price.currency)
+    !currencyCodes.has(price.currency)
   )
     errors["commercial.price.currency"] =
       "Enter a currency code, such as USD, EUR or GBP.";
