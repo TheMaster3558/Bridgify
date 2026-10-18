@@ -139,8 +139,19 @@ export function AutomationManagement({
   };
   if (!data)
     return (
-      <section className="p-5" role="status">
-        {error || "Loading automation records…"}
+      <section
+        className="grid gap-3 rounded-2xl border border-sidebar-border bg-card p-5"
+        role="status"
+      >
+        {error ? (
+          <p className="text-sm text-crit">{error}</p>
+        ) : (
+          <>
+            <span className="sr-only">Loading automation records…</span>
+            <span aria-hidden className="h-4 w-40 animate-pulse rounded-full bg-sidebar-accent motion-reduce:animate-none" />
+            <span aria-hidden className="h-3 w-72 animate-pulse rounded-full bg-sidebar-accent motion-reduce:animate-none" />
+          </>
+        )}
       </section>
     );
   const disabled = busy || reason.trim().length < 3;
@@ -150,316 +161,82 @@ export function AutomationManagement({
       !["correction", "cancellation"].includes(r.intent?.intent ?? ""),
   );
   const health = data.automation_runtime_health[0];
-  return (
-    <div className="grid gap-5">
-      {error && (
-        <p role="alert" className="text-destructive">
-          {error}
-        </p>
-      )}
-      {notice && <p role="status">{notice}</p>}
-      <section className="grid gap-3 rounded border p-4">
-        <h2 className="font-semibold">Revision accounting</h2>
-        <p>
-          {data.accounting.requestsUsed} individual requests used ·{" "}
-          {data.accounting.roundsUsed} rounds used ·{" "}
-          {data.project.policy?.allowance ?? 0} included{" "}
-          {data.project.policy?.allowance_mode === "manual_rounds"
-            ? "rounds"
-            : "requests"}
-        </p>
-        <p className="text-sm">
-          Cancellation preserves usage. Refunds are separate owner decisions
-          with an audit reason. Closing a feedback round consumes one round.
-        </p>
-      </section>
-      <label className="grid gap-1">
+  const changes = data.automation_requests.filter(
+    (r) =>
+      r.state === "owner_review" &&
+      ["correction", "cancellation"].includes(r.intent?.intent ?? ""),
+  );
+  const failedJobs = data.automation_jobs.filter((j) => j.state === "failed");
+  const stale =
+    data.accounting.queued > 0 &&
+    (!health ||
+      Date.parse(data.fetchedAt) - Date.parse(health.started_at) > 180000);
+  const p = data.project;
+  const mode =
+    p.status === "paused"
+      ? { label: "Automation is paused", note: "Messages are logged, but nothing is accepted or sent automatically.", dot: "bg-warn", tone: "bg-warn-soft text-warn" }
+      : p.policy?.mode === "review_only" || p.status === "review_only"
+        ? { label: "Review-only mode", note: "Bridgify reads every message and sends each request to you before anything is accepted.", dot: "bg-info", tone: "bg-info-soft text-info" }
+        : p.status === "active" && p.policy?.mode === "enabled"
+          ? { label: "Automation is on", note: "Routine requests within your rules are accepted and answered in the chat.", dot: "bg-ok", tone: "bg-ok-soft text-ok" }
+          : { label: "Automation is not active", note: "Finish setup and activate the project to start processing messages.", dot: "bg-neutral-400", tone: "bg-sidebar-accent text-muted-foreground" };
+  const card = "rounded-2xl border border-sidebar-border bg-card";
+  const field =
+    "rounded-xl border border-sidebar-border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-sidebar-ring/40";
+  const sectionTitle = "flex items-center justify-between gap-3 text-sm font-medium text-muted-foreground";
+  const refresh = () => void load(search).catch((e) => setError(e.message));
+
+  const reasonBar = (
+    <section className={`${card} grid gap-2 p-4`}>
+      <label className="grid gap-1.5 text-sm font-medium">
         Reason for your next action (private)
         <input
-          className="rounded border p-2"
+          className={field}
           maxLength={2000}
           value={reason}
           onChange={(e) => setReason(e.target.value)}
           placeholder="Required for edits, retries, refunds and amendments"
         />
       </label>
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          void load(search).catch((e) => setError(e.message));
-        }}
-        className="flex gap-2"
-      >
-        <input
-          aria-label="Search tasks and requests"
-          className="rounded border p-2"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Find an existing task"
-        />
-        <Button type="submit" variant="outline">
-          Search tasks
-        </Button>
-      </form>
-      {data.project.policy?.allowance_mode === "manual_rounds" && (
-        <section className="grid gap-3 rounded border p-4">
-          <h3 className="font-semibold">Feedback rounds</h3>
-          <Button
-            disabled={
-              disabled || data.automation_rounds.some((r) => r.state === "open")
-            }
-            onClick={() => act("round_open", {})}
-          >
-            Open feedback round
-          </Button>
-          {data.automation_rounds.map((round) => (
-            <div key={round.id} className="grid gap-2 border-t pt-3">
-              <p>
-                {round.title} · {round.state} ·{" "}
-                {
-                  data.roundCounts?.[round.id] ?? data.automation_round_members.filter(
-                    (m) => m.round_id === round.id,
-                  ).length
-                }{" "}
-                requests
-                {data.automation_round_refunds.some(
-                  (f) => f.round_id === round.id,
-                )
-                  ? " · refunded"
-                  : ""}
-              </p>
-              {round.state === "open" ? (
-                <>
-                  <form
-                    onSubmit={(e) => {
-                      e.preventDefault();
-                      const requestId = new FormData(e.currentTarget).get(
-                        "requestId",
-                      );
-                      act("round_add", { id: round.id, requestId });
-                    }}
-                  >
-                    <select
-                      name="requestId"
-                      aria-label="Request for round"
-                      className="rounded border p-2"
-                      required
-                    >
-                      {accepted
-                        .filter(
-                          (r) =>
-                            !data.automation_round_members.some(
-                              (m) => m.request_id === r.id,
-                            ),
-                        )
-                        .map((r) => (
-                          <option key={r.id} value={r.id}>
-                            {r.summary}
-                          </option>
-                        ))}
-                    </select>
-                    <Button
-                      disabled={disabled || !accepted.length}
-                      type="submit"
-                    >
-                      Add request to round
-                    </Button>
-                  </form>
-                  <Button
-                    disabled={disabled}
-                    onClick={() => act("round_close", { id: round.id })}
-                  >
-                    Close and consume round
-                  </Button>
-                </>
-              ) : (
-                <Button
-                  disabled={
-                    disabled ||
-                    data.automation_round_refunds.some(
-                      (f) => f.round_id === round.id,
-                    )
-                  }
-                  onClick={() => act("round_refund", { id: round.id })}
-                >
-                  Refund round
-                </Button>
-              )}
-            </div>
-          ))}
-        </section>
-      )}
-      {data.project.policy?.allowance_mode === "per_request" && (
-        <section className="grid gap-2 rounded border p-4">
-          <h3 className="font-semibold">Explicit request refunds</h3>
-          {accepted.length ? (
-            accepted.map((r) => (
-              <div
-                key={r.id}
-                className="flex flex-wrap items-center justify-between gap-2 border-t py-2"
-              >
-                <span>{r.summary}</span>
-                <Button
-                  variant="outline"
-                  disabled={
-                    disabled ||
-                    data.automation_revision_refunds.some(
-                      (f) => f.request_id === r.id,
-                    )
-                  }
-                  onClick={() => act("refund_request", { id: r.id })}
-                >
-                  {data.automation_revision_refunds.some(
-                    (f) => f.request_id === r.id,
-                  )
-                    ? "Refunded"
-                    : "Refund included request"}
-                </Button>
-              </div>
-            ))
-          ) : (
-            <p>No accepted requests in this page of history.</p>
-          )}
-        </section>
-      )}
-      {!accountingOnly && (
-        <>
-          <section className="grid gap-2 rounded border p-4">
-            <h2 className="font-semibold">Automation health</h2>
-            <p>
-              Inbound messages use signed Photon webhooks. Normal replies do not
-              wait for a scheduler.
-            </p>
-            <p>
-              {health
-                ? `Last processing run: ${new Date(health.started_at).toLocaleString()} · ${health.error_code ? processingErrorLabel(health.error_code) : health.finished_at ? "finished" : "in progress or interrupted"}`
-                : "No processing run recorded yet. Verify the deployed webhook setup."}
-            </p>
-            <p>
-              {data.accounting.queued} queued replies ·{" "}
-              {data.accounting.failedJobs} failed analyses
-            </p>
-            {data.accounting.queued > 0 &&
-              (!health ||
-                Date.parse(data.fetchedAt) - Date.parse(health.started_at) >
-                  180000) && (
-                <p role="alert">
-                  Queued work has not run recently. Check webhook and recovery
-                  scheduling.
-                </p>
-              )}
-            <Button
-              variant="outline"
-              onClick={() =>
-                void load(search).catch((e) => setError(e.message))
-              }
-            >
-              Refresh automation records
-            </Button>
-          </section>
-          <details className="rounded border p-4">
-            <summary className="cursor-pointer font-semibold">
-              Amend saved automation policy · version{" "}
-              {data.project.policy_version}
-            </summary>
-            <p className="my-3 text-sm">
-              Your reason and a new policy version are saved. Existing usage
-              carries forward; accounting mode cannot change after work is
-              accepted.
-            </p>
-            <AutomationSetup
-              key={data.project.version}
-              project={data.project}
-              bundle={{ scope: data.scope }}
-              locked={
-                busy ||
-                data.project.status === "draft" ||
-                reason.trim().length < 3
-              }
-              saveLabel="Save policy amendment"
-              onSave={(policy) =>
-                command("amend_policy", {
-                  expectedVersion: data.project.version,
-                  policy,
-                })
-              }
-            />
-          </details>
-          <section className="grid gap-3 rounded border p-4">
-            <h2 className="font-semibold">
-              Client corrections and cancellations
-            </h2>
-            {data.automation_requests
-              .filter(
-                (r) =>
-                  r.state === "owner_review" &&
-                  ["correction", "cancellation"].includes(
-                    r.intent?.intent ?? "",
-                  ),
-              )
-              .map((r) => (
-                <TaskChange
-                  key={r.id}
-                  request={r}
-                  tasks={data.tasks}
-                  disabled={disabled}
-                  command={act}
-                />
-              ))}
-            <p className="text-xs">
-              Select the existing task and verify the requested change. Applying
-              it creates no second task or revision charge.
-            </p>
-          </section>
-          <section className="grid gap-3 rounded border p-4">
-            <h2 className="font-semibold">Recent processing</h2>
-            {data.automation_jobs.map((j) => (
-              <div
-                key={j.id}
-                className="flex flex-wrap justify-between gap-2 border-t py-2"
-              >
-                <span>
-                  {j.state} · {j.attempts} attempts{" "}
-                  {j.error_code
-                    ? `· ${processingErrorLabel(j.error_code)}`
-                    : ""}
-                </span>
-                {j.state === "failed" && (
-                  <Button
-                    variant="outline"
-                    disabled={disabled || (j.owner_retries ?? 0) >= 3}
-                    onClick={() => act("retry_analysis", { id: j.id })}
-                  >
-                    Retry failed analysis
-                  </Button>
-                )}
-              </div>
-            ))}
-          </section>
-          <section className="grid gap-3 rounded border p-4">
-            <h2 className="font-semibold">Reply outbox</h2>
-            <p className="text-sm">
-              Edit or cancel queued replies. For an uncertain send, check the
-              conversation before explicitly retrying. Use a provider message ID
-              from conversation details to reconcile an actual successful
-              receipt.
-            </p>
-            {data.automation_outbox.map((o) => (
-              <ReplyControls
-                key={`${o.id}:${o.updated_at}`}
-                row={o}
-                disabled={disabled}
-                busy={busy}
-                command={act}
-              />
-            ))}
-            {!data.automation_outbox.length && <p>No replies queued yet.</p>}
-          </section>
-        </>
-      )}
-      <div className="flex gap-2">
+      <p className="flex items-center gap-2 text-xs text-muted-foreground">
+        <span aria-hidden className={`size-2 rounded-full ${reason.trim().length >= 3 ? "bg-ok" : "bg-neutral-400"}`} />
+        {reason.trim().length >= 3
+          ? "Actions are unlocked. Your reason is saved with each change and never shown to the client."
+          : "Write a short reason (3+ characters) to unlock the actions below."}
+      </p>
+    </section>
+  );
+  const taskSearch = (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        refresh();
+      }}
+      className="flex flex-wrap gap-2"
+    >
+      <input
+        aria-label="Search tasks and requests"
+        className={`${field} w-64`}
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        placeholder="Find an existing task"
+      />
+      <Button type="submit" variant="outline" className="rounded-full">
+        Search tasks
+      </Button>
+    </form>
+  );
+  const pager = (
+    <footer className="flex flex-wrap items-center justify-between gap-3 text-xs text-muted-foreground">
+      <p>
+        Showing up to 100 records per history page. Task search returns up to 50
+        matches. Accounting totals include all project history.
+      </p>
+      <div className="flex items-center gap-2">
         <Button
           variant="outline"
+          size="sm"
+          className="rounded-full"
           disabled={busy || !(data.page ?? 0)}
           onClick={() =>
             void load(search, (data.page ?? 0) - 1).catch((e) =>
@@ -469,9 +246,11 @@ export function AutomationManagement({
         >
           Newer history
         </Button>
-        <span>Page {(data.page ?? 0) + 1}</span>
+        <span className="tabular-nums">Page {(data.page ?? 0) + 1}</span>
         <Button
           variant="outline"
+          size="sm"
+          className="rounded-full"
           disabled={
             busy ||
             ![
@@ -490,10 +269,320 @@ export function AutomationManagement({
           Older history
         </Button>
       </div>
-      <p className="text-xs text-muted-foreground">
-        Showing up to 100 records per history page. Task search returns up to 50
-        matches. Accounting totals include all project history.
-      </p>
+    </footer>
+  );
+  const messages = (
+    <>
+      {error && (
+        <p role="alert" className="rounded-xl bg-crit-soft px-4 py-3 text-sm text-crit">
+          {error}
+        </p>
+      )}
+      {notice && (
+        <p role="status" className="rounded-xl bg-ok-soft px-4 py-3 text-sm text-ok">
+          {notice}
+        </p>
+      )}
+    </>
+  );
+
+  if (accountingOnly)
+    return (
+      <div className="grid gap-4">
+        {messages}
+        <p className="text-sm text-muted-foreground">
+          {data.accounting.requestsUsed} individual requests used ·{" "}
+          {data.accounting.roundsUsed} rounds used ·{" "}
+          {p.policy?.allowance ?? 0} included{" "}
+          {p.policy?.allowance_mode === "manual_rounds" ? "rounds" : "requests"}.
+          Cancellation preserves usage. Refunds are separate owner decisions
+          with an audit reason. Closing a feedback round consumes one round.
+        </p>
+        {reasonBar}
+        {taskSearch}
+        {p.policy?.allowance_mode === "manual_rounds" && (
+          <section className={`${card} grid gap-3 p-5`}>
+            <div className={sectionTitle}>
+              <h3 className="text-base font-semibold text-foreground">Feedback rounds</h3>
+              <Button
+                className="rounded-full"
+                disabled={
+                  disabled || data.automation_rounds.some((r) => r.state === "open")
+                }
+                onClick={() => act("round_open", {})}
+              >
+                Open feedback round
+              </Button>
+            </div>
+            {!data.automation_rounds.length && (
+              <p className="text-sm text-muted-foreground">No feedback rounds yet.</p>
+            )}
+            {data.automation_rounds.map((round) => {
+              const refunded = data.automation_round_refunds.some((f) => f.round_id === round.id);
+              return (
+                <div key={round.id} className="grid gap-3 rounded-xl bg-sidebar-accent/50 p-4">
+                  <p className="flex flex-wrap items-center gap-2 text-sm">
+                    <span className="font-medium">{round.title}</span>
+                    <span className={`rounded-md px-2 py-0.5 text-xs font-medium ${round.state === "open" ? "bg-ok-soft text-ok" : "bg-card text-muted-foreground"}`}>
+                      {round.state}
+                    </span>
+                    <span className="text-muted-foreground">
+                      {data.roundCounts?.[round.id] ??
+                        data.automation_round_members.filter((m) => m.round_id === round.id).length}{" "}
+                      requests{refunded ? " · refunded" : ""}
+                    </span>
+                  </p>
+                  {round.state === "open" ? (
+                    <div className="flex flex-wrap items-center gap-2">
+                      <form
+                        className="flex flex-wrap gap-2"
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          const requestId = new FormData(e.currentTarget).get("requestId");
+                          act("round_add", { id: round.id, requestId });
+                        }}
+                      >
+                        <select name="requestId" aria-label="Request for round" className={field} required>
+                          {accepted
+                            .filter((r) => !data.automation_round_members.some((m) => m.request_id === r.id))
+                            .map((r) => (
+                              <option key={r.id} value={r.id}>
+                                {r.summary}
+                              </option>
+                            ))}
+                        </select>
+                        <Button className="rounded-full" disabled={disabled || !accepted.length} type="submit">
+                          Add request to round
+                        </Button>
+                      </form>
+                      <Button
+                        variant="outline"
+                        className="rounded-full"
+                        disabled={disabled}
+                        onClick={() => act("round_close", { id: round.id })}
+                      >
+                        Close and consume round
+                      </Button>
+                    </div>
+                  ) : (
+                    <Button
+                      variant="outline"
+                      className="w-fit rounded-full"
+                      disabled={disabled || refunded}
+                      onClick={() => act("round_refund", { id: round.id })}
+                    >
+                      Refund round
+                    </Button>
+                  )}
+                </div>
+              );
+            })}
+          </section>
+        )}
+        {p.policy?.allowance_mode === "per_request" && (
+          <section className={`${card} grid gap-1 p-5`}>
+            <h3 className="mb-2 text-base font-semibold">Explicit request refunds</h3>
+            {accepted.length ? (
+              accepted.map((r) => {
+                const refunded = data.automation_revision_refunds.some((f) => f.request_id === r.id);
+                return (
+                  <div
+                    key={r.id}
+                    className="flex flex-wrap items-center justify-between gap-3 border-t border-sidebar-border py-3 first:border-t-0"
+                  >
+                    <span className="text-sm">{r.summary}</span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="rounded-full"
+                      disabled={disabled || refunded}
+                      onClick={() => act("refund_request", { id: r.id })}
+                    >
+                      {refunded ? "Refunded" : "Refund included request"}
+                    </Button>
+                  </div>
+                );
+              })
+            ) : (
+              <p className="text-sm text-muted-foreground">No accepted requests in this page of history.</p>
+            )}
+          </section>
+        )}
+        {pager}
+      </div>
+    );
+
+  const needsAction = changes.length + failedJobs.length + data.automation_outbox.length;
+  return (
+    <div className="grid gap-5">
+      {messages}
+      <section className={`${card} grid gap-5 p-5 md:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)] md:items-center`} aria-label="Automation health">
+        <div className="flex items-start gap-3">
+          <span className={`grid size-11 shrink-0 place-items-center rounded-2xl ${mode.tone}`}>
+            <span aria-hidden className={`size-3 rounded-full ${mode.dot} ${p.status === "active" && p.policy?.mode === "enabled" ? "animate-pulse motion-reduce:animate-none" : ""}`} />
+          </span>
+          <div className="min-w-0">
+            <h2 className="font-display text-xl font-semibold">{mode.label}</h2>
+            <p className="mt-1 text-sm text-muted-foreground">{mode.note}</p>
+            <p className="mt-2 text-sm">
+              {health
+                ? `Last processing run: ${new Date(health.started_at).toLocaleString()} · ${health.error_code ? processingErrorLabel(health.error_code) : health.finished_at ? "finished" : "in progress or interrupted"}`
+                : "No processing run recorded yet. Verify the deployed webhook setup."}
+            </p>
+          </div>
+        </div>
+        <div className="grid gap-3">
+          <dl className="grid grid-cols-3 gap-2">
+            {[
+              ["Queued replies", data.accounting.queued, data.accounting.queued ? "text-foreground" : "text-muted-foreground"],
+              ["Failed analyses", data.accounting.failedJobs, data.accounting.failedJobs ? "text-crit" : "text-muted-foreground"],
+              ["Policy", `v${p.policy_version}`, "text-foreground"],
+            ].map(([label, value, tone]) => (
+              <div key={label as string} className="rounded-xl bg-sidebar-accent/60 px-3 py-2">
+                <dt className="text-xs text-muted-foreground">{label}</dt>
+                <dd className={`font-display text-lg font-semibold tabular-nums ${tone}`}>{value}</dd>
+              </div>
+            ))}
+          </dl>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-xs text-muted-foreground">
+              Inbound messages use signed Photon webhooks. Normal replies do not
+              wait for a scheduler.
+            </p>
+            <Button variant="outline" size="sm" className="rounded-full" onClick={refresh}>
+              Refresh automation records
+            </Button>
+          </div>
+        </div>
+        {stale && (
+          <p role="alert" className="rounded-xl bg-warn-soft px-4 py-3 text-sm text-warn md:col-span-2">
+            Queued work has not run recently. Check webhook and recovery
+            scheduling.
+          </p>
+        )}
+      </section>
+
+      {reasonBar}
+
+      <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1.4fr)_minmax(320px,1fr)]">
+        <div className="grid gap-5">
+          <section className="grid gap-3" aria-label="Needs your action">
+            <h2 className={sectionTitle}>
+              Needs your action
+              <span className={`rounded-full px-2 py-0.5 text-xs tabular-nums ${needsAction ? "bg-warn text-white" : "bg-sidebar-accent"}`}>{needsAction}</span>
+            </h2>
+            {!needsAction && (
+              <p className="rounded-2xl border border-dashed border-sidebar-border bg-card/60 px-5 py-8 text-center text-sm text-muted-foreground">
+                Nothing to fix. Queued replies, client corrections and failed analyses show up here.
+              </p>
+            )}
+            {changes.length > 0 && (
+              <section className={`${card} grid gap-3 p-5`}>
+                <h3 className="font-semibold">Client corrections and cancellations</h3>
+                {taskSearch}
+                {changes.map((r) => (
+                  <TaskChange key={r.id} request={r} tasks={data.tasks} disabled={disabled} command={act} />
+                ))}
+                <p className="text-xs text-muted-foreground">
+                  Select the existing task and verify the requested change. Applying
+                  it creates no second task or revision charge.
+                </p>
+              </section>
+            )}
+            {data.automation_outbox.length > 0 && (
+              <section className={`${card} grid gap-3 p-5`}>
+                <h3 className="font-semibold">Reply outbox</h3>
+                <p className="text-sm text-muted-foreground">
+                  Edit or cancel queued replies. For an uncertain send, check the
+                  conversation before explicitly retrying. Use a provider message ID
+                  from conversation details to reconcile an actual successful
+                  receipt.
+                </p>
+                {data.automation_outbox.map((o) => (
+                  <ReplyControls key={`${o.id}:${o.updated_at}`} row={o} disabled={disabled} busy={busy} command={act} />
+                ))}
+              </section>
+            )}
+            {failedJobs.length > 0 && (
+              <section className={`${card} grid gap-1 p-5`}>
+                <h3 className="mb-2 font-semibold">Failed analyses</h3>
+                {failedJobs.map((j) => (
+                  <div key={j.id} className="flex flex-wrap items-center justify-between gap-2 border-t border-sidebar-border py-3 first:border-t-0">
+                    <span className="text-sm">
+                      {j.error_code ? processingErrorLabel(j.error_code) : "Analysis failed"}
+                      <span className="text-muted-foreground"> · {j.attempts} attempts</span>
+                    </span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="rounded-full"
+                      disabled={disabled || (j.owner_retries ?? 0) >= 3}
+                      onClick={() => act("retry_analysis", { id: j.id })}
+                    >
+                      Retry failed analysis
+                    </Button>
+                  </div>
+                ))}
+              </section>
+            )}
+          </section>
+        </div>
+
+        <div className="grid gap-5">
+          <details className={`${card} group p-5`}>
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-3 font-semibold">
+              <span>
+                Amend saved automation policy · version{" "}
+                {p.policy_version}
+              </span>
+              <span aria-hidden className="text-muted-foreground transition-transform group-open:rotate-45">+</span>
+            </summary>
+            <p className="my-3 text-sm text-muted-foreground">
+              Your reason and a new policy version are saved. Existing usage
+              carries forward; accounting mode cannot change after work is
+              accepted.
+            </p>
+            <AutomationSetup
+              key={p.version}
+              project={p}
+              bundle={{ scope: data.scope }}
+              locked={busy || p.status === "draft" || reason.trim().length < 3}
+              saveLabel="Save policy amendment"
+              onSave={(policy) =>
+                command("amend_policy", {
+                  expectedVersion: p.version,
+                  policy,
+                })
+              }
+            />
+          </details>
+          <section className={`${card} grid gap-2 p-5`} aria-label="Recent processing">
+            <h2 className="font-semibold">Recent processing</h2>
+            {data.automation_jobs.length ? (
+              <ol className="grid">
+                {data.automation_jobs.slice(0, 12).map((j) => (
+                  <li key={j.id} className="flex items-center justify-between gap-3 border-t border-sidebar-border py-2 text-sm first:border-t-0">
+                    <span className="flex items-center gap-2">
+                      <span
+                        aria-hidden
+                        className={`size-2 rounded-full ${j.state === "failed" ? "bg-crit" : j.state === "done" || j.state === "completed" ? "bg-ok" : "bg-info"}`}
+                      />
+                      <span className="capitalize">{j.state.replaceAll("_", " ")}</span>
+                      {j.error_code && <span className="text-muted-foreground">· {processingErrorLabel(j.error_code)}</span>}
+                    </span>
+                    <time className="text-xs text-muted-foreground tabular-nums" dateTime={j.created_at}>
+                      {new Date(j.created_at).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
+                    </time>
+                  </li>
+                ))}
+              </ol>
+            ) : (
+              <p className="text-sm text-muted-foreground">No messages processed yet.</p>
+            )}
+          </section>
+        </div>
+      </div>
+      {pager}
     </div>
   );
 }
@@ -512,22 +601,32 @@ function ReplyControls({
     [receipt, setReceipt] = useState(""),
     [confirmed, setConfirmed] = useState(false);
   const payload = { id: row.id, expectedUpdatedAt: row.updated_at };
+  const field =
+    "rounded-xl border border-sidebar-border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-sidebar-ring/40";
+  const tone =
+    row.state === "queued"
+      ? "bg-info-soft text-info"
+      : ["unknown", "failed"].includes(row.state)
+        ? "bg-crit-soft text-crit"
+        : "bg-sidebar-accent text-muted-foreground";
   return (
-    <div className="grid gap-2 border-t py-3">
-      <p>
-        {row.state} · {new Date(row.created_at).toLocaleString()}
+    <div className="grid gap-3 rounded-xl bg-sidebar-accent/40 p-4">
+      <p className="flex flex-wrap items-center gap-2 text-xs">
+        <span className={`rounded-md px-2 py-0.5 font-medium capitalize ${tone}`}>{row.state}</span>
+        <span className="text-muted-foreground">{new Date(row.created_at).toLocaleString()}</span>
       </p>
       {row.state === "queued" ? (
         <>
           <textarea
             aria-label="Queued reply text"
-            className="rounded border p-2"
+            className={`${field} min-h-24`}
             maxLength={8000}
             value={text}
             onChange={(e) => setText(e.target.value)}
           />
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button
+              className="rounded-full"
               disabled={disabled || !text.trim()}
               onClick={() => command("outbox_edit", { ...payload, text })}
             >
@@ -535,6 +634,7 @@ function ReplyControls({
             </Button>
             <Button
               variant="outline"
+              className="rounded-full"
               disabled={disabled}
               onClick={() => command("outbox_cancel", payload)}
             >
@@ -543,19 +643,23 @@ function ReplyControls({
           </div>
         </>
       ) : (
-        <p className="whitespace-pre-wrap">{row.text}</p>
+        <p className="w-fit max-w-[60ch] rounded-2xl rounded-br-md bg-primary px-4 py-2.5 text-sm whitespace-pre-wrap text-primary-foreground">
+          {row.text}
+        </p>
       )}
       {["unknown", "failed"].includes(row.state) && (
         <>
-          <label className="flex gap-2">
+          <label className="flex items-start gap-2 text-sm">
             <input
               type="checkbox"
+              className="mt-0.5"
               checked={confirmed}
               onChange={(e) => setConfirmed(e.target.checked)}
             />
             I checked with the client and confirmed this reply was not delivered
           </label>
           <Button
+            className="w-fit rounded-full"
             disabled={disabled || !confirmed}
             onClick={() =>
               command("outbox_retry", {
@@ -566,16 +670,17 @@ function ReplyControls({
           >
             Queue an explicit retry
           </Button>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <input
               aria-label="Provider message ID"
-              className="rounded border p-2"
+              className={field}
               placeholder="Actual provider message ID"
               value={receipt}
               onChange={(e) => setReceipt(e.target.value)}
             />
             <Button
               variant="outline"
+              className="rounded-full"
               disabled={busy || !receipt.trim()}
               onClick={() =>
                 command("outbox_reconcile", {
@@ -611,12 +716,19 @@ function TaskChange({
         "",
     );
   const target = tasks.find((t) => t.id === taskId);
+  const field =
+    "rounded-xl border border-sidebar-border bg-background px-3 py-2 text-sm font-normal outline-none focus-visible:ring-[3px] focus-visible:ring-sidebar-ring/40";
   return (
-    <div className="grid gap-2 border-t py-3">
-      <p>{request.summary}</p>
+    <div className="grid gap-3 rounded-xl bg-sidebar-accent/40 p-4">
+      <p className="flex flex-wrap items-center gap-2 text-sm">
+        <span className="rounded-md bg-warn-soft px-2 py-0.5 text-xs font-medium text-warn">
+          {request.intent?.intent === "cancellation" ? "Cancellation" : "Correction"}
+        </span>
+        {request.summary}
+      </p>
       <select
         aria-label="Existing task to change"
-        className="rounded border p-2"
+        className={field}
         value={taskId}
         onChange={(e) => setTaskId(e.target.value)}
       >
@@ -630,28 +742,29 @@ function TaskChange({
           ))}
       </select>
       {request.intent?.intent === "correction" && (
-        <>
-          <label>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <label className="grid gap-1.5 text-sm font-medium">
             Corrected task title
             <input
-              className="block rounded border p-2"
+              className={field}
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               maxLength={500}
             />
           </label>
-          <label>
+          <label className="grid gap-1.5 text-sm font-medium">
             Updated text or color (leave blank to keep the current value)
             <input
-              className="block rounded border p-2"
+              className={field}
               value={value}
               onChange={(e) => setValue(e.target.value)}
               maxLength={4000}
             />
           </label>
-        </>
+        </div>
       )}
       <Button
+        className="w-fit rounded-full"
         disabled={
           disabled ||
           !target ||

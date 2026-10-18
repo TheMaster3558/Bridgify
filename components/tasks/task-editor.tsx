@@ -19,12 +19,13 @@ export function TaskEditor({
   const [busy, setBusy] = useState(false);
   const [key, setKey] = useState(() => crypto.randomUUID());
   return (
-    <details className="rounded border bg-card p-4">
-      <summary className="cursor-pointer font-medium">
-        {task ? "Edit task details" : "New task"}
+    <details className="group rounded-2xl border border-sidebar-border bg-card">
+      <summary className="flex cursor-pointer list-none items-center gap-2 rounded-2xl px-4 py-3 text-sm font-medium outline-none focus-visible:ring-[3px] focus-visible:ring-sidebar-ring/40">
+        <span aria-hidden className="grid size-6 place-items-center rounded-full bg-primary text-base leading-none text-primary-foreground transition-transform group-open:rotate-45">+</span>
+        <span>{task ? "Edit task details" : "New task"}</span>
       </summary>
       <form
-        className="mt-4 grid gap-3"
+        className="grid gap-4 border-t border-sidebar-border p-4 sm:grid-cols-2"
         onChange={() => setKey(crypto.randomUUID())}
         onSubmit={async (e) => {
           e.preventDefault();
@@ -78,10 +79,10 @@ export function TaskEditor({
         }}
       >
         {!task && !projectId && (
-          <label className="grid gap-1">
+          <label className="grid gap-1.5 text-sm font-medium sm:col-span-2">
             Project
             <select
-              className="rounded border bg-background p-2"
+              className="rounded-xl border border-sidebar-border bg-background px-3 py-2 text-sm font-normal outline-none focus-visible:ring-[3px] focus-visible:ring-sidebar-ring/40"
               value={project}
               onChange={(e) => setProject(e.target.value)}
               required
@@ -95,38 +96,38 @@ export function TaskEditor({
             </select>
           </label>
         )}
-        <label className="grid gap-1">
+        <label className="grid gap-1.5 text-sm font-medium sm:col-span-2">
           Title
           <input
-            className="rounded border bg-background p-2"
+            className="rounded-xl border border-sidebar-border bg-background px-3 py-2 text-sm font-normal outline-none focus-visible:ring-[3px] focus-visible:ring-sidebar-ring/40"
             name="title"
             defaultValue={task?.title}
             required
             maxLength={500}
           />
         </label>
-        <label className="grid gap-1">
+        <label className="grid gap-1.5 text-sm font-medium sm:col-span-2">
           Instructions
           <textarea
-            className="rounded border bg-background p-2"
+            className="rounded-xl border border-sidebar-border bg-background px-3 py-2 text-sm font-normal outline-none focus-visible:ring-[3px] focus-visible:ring-sidebar-ring/40"
             name="instructions"
             defaultValue={task?.value ?? ""}
             maxLength={8000}
           />
         </label>
-        <label className="grid gap-1">
+        <label className="grid gap-1.5 text-sm font-medium sm:col-span-2">
           Acceptance criteria
           <textarea
-            className="rounded border bg-background p-2"
+            className="rounded-xl border border-sidebar-border bg-background px-3 py-2 text-sm font-normal outline-none focus-visible:ring-[3px] focus-visible:ring-sidebar-ring/40"
             name="criteria"
             defaultValue={task?.acceptance_criteria ?? ""}
             maxLength={4000}
           />
         </label>
-        <label className="grid gap-1">
+        <label className="grid gap-1.5 text-sm font-medium">
           Priority
           <select
-            className="rounded border bg-background p-2"
+            className="rounded-xl border border-sidebar-border bg-background px-3 py-2 text-sm font-normal outline-none focus-visible:ring-[3px] focus-visible:ring-sidebar-ring/40"
             name="priority"
             defaultValue={task?.priority ?? "normal"}
           >
@@ -135,31 +136,31 @@ export function TaskEditor({
             ))}
           </select>
         </label>
-        <label className="grid gap-1">
+        <label className="grid gap-1.5 text-sm font-medium">
           Internal target date
           <input
-            className="rounded border bg-background p-2"
+            className="rounded-xl border border-sidebar-border bg-background px-3 py-2 text-sm font-normal outline-none focus-visible:ring-[3px] focus-visible:ring-sidebar-ring/40"
             name="due"
             type="date"
             defaultValue={task?.internal_due_date ?? ""}
           />
         </label>
-        <label className="grid gap-1">
+        <label className="grid gap-1.5 text-sm font-medium sm:col-span-2">
           Private notes
           <textarea
-            className="rounded border bg-background p-2"
+            className="rounded-xl border border-sidebar-border bg-background px-3 py-2 text-sm font-normal outline-none focus-visible:ring-[3px] focus-visible:ring-sidebar-ring/40"
             name="note"
             defaultValue={task?.internal_note ?? ""}
             maxLength={4000}
           />
         </label>
-        <p className="text-xs text-muted-foreground">
+        <p className="text-xs text-muted-foreground sm:col-span-2">
           Internal target dates do not change client-agreed deadlines. Manual
           tasks do not use revisions.
         </p>
-        {error && <p role="alert">{error}</p>}
+        {error && <p role="alert" className="rounded-xl bg-crit-soft px-3 py-2 text-sm text-crit sm:col-span-2">{error}</p>}
         <button
-          className="rounded border p-2"
+          className="h-9 justify-self-start rounded-full bg-primary px-5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50 sm:col-span-2"
           disabled={busy || (!task && !project)}
         >
           {busy ? "Saving…" : "Save task"}
