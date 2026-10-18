@@ -5,7 +5,13 @@ import { compile } from "@tailwindcss/node";
 
 let javascript: string, css: string;
 test.beforeAll(async () => {
-  const shell = await readFile("components/dashboard/app-shell.tsx", "utf8");
+  const shell = (
+    await Promise.all(
+      ["app-shell", "quick-search", "settings-button", "theme-toggle"].map(
+        (file) => readFile(`components/dashboard/${file}.tsx`, "utf8"),
+      ),
+    )
+  ).join("\n");
   const styles = await compile(await readFile("app/globals.css", "utf8"), {
     base: process.cwd(),
     onDependency() {},
@@ -105,8 +111,13 @@ for (const width of [400, 700, 1280]) {
     await expect(
       nav.getByRole("link", { name: "Home", exact: true }),
     ).toBeInViewport();
+    for (const name of ["Quick Search ⌘K", "Settings", "Account"]) {
+      await expect(
+        page.getByRole("button", { name, exact: true }),
+      ).toBeInViewport();
+    }
     await expect(
-      nav.getByRole("button", { name: "Settings", exact: true }),
+      page.getByRole("group", { name: "Theme", exact: true }),
     ).toBeInViewport();
     const bottomProject = await page
       .getByRole("button", { name: "Bottom project", exact: true })

@@ -4,7 +4,7 @@ import { useRef } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  ChevronsUpDown,
+  ChevronDown,
   CircleAlert,
   FileText,
   FolderKanban,
@@ -12,11 +12,14 @@ import {
   ListChecks,
   LogOut,
   MessagesSquare,
+  Settings,
 } from "lucide-react";
 import { DropdownMenu } from "radix-ui";
 import { cn } from "@/lib/utils";
 
+import { QuickSearch } from "@/components/dashboard/quick-search";
 import { SettingsButton } from "@/components/dashboard/settings-button";
+import { ThemeToggle } from "@/components/dashboard/theme-toggle";
 
 const nav = [
   { href: "/app", label: "Home", icon: House },
@@ -26,45 +29,66 @@ const nav = [
   { href: "/app/proposals", label: "Proposals", icon: FileText },
 ];
 
+const searchPages = [
+  ...nav,
+  { href: "/app/settings", label: "Settings", icon: Settings },
+];
+
 const navItem =
-  "flex items-center gap-3 rounded-xl border border-transparent px-3 py-2.5 text-left text-[15px] font-medium whitespace-nowrap text-neutral-500 outline-none transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground focus-visible:ring-[3px] focus-visible:ring-sidebar-ring/40";
+  "flex w-full items-center gap-3 rounded-xl border border-transparent px-3 py-2 text-left text-[15px] font-medium whitespace-nowrap text-neutral-500 outline-none transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground focus-visible:ring-[3px] focus-visible:ring-sidebar-ring/40 dark:text-neutral-400";
 const navItemActive =
-  "border-[#1f5ae6] bg-gradient-to-b from-[#4a82ff] to-[#2563eb] text-sidebar-primary-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.25),0_1px_2px_rgba(37,99,235,0.35)] hover:bg-transparent hover:text-sidebar-primary-foreground";
+  "border-[#1f5ae6] bg-gradient-to-b from-[#4a82ff] to-[#2563eb] text-sidebar-primary-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.25),0_1px_2px_rgba(37,99,235,0.35)] hover:bg-transparent hover:text-sidebar-primary-foreground dark:text-sidebar-primary-foreground";
 
 function isActive(pathname: string, href: string) {
   if (href === "/app") return pathname === "/app";
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
-function WorkspaceMenu({ organization }: { organization: string }) {
+function initials(text: string) {
+  const words = text.trim().split(/\s+/).filter(Boolean);
+  return (
+    words.length > 1 ? words[0][0] + words[words.length - 1][0] : text.charAt(0)
+  ).toUpperCase();
+}
+
+function ProfileMenu({ name, email }: { name: string; email: string }) {
   const signoutForm = useRef<HTMLFormElement>(null);
-  const workspace = organization || "Workspace";
+  const displayName = name || email.split("@")[0] || "Account";
 
   return (
     <DropdownMenu.Root>
       <DropdownMenu.Trigger
-        aria-label={`Workspace: ${workspace}`}
-        className="flex min-w-0 items-center gap-2.5 rounded-xl p-1 pr-2 text-left outline-none hover:bg-sidebar-accent focus-visible:ring-[3px] focus-visible:ring-sidebar-ring/40"
+        aria-label="Account"
+        className="flex w-full min-w-0 items-center gap-3 rounded-2xl bg-sidebar-accent p-2.5 text-left outline-none hover:bg-[#e3e3e3] focus-visible:ring-[3px] focus-visible:ring-sidebar-ring/40 dark:hover:bg-[#333333]"
       >
         <span
           aria-hidden
-          className="grid size-9 shrink-0 place-items-center rounded-full bg-[#dcdcdc] text-base font-semibold text-neutral-600"
+          className="grid size-10 shrink-0 place-items-center rounded-full bg-gradient-to-b from-[#4a82ff] to-[#2563eb] text-sm font-semibold text-white"
         >
-          {workspace.charAt(0).toUpperCase()}
+          {initials(displayName)}
         </span>
-        <span className="truncate text-base font-semibold text-sidebar-foreground">
-          {workspace}
+        <span className="grid min-w-0 flex-1">
+          <span className="truncate text-[15px] font-semibold text-sidebar-foreground">
+            {displayName}
+          </span>
+          {email && (
+            <span className="truncate text-sm text-neutral-500 dark:text-neutral-400">
+              {email}
+            </span>
+          )}
         </span>
-        <ChevronsUpDown
+        <span
           aria-hidden
-          className="size-4 shrink-0 text-neutral-500"
-        />
+          className="grid size-6 shrink-0 place-items-center rounded-md bg-black/10 text-neutral-600 dark:bg-white/10 dark:text-neutral-300"
+        >
+          <ChevronDown className="size-4" />
+        </span>
       </DropdownMenu.Trigger>
       <DropdownMenu.Portal>
         <DropdownMenu.Content
-          side="bottom"
-          align="start"
-          sideOffset={6}
+          side="top"
+          align="end"
+          sideOffset={8}
           className="z-50 min-w-48 rounded-xl border bg-popover p-1 text-popover-foreground shadow-md"
         >
           <form
@@ -111,15 +135,31 @@ export function AppShell({
   const conversationHref = projectId
     ? `/app/projects/${projectId}/conversation`
     : "";
+  const workspace = organization || "Workspace";
 
   return (
-    <div className="grid min-h-screen grid-cols-[216px_minmax(0,1fr)] md:grid-cols-[272px_minmax(0,1fr)]">
+    <div className="grid min-h-screen grid-cols-[248px_minmax(0,1fr)] md:grid-cols-[304px_minmax(0,1fr)]">
       <aside className="min-w-0 self-stretch bg-background">
         <div className="sticky top-0 h-dvh p-2 md:p-3">
-          <div className="flex h-full flex-col gap-5 overflow-y-auto rounded-[28px] border border-sidebar-border bg-sidebar p-3 shadow-[0_1px_2px_rgba(0,0,0,0.04)]">
-            <div className="flex min-w-0 items-center pt-1">
-              <WorkspaceMenu organization={organization} />
-            </div>
+          <div className="flex h-full flex-col gap-4 overflow-y-auto rounded-[28px] border border-sidebar-border bg-sidebar p-3 shadow-[0_1px_2px_rgba(0,0,0,0.04)]">
+            <Link
+              href="/app"
+              className="flex min-w-0 items-center gap-2.5 rounded-xl p-1 outline-none focus-visible:ring-[3px] focus-visible:ring-sidebar-ring/40"
+            >
+              <span
+                aria-hidden
+                className="grid size-9 shrink-0 place-items-center rounded-full bg-[#dcdcdc] text-base font-semibold text-neutral-600 dark:bg-neutral-700 dark:text-neutral-200"
+              >
+                {workspace.charAt(0).toUpperCase()}
+              </span>
+              <span className="truncate text-base font-semibold text-sidebar-foreground">
+                {workspace}
+              </span>
+            </Link>
+            <QuickSearch
+              pages={searchPages}
+              className="flex w-full items-center gap-3 rounded-full bg-sidebar-accent px-3.5 py-2 text-[15px] text-neutral-500 outline-none transition-colors hover:text-sidebar-foreground focus-visible:ring-[3px] focus-visible:ring-sidebar-ring/40 dark:text-neutral-400"
+            />
             <nav aria-label="Main" className="flex flex-col gap-1">
               {nav.map((item) => {
                 const active = isActive(pathname, item.href);
@@ -136,16 +176,6 @@ export function AppShell({
                   </Link>
                 );
               })}
-              <SettingsButton
-                email={email || ""}
-                name={name}
-                timezone={timezone}
-                organization={organization}
-                className={cn(
-                  navItem,
-                  pathname === "/app/settings" && navItemActive,
-                )}
-              />
             </nav>
             {projectId && (
               <nav aria-label="Project shortcuts" className="grid gap-1">
@@ -170,6 +200,24 @@ export function AppShell({
                 </Link>
               </nav>
             )}
+            <div className="mt-auto flex flex-col gap-1">
+              <div className="pb-3">
+                <ThemeToggle />
+              </div>
+              <SettingsButton
+                email={email || ""}
+                name={name}
+                timezone={timezone}
+                organization={organization}
+                className={cn(
+                  navItem,
+                  pathname === "/app/settings" && navItemActive,
+                )}
+              />
+              <div className="pt-2">
+                <ProfileMenu name={name} email={email || ""} />
+              </div>
+            </div>
           </div>
         </div>
       </aside>
