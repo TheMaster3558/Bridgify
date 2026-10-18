@@ -195,6 +195,24 @@ beforeAll(async () => {
       "utf8",
     ),
   );
+  await db.exec(
+    await readFile(
+      new URL(
+        "../../supabase/migrations/202610170008_editable_project_introduction.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    ),
+  );
+  await db.exec(
+    await readFile(
+      new URL(
+        "../../supabase/migrations/202610170009_manual_approval_defaults.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    ),
+  );
   for (const [id, email] of [
     [owner, "owner@example.test"],
     [other, "other@example.test"],
@@ -1167,5 +1185,60 @@ describe("Photon Pro shared-line client connection", () => {
       },
     );
     expect(paused.project.status).toBe("paused");
+  });
+});
+
+it("retains the sent setup introduction and rejects empty recorded messages", async () => {
+  await user(owner);
+  const p = await readyProject();
+  await admin();
+  await db.query(
+    "update chat_bindings set introduction_text=$1 where project_id=$2",
+    ["Hi! I organize requests for this project.", p.id],
+  );
+  const saved = await db.query<{ introduction_text: string }>(
+    "select introduction_text from chat_bindings where project_id=$1",
+    [p.id],
+  );
+  expect(saved.rows[0].introduction_text).toBe(
+    "Hi! I organize requests for this project.",
+  );
+  await expect(
+    db.query(
+      "update chat_bindings set introduction_text='   ' where project_id=$1",
+      [p.id],
+    ),
+  ).rejects.toThrow();
+});
+
+it("saves manual-approval defaults without targets while requiring targets for automation", async () => {
+  const p = await readyProject();
+  const defaults = {
+    ...policy,
+    mode: "review_only",
+    targets: [],
+    operations: ["replace_text"],
+  };
+  const key = crypto.randomUUID();
+  const saved = await command(p.id, p.version, "policy", defaults, key);
+  expect(saved.project.version).toBe(p.version + 1);
+  expect(await command(p.id, p.version, "policy", defaults, key)).toEqual(
+    saved,
+  );
+  await expect(
+    command(p.id, saved.project.version, "policy", {
+      ...defaults,
+      mode: "enabled",
+      allowance: 2,
+    }),
+  ).rejects.toThrow(/Choose pages or elements/);
+  await admin();
+  const row = await db.query<{ policy: { targets: string[]; mode: string } }>(
+    "select policy from projects where id=$1",
+    [p.id],
+  );
+  expect(row.rows[0].policy).toMatchObject({
+    targets: [],
+    mode: "review_only",
   });
 });

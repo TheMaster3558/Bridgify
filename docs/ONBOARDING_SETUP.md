@@ -19,6 +19,12 @@ The web server handles interactive agreement analysis; the optional background w
 
 After applying the onboarding migrations through `202610170006_photon_users_only.sql`, apply `supabase/migrations/202610170007_work_management.sql` to the same Supabase project. It creates the `project_tasks` and `owner_decisions` tables used by the owner dashboard. For an existing project, apply only migrations that are not already recorded as applied; do not rerun this SQL on a project where the migration has already been applied. If the tables exist but PostgREST still reports them missing, reload the Supabase API schema cache and retry.
 
+## Project creation defaults and navigation
+
+After the existing onboarding and work-management migrations, apply `supabase/migrations/202610170008_editable_project_introduction.sql` and `supabase/migrations/202610170009_manual_approval_defaults.sql` before deploying the updated project wizard. The former retains the actual introduction sent to the client. The latter permits an empty list of automatic-change targets when every request requires manual approval; automatic acceptance still requires explicit targets. Existing saved policies retain their values.
+
+New projects default to manual approval, text replacement as the permitted change type, no automatic-change targets, the standard approval boundaries and a limit of ten open automatic tasks. Advanced settings start collapsed and need no edits to continue with manual approval. Forward setup headers use the same validation and save/confirmation action as Continue, and cannot skip intermediate steps. Earlier steps remain available for review.
+
 ## Account and recovery behavior
 
 Email and password are the authentication method. There is no email confirmation step for signup or sign-in. Passwords are handled by Supabase Auth and are never stored in application tables or logs. Authentication failures retain the exact proposal/invitation destination. Passwords are not trimmed. Signup and password updates require matching confirmation fields, a minimum of eight characters and a maximum of 72 UTF-8 bytes; existing shorter passwords can still be used to sign in.
