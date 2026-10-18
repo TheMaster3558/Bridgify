@@ -209,6 +209,55 @@ export function PanelSection({
   );
 }
 
+/** Included revisions drawn as tokens: filled when used, outlined when still available. */
+export function RevisionMeter({
+  included,
+  used,
+  unit = "requests",
+}: {
+  included: number;
+  used: number;
+  unit?: "requests" | "rounds";
+}) {
+  const remaining = Math.max(0, included - used);
+  const over = Math.max(0, used - included);
+  const shown = Math.min(Math.max(included, used), 24);
+  return (
+    <div className="grid gap-2">
+      <div
+        role="img"
+        aria-label={`${used} of ${included} included ${unit} used, ${remaining} remaining`}
+        className="flex flex-wrap gap-1.5"
+      >
+        {Array.from({ length: shown }, (_, i) => (
+          <span
+            key={i}
+            aria-hidden
+            className={cn(
+              "h-2.5 w-6 rounded-full",
+              i < Math.min(used, included)
+                ? "bg-primary"
+                : i < included
+                  ? "bg-primary/15 ring-1 ring-inset ring-primary/30"
+                  : "bg-warn",
+            )}
+          />
+        ))}
+        {!shown && (
+          <span className="text-sm text-muted-foreground">
+            No included {unit}
+          </span>
+        )}
+      </div>
+      <p className="text-sm text-muted-foreground tabular-nums">
+        <span className="font-medium text-foreground">{remaining}</span> of{" "}
+        {included} {unit} left
+        {over > 0 && <span className="text-warn"> · {over} over</span>}
+      </p>
+    </div>
+  );
+}
+
 export function PanelClose({
   label,
   onClick,
