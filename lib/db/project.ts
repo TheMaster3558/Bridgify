@@ -13,7 +13,7 @@ export async function projectBundle(
       "NOT_FOUND",
       "Project is unavailable to your account.",
     );
-  const [documents, scope, members, binding, invitations] = await Promise.all([
+  const [documents, scope, binding] = await Promise.all([
     client
       .from("documents")
       .select("*")
@@ -24,16 +24,7 @@ export async function projectBundle(
       .select("*")
       .eq("project_id", id)
       .order("version", { ascending: false }),
-    client
-      .from("project_members")
-      .select("user_id,requester,approver")
-      .eq("project_id", id),
     client.from("chat_bindings").select("*").eq("project_id", id).maybeSingle(),
-    client
-      .from("project_invitations")
-      .select("id,email,expires_at,accepted_at,revoked_at")
-      .eq("project_id", id)
-      .is("revoked_at", null),
   ]);
   const docs = checked(documents) || [];
   const spans = docs.length
@@ -52,9 +43,7 @@ export async function projectBundle(
     project,
     documents: docs,
     scope: checked(scope),
-    members: checked(members),
     binding: checked(binding),
-    invitations: checked(invitations),
     spans,
   };
 }

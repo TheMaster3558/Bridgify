@@ -1,5 +1,4 @@
 export const dynamic = "force-dynamic";
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth/session";
 import { CreateWorkspace } from "@/components/setup/create-workspace";
@@ -25,13 +24,6 @@ export default async function Page() {
         projects.
       </p>
       <CreateWorkspace />
-      <p className="text-sm text-muted-foreground">
-        Invited as a client? Return to the invitation link from your project
-        owner. You can review proposals without creating a workspace.
-      </p>
-      <Link href="/access" className="underline">
-        Client access
-      </Link>
       <form method="post" action="/auth/signout">
         <button className="underline">Sign out</button>
       </form>

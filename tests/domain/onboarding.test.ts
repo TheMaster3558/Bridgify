@@ -13,9 +13,8 @@ import { textSpans } from "@/lib/domain/agreement";
 import { membershipHash, verifyGateway } from "@/lib/photon/connection";
 describe("onboarding policy boundaries", () => {
   it("preserves the exact proposal and revision through authentication", () => {
-    expect(safeNext("/proposals/abc?revision=7")).toBe(
-      "/proposals/abc?revision=7",
-    );
+    expect(safeNext("/proposals/abc?revision=7")).toBe("/app");
+    expect(safeNext("/invitations/old")).toBe("/app");
   });
   it.each([
     "https://evil.example/app",

@@ -1,3 +1,5 @@
+> Historical planning/reference: the [owner-only specification](Bridgify_Technical_Build_Specification.md) supersedes any client website, invitation or web approval flow described below. Clients now interact only through iMessage.
+
 # Accounts and project onboarding
 
 This feature replaces the seeded login mockup with Supabase email/password authentication and saved project setup. It uses Next.js/React/TypeScript, Supabase Auth/Postgres/private Storage, Zod, Gemini (`@google/genai`), `pdfjs-dist`, the Photon HTTP SDK, a persistent TypeScript document worker, Vitest and Playwright. There is no seeded owner and no authentication bypass.

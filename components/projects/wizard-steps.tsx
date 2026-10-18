@@ -490,9 +490,9 @@ export function PeopleStep({
           />
         </Field>
         <Field
-          label="Client requester and approver"
+          label="Client contact"
           htmlFor="requester-name"
-          hint="This person signs in to approve proposals. Display names never grant authority."
+          hint="This person communicates through iMessage. No client website account is used."
           error={errors.requesterName}
         >
           <Input
@@ -503,7 +503,7 @@ export function PeopleStep({
             onChange={(event) => setPeople({ requesterName: event.target.value })}
           />
         </Field>
-        <Field label="Approver email" htmlFor="requester-email" error={errors.requesterEmail}>
+        <Field label="Contact email (optional)" htmlFor="requester-email" error={errors.requesterEmail}>
           <Input
             id="requester-email"
             type="email"
@@ -643,7 +643,7 @@ export function PeopleStep({
 }
 
 function bindingLabel(role: Binding["mapsTo"]) {
-  if (role === "requester") return "Requester and approver";
+  if (role === "requester") return "Client requester";
   if (role === "owner") return "Owner (never parsed as the client)";
   return "Assistant (echo suppressed)";
 }
