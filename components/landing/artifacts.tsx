@@ -252,17 +252,14 @@ export function Simulator() {
     if (!autoplay) return;
     const timer = window.setTimeout(() => {
       setAnimate(true);
+      setStage(prefersReducedMotion() ? 3 : 1);
       setActive((a) => (a + 1) % scenarios.length);
     }, autoplayMs);
     return () => window.clearTimeout(timer);
   }, [autoplay, active]);
 
   useEffect(() => {
-    if (!animate || prefersReducedMotion()) {
-      setStage(3);
-      return;
-    }
-    setStage(1);
+    if (!animate || prefersReducedMotion()) return;
     const quiet = scenarios[active]?.outcome === "quiet";
     const t1 = window.setTimeout(() => setStage(quiet ? 3 : 2), 450);
     const t2 = window.setTimeout(() => setStage(3), quiet ? 700 : 1500);
@@ -284,6 +281,7 @@ export function Simulator() {
             aria-pressed={index === active}
             onClick={() => {
               setAnimate(true);
+      setStage(prefersReducedMotion() ? 3 : 1);
               setUserPicked(true);
               setActive(index);
             }}
