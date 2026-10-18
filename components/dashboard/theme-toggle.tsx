@@ -2,6 +2,7 @@
 
 import { useSyncExternalStore } from "react";
 import { Moon, Sun } from "lucide-react";
+import { applyTheme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
 
 function subscribe(onChange: () => void) {
@@ -11,13 +12,6 @@ function subscribe(onChange: () => void) {
     attributeFilter: ["class"],
   });
   return () => observer.disconnect();
-}
-
-function setTheme(theme: "light" | "dark") {
-  document.documentElement.classList.toggle("dark", theme === "dark");
-  try {
-    localStorage.setItem("theme", theme);
-  } catch {}
 }
 
 export function ThemeToggle() {
@@ -41,7 +35,7 @@ export function ThemeToggle() {
         type="button"
         aria-label="Light mode"
         aria-pressed={!dark}
-        onClick={() => setTheme("light")}
+        onClick={() => applyTheme("light")}
         className={cn(option, !dark && selected)}
       >
         <Sun aria-hidden className="size-4" />
@@ -50,7 +44,7 @@ export function ThemeToggle() {
         type="button"
         aria-label="Dark mode"
         aria-pressed={dark}
-        onClick={() => setTheme("dark")}
+        onClick={() => applyTheme("dark")}
         className={cn(option, dark && selected)}
       >
         <Moon aria-hidden className="size-4" />
