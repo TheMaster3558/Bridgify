@@ -70,6 +70,8 @@ test("Gemini gets bounded structured output config and no tools; malformed outpu
     assert.equal(input.config?.responseMimeType, "application/json");
     assert.equal(input.config?.tools, undefined);
     assert.ok(input.config?.responseJsonSchema);
+    assert.equal(JSON.stringify(input.config?.responseJsonSchema).includes('"maxLength"'),false);
+    assert.equal(JSON.stringify(input.config?.responseJsonSchema).includes('"$schema"'),false);
     return { text: calls === 1 ? "invalid JSON" : JSON.stringify(output()) };
   } } }, "test-model");
   const result = await interpreter.interpret(context);

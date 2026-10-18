@@ -438,6 +438,30 @@ test("versions changing during Gemini analysis reject stale commitments", async 
     1,
   );
 });
+
+test("a recovered processing attempt clears the prior error and commits once", async () => {
+  await message();
+  await processor(async () => {
+    throw new Error("transient_provider_failure");
+  }).once();
+  assert.equal(
+    await count(
+      "automation_jobs",
+      "state='queued' and error_code='processing_failed'",
+    ),
+    1,
+  );
+  await pg.exec("update automation_jobs set available_at=now()");
+  await processor().once();
+  assert.equal(
+    await count(
+      "automation_jobs",
+      "state='done' and error_code is null and attempts=2",
+    ),
+    1,
+  );
+  assert.equal(await count("project_tasks"), 1);
+});
 test("transaction failures roll back task, ledger and reply together; bounded failures escalate", async () => {
   await pg.exec(`create function fail_outbox() returns trigger language plpgsql as $$begin raise exception 'injected failure'; end$$;
     create trigger fail_outbox before insert on automation_outbox for each row execute function fail_outbox();`);

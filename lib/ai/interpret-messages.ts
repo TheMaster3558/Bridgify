@@ -3,6 +3,7 @@ import { GoogleGenAI, type GenerateContentParameters } from "@google/genai";
 import { z } from "zod";
 import { readGeminiConfig } from "../assistant/config";
 import { routineOperationSchema } from "../assistant/contracts";
+import { geminiOutputSchema } from "./gemini-schema";
 
 const id = z.string().min(1).max(256);
 const version = z.number().int().positive();
@@ -118,7 +119,7 @@ export function createMessageInterpreter(client: GeminiClient, model: string) {
           config: {
             systemInstruction: SYSTEM + (attempt ? "\nPrevious output was invalid. Recheck schema, IDs, exact quotes and missing fields." : ""),
             responseMimeType: "application/json",
-            responseJsonSchema: z.toJSONSchema(interpretationSchema),
+            responseJsonSchema: geminiOutputSchema(z.toJSONSchema(interpretationSchema)),
             maxOutputTokens: 4096,
           },
         });

@@ -674,7 +674,7 @@ export function createAutomationProcessor(
             throw new Error("stale_snapshot");
           await applyAnalysis(sql, job, current, analysis);
           await sql.query(
-            "update automation_jobs set state='done',lease_until=null,analysis=$3,model=$4,prompt_version=$5 where id=$1 and lease_token=$2",
+            "update automation_jobs set state='done',lease_until=null,error_code=null,analysis=$3,model=$4,prompt_version=$5 where id=$1 and lease_token=$2",
             [
               job.id,
               job.lease_token,
