@@ -89,9 +89,7 @@ test("Basics → paste → review/edit → refresh → confirm → next step", a
         documents: [],
         spans: [],
         scope: [],
-        members: [],
         binding: null,
-        invitations: [],
       };
       return json({ data: { project: bundle.project } });
     }
@@ -349,8 +347,6 @@ function setupBundle(): Bundle {
     documents: [],
     spans: [],
     scope: [],
-    members: [],
-    invitations: [],
     binding: {
       test_state: "sent",
       verified_at: new Date().toISOString(),

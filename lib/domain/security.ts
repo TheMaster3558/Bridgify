@@ -5,7 +5,7 @@ export function safeNext(value: unknown, fallback = "/app") {
     const url = new URL(value, "https://bridgify.invalid");
     if (
       url.origin !== "https://bridgify.invalid" ||
-      !/^\/(app(?:\/|$)|proposals\/|invitations\/|onboarding(?:\?|$)|access(?:\?|$)|reset-password(?:\?|$))/.test(
+      !/^\/(app(?:\/|$)|onboarding(?:\?|$)|reset-password(?:\?|$))/.test(
         url.pathname,
       )
     )
@@ -16,7 +16,7 @@ export function safeNext(value: unknown, fallback = "/app") {
   }
 }
 export const INTRODUCTION =
-  "Bridgify is the project owner's automated assistant. It processes messages in this agreed project group to organize requests against the confirmed agreement. Eligible routine work may be accepted for the owner to do; new scope, prices and dates require explicit approval. Contact the owner to pause processing. No website changes are performed by this assistant.";
+  "Bridgify is the project owner's automated assistant. It processes messages in your connected iMessage conversation to organize requests against the confirmed agreement. Eligible routine work may be accepted for the owner to do; new scope, prices and dates require explicit approval. Contact the owner to pause processing. No website changes are performed by this assistant.";
 export function centsFromInput(value: string) {
   if (!/^\d+(\.\d{1,2})?$/.test(value))
     throw new Error(

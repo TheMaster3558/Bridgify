@@ -77,7 +77,7 @@ export function LoginScreen({
             ? "Create an account with your email and password to get started immediately."
             : mode === "recover"
               ? "Enter your account email to request a password reset link."
-              : "Use your email and password to access your workspace or invitation."}
+              : "Use your email and password to access your owner workspace."}
         </p>
         {expired && (
           <p role="alert">
@@ -180,8 +180,7 @@ export function LoginScreen({
           )}
         </div>
         <p className="text-xs text-muted-foreground">
-          Invited clients must use their invited email address and accept their
-          invitation. Signing in alone grants no project access.
+          This website is for project owners. Clients communicate through iMessage and do not need a website account.
         </p>
       </form>
     </main>

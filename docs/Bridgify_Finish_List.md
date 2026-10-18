@@ -1,3 +1,5 @@
+> Historical planning/reference: the [owner-only specification](Bridgify_Technical_Build_Specification.md) supersedes any client website, invitation or web approval flow described below. Clients now interact only through iMessage.
+
 # Bridgify finish list
 
 Every remaining task from the technical build specification. The page shells already exist. **P0** is the release. **P1** comes after that release.

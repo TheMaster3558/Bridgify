@@ -271,9 +271,9 @@ export function agreementErrors(draft: ProjectDraft) {
 export function peopleErrors(draft: ProjectDraft, projects: ProjectDraft[]) {
   const errors: Record<string, string> = {};
   if (!draft.people.ownerName.trim()) errors.ownerName = "Enter the owner on this project.";
-  if (!draft.people.requesterName.trim()) errors.requesterName = "Enter the client requester and approver.";
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(draft.people.requesterEmail.trim())) {
-    errors.requesterEmail = "Enter the approver email. A display name never grants approval authority.";
+  if (!draft.people.requesterName.trim()) errors.requesterName = "Enter the client contact.";
+  if (draft.people.requesterEmail.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(draft.people.requesterEmail.trim())) {
+    errors.requesterEmail = "Enter a valid contact email or leave it blank. Clients communicate through iMessage.";
   }
   if (!draft.people.instanceId.trim()) errors.instanceId = "Enter the Photon instance id.";
   if (!draft.people.groupName.trim()) errors.groupName = "Enter the group name.";
@@ -291,7 +291,7 @@ export function peopleErrors(draft: ProjectDraft, projects: ProjectDraft[]) {
   const owner = binding(draft, "owner");
   const assistant = binding(draft, "assistant");
   if (!requester?.senderId.trim() || !requester.confirmed) {
-    errors.requesterBinding = "Confirm the sender id that maps to the requester and approver.";
+    errors.requesterBinding = "Confirm the sender id that maps to the client requester.";
   }
   if (!owner?.senderId.trim() || !owner.confirmed) {
     errors.ownerBinding = "Confirm the sender id that maps to the owner.";

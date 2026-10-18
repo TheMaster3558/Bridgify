@@ -45,7 +45,6 @@ export type Bundle = {
     agreement?: AgreementReview | null;
     confirmed_at: string;
   }[];
-  members: { user_id: string; requester: boolean; approver: boolean }[];
   binding: {
     introduction_text?: string | null;
     verified_at: string | null;
@@ -54,9 +53,4 @@ export type Bundle = {
     webhook_verified_at: string | null;
     disclosed_message_guid: string | null;
   } | null;
-  invitations: {
-    email: string;
-    accepted_at: string | null;
-    expires_at: string;
-  }[];
 };
